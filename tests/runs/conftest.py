@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from mozg_outreach.domain import ProjectMode
 from mozg_outreach.pipelines.job.models import JobBrief, JudgeResult
 from mozg_outreach.runs.catalog import FLOWS
 from mozg_outreach.runs.manager import RunEnvironment, RunManager
+from mozg_outreach.sources.base import SourceAdapter
 from mozg_outreach.sources.models import FetchResult, SourceItem, SourceQuery
 from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import JsonObject, Project, SourceConfig
@@ -50,6 +52,8 @@ class Harness:
     def __init__(self, db: Database, tmp_path: Path, runner: RecordedRunner | None = None) -> None:
         self.db = db
         self.feed = FakeFeed()
+        # Kinds that need a real adapter; every other kind gets the fake feed.
+        self.adapters: dict[str, Callable[[JsonObject], SourceAdapter]] = {}
         self.runner = runner or RecordedRunner({})
         self.manager = RunManager(
             RunEnvironment(
@@ -57,7 +61,9 @@ class Harness:
                 runner=self.runner,
                 prompts=PromptLibrary(REPO_PROMPTS),
                 workspaces=tmp_path / "workspaces",
-                adapters=lambda _kind, _config: self.feed,
+                adapters=lambda kind, config: (
+                    self.adapters[kind](config) if kind in self.adapters else self.feed
+                ),
             ),
             FLOWS,
         )

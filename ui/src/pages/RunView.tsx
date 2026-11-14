@@ -24,6 +24,8 @@ const EVENT_KINDS = [
   "skipped",
   "summary",
   "identified",
+  "channels_found",
+  "channels_saved",
   "fields_researched",
 ];
 
@@ -192,7 +194,83 @@ function FieldsDone({ run }: { run: Run }): ReactElement {
   );
 }
 
-function Gate({ run, gate, onDone }: { run: Run; gate: NonNullable<Run["pending_gate"]>; onDone: () => void }): ReactElement {
+type GateProps = { run: Run; gate: NonNullable<Run["pending_gate"]>; onDone: () => void };
+
+function Gate({ run, gate, onDone }: GateProps): ReactElement {
+  if (gate.kind === "channels") return <ChannelGate run={run} gate={gate} onDone={onDone} />;
+  return <StrategyGate run={run} gate={gate} onDone={onDone} />;
+}
+
+interface FoundChannel {
+  username: string;
+  title: string;
+  subscribers: number | null;
+  last_post: string;
+  job_share: number;
+  query: string;
+}
+
+function ChannelGate({ run, gate, onDone }: GateProps): ReactElement {
+  const offered = (gate.payload.found as { channels: FoundChannel[] } | null)?.channels ?? [];
+  const [picked, setPicked] = useState(() => new Set(offered.map((c) => c.username)));
+  const answer = useMutation({
+    mutationFn: (body: Json) => call<Run>("POST", `/api/runs/${run.id}/gate`, body),
+    onSuccess: onDone,
+  });
+  const toggle = (username: string): void =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(username)) next.add(username);
+      return next;
+    });
+  const approve = (): void =>
+    answer.mutate({ approve: true, revised: { channels: offered.filter((c) => picked.has(c.username)) } });
+  return (
+    <Section title="Approve the Telegram channels">
+      <p className="hint">
+        Found by searching Telegram for the strategy's skills. Checked channels are read from now on; unchecked ones are
+        never offered again.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th />
+            <th>Channel</th>
+            <th>Subscribers</th>
+            <th>Job posts</th>
+            <th>Last post</th>
+            <th>Found by</th>
+          </tr>
+        </thead>
+        <tbody>
+          {offered.map((c) => (
+            <tr key={c.username}>
+              <td>
+                <input type="checkbox" checked={picked.has(c.username)} onChange={() => toggle(c.username)} />
+              </td>
+              <td>
+                <a href={`https://t.me/${c.username}`} target="_blank" rel="noreferrer">
+                  @{c.username}
+                </a>{" "}
+                {c.title}
+              </td>
+              <td>{c.subscribers ?? "?"}</td>
+              <td>{Math.round(c.job_share * 100)}%</td>
+              <td>{c.last_post.slice(0, 10)}</td>
+              <td>{c.query}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button onClick={approve} disabled={answer.isPending}>
+        Use {picked.size} of {offered.length} channels
+      </button>
+      <ErrorBox error={answer.error} />
+    </Section>
+  );
+}
+
+function StrategyGate({ run, gate, onDone }: GateProps): ReactElement {
   const draft = gate.payload.strategy as Json | null;
   const original = JSON.stringify(draft, null, 2);
   const [text, setText] = useState(original);

@@ -7,6 +7,7 @@ import pytest
 
 from mozg_outreach.sources.models import SourceQuery
 from mozg_outreach.sources.telegram import (
+    ChannelInfo,
     ChannelMessage,
     SessionStore,
     TelegramAdapter,
@@ -43,6 +44,9 @@ class FakeSession:
             raise TelegramReadError(f"ChannelPrivateError reading {channel}")
         fresh = [m for m in self.history[channel] if m.id > min_id]
         return sorted(fresh, key=lambda m: m.id, reverse=min_id == 0)[:limit]
+
+    async def search_channels(self, query: str, limit: int) -> list[ChannelInfo]:
+        return []
 
 
 def message(msg_id: int, text: str) -> ChannelMessage:

@@ -41,7 +41,10 @@ BRIEFS: dict[ProjectMode, type[BaseModel]] = {
 # Feed adapters only serve job projects; biz and freelance search the web through agents.
 SOURCE_NOTES = {
     WEB_SEARCH: "Agents search and read the web.",
-    "telegram": "Reads public channels with your Telegram login; run telegram_login first.",
+    "telegram": (
+        "Reads public channels with your Telegram login; run telegram_login first. With "
+        "discover: true, job runs search Telegram for job channels and ask you to approve them."
+    ),
 }
 
 

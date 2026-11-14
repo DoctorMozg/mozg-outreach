@@ -8,7 +8,7 @@ const EXAMPLES: Record<string, Json> = {
   greenhouse: { boards: ["company-board-token"] },
   ashby: { boards: ["company"] },
   lever: { companies: ["company"] },
-  telegram: { channels: ["@channel_name"], keywords: [], kind: "job" },
+  telegram: { discover: true, channels: [], keywords: [], kind: "job" },
 };
 
 export function Sources({ project }: { project: Project }): ReactElement {

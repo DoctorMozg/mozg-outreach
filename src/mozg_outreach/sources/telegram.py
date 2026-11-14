@@ -2,12 +2,13 @@ import json
 import logging
 import os
 import re
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, Field, SecretStr, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, SecretStr, TypeAdapter, ValidationError, model_validator
 
 from mozg_outreach.sources.base import AdapterConfig, matches_keywords, select_items
 from mozg_outreach.sources.models import FetchResult, ItemKind, SourceItem, SourceQuery
@@ -60,6 +61,13 @@ class ChannelMessage(BaseModel):
     author: str | None = None
 
 
+class ChannelInfo(BaseModel):
+    username: str
+    title: str
+    broadcast: bool = Field(description="A channel that only admins post to, not a group chat.")
+    subscribers: int | None
+
+
 class TelegramSession(Protocol):
     """What the adapter needs from a Telegram client; Telethon stays behind this."""
 
@@ -68,6 +76,8 @@ class TelegramSession(Protocol):
     async def disconnect(self) -> None: ...
 
     async def messages(self, channel: str, min_id: int, limit: int) -> list[ChannelMessage]: ...
+
+    async def search_channels(self, query: str, limit: int) -> list[ChannelInfo]: ...
 
 
 type SessionFactory = Callable[[TelegramCredentials, Path], TelegramSession]
@@ -159,11 +169,41 @@ class TelethonSession:
             for message in raw
         ]
 
+    async def search_channels(self, query: str, limit: int) -> list[ChannelInfo]:
+        """Public chats whose title or username matches, like the app's global search."""
+        from telethon import functions
+        from telethon.errors import RPCError
+        from telethon.tl.types import Channel
+
+        try:
+            found = await self._client(functions.contacts.SearchRequest(q=query, limit=limit))
+        except RPCError as exc:
+            raise TelegramReadError(f"{type(exc).__name__} searching {query!r}") from exc
+        return [
+            ChannelInfo(
+                username=chat.username,
+                title=chat.title,
+                broadcast=bool(chat.broadcast),
+                subscribers=chat.participants_count,
+            )
+            for chat in found.chats
+            if isinstance(chat, Channel) and chat.username
+        ]
+
 
 class TelegramConfig(AdapterConfig):
-    channels: list[str] = Field(min_length=1)
+    channels: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
     kind: Literal["job", "gig", "signal"] = "signal"
+    discover: bool = Field(default=False, description="Search Telegram for matching channels.")
+    excluded: list[str] = Field(default_factory=list, description="Channels never proposed again.")
+    max_channels: int = Field(default=15, ge=1, le=40)
+
+    @model_validator(mode="after")
+    def _has_channels_or_discovers(self) -> "TelegramConfig":
+        if not self.channels and not self.discover:
+            raise ValueError("list channels or set discover to true")
+        return self
 
 
 def channel_username(channel: str) -> str:
@@ -184,17 +224,25 @@ class TelegramAdapter:
         self._forbidden_root = forbidden_root
         self._session_factory = session_factory
 
-    async def fetch(self, query: SourceQuery, cursor: str | None) -> FetchResult:
-        errors: list[str] = []
-        positions = self._read_cursor(cursor, errors)
+    @asynccontextmanager
+    async def open_session(self) -> AsyncIterator[TelegramSession]:
+        """A connected session; the session file is locked down again however the block ends."""
         credentials = TelegramCredentials.from_env()
         store = SessionStore.from_env(self._forbidden_root)
         store.prepare()
-
         session = self._session_factory(credentials, store.base_path)
-        read: list[SourceItem] = []
         try:
             await session.connect()
+            yield session
+        finally:
+            await session.disconnect()
+            store.secure()
+
+    async def fetch(self, query: SourceQuery, cursor: str | None) -> FetchResult:
+        errors: list[str] = []
+        positions = self._read_cursor(cursor, errors)
+        read: list[SourceItem] = []
+        async with self.open_session() as session:
             for raw_channel in self._config.channels:
                 channel = channel_username(raw_channel)
                 try:
@@ -209,9 +257,6 @@ class TelegramAdapter:
                     positions[channel] = max(positions.get(channel, 0), *(m.id for m in messages))
                 logger.info("telegram: %s returned %d messages", channel, len(messages))
                 read.extend(self._to_items(channel, messages))
-        finally:
-            await session.disconnect()
-            store.secure()
 
         keywords = [*query.keywords, *self._config.keywords]
         wanted = query.model_copy(update={"keywords": keywords})

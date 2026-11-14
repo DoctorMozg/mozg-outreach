@@ -66,6 +66,17 @@ Done, M15: `pipelines/fields.py` holds the shared proposal and research contract
 - Then run a job search through the UI with a Telegram source and fix what breaks.
 - verify: `uv run pytest -m live -k telegram` passes; a job run reports Telegram items with `t.me` source URLs; under M14 their companies get `telegram` sightings.
 
+Changed (user, 2026-11-14: "It should scan all channels related to jobs and find out itself"): no channel is configured by hand. A Telegram source with `discover: true` searches Telegram (`contacts.search`, free) for `<skill> jobs`, using must-have skills first and then the CV's own skills, at most 8 queries spaced 1 s apart. Python keeps public broadcast channels that posted in the last 14 days and whose last 20 posts are at least 30% job posts. A `channels` gate shows them; approved ones join `channels` and the rest go to `excluded`, so they are never offered again. Login moved to `telegram_login --qr` (new dependency `segno`), because Telegram never delivered the login code for this account.
+
+Done, M16 part 1: `sources/telegram_discovery.py`, `TelegramAdapter.open_session()`, the `discover_channels` and `approve_channels` phases in `runs/job.py`, and the channel picker on the run page. The live test (`-m live -k telegram`) found channels, read `t.me` items, resumed from the cursor and left the session file at 0600. A live job run offered 6 channels (80 to 100% job posts, 1k to 15k subscribers, all active this week) and saved them. Not done: that run produced 0 listings, because of two gaps that predate M16. `collect` filters feed items by the English target titles, which Russian posts never contain, and `to_listing` drops any item without `org_name`, which a Telegram post never has. Turning free-text posts into listings needs a parsing step, proposed below as M17.
+
+**M17 Telegram posts as listings** (proposed, waiting for approval)
+
+- Collect: Telegram items skip the English title filter; the adapter keeps only posts that name a must-have skill or a CV skill, which works in any language because skills are written in Latin script.
+- A new toolless `job/telegram-post-parser` agent (haiku, batches of about 20 posts) turns each post into a `ScoutedListing` (title, company, location, remote, salary, apply link) or marks it as not a job post. The company stays null when the post doesn't name one, and Python then lists the item without an employer link (M14 rule).
+- `to_listing` stays for structured feeds; Telegram items go through the parser instead.
+- verify: offline tests with recorded parser output (job post, ad, post without a company); a live job run on the discovered channels produces scored items with `t.me` URLs, and named companies get `telegram` sightings. About $1 to $3 a run.
+
 ## Order and size
 
 M12 comes first, so any later schema change gets a migration. M13 to M15 are independent of each other. M16 waits on your credentials and can run whenever they exist. Each milestone stays within about 10 files and 400 changed lines, ends with `uv run pytest` and pre-commit on the changed files, and is committed on its own on `feat/service-migration`.

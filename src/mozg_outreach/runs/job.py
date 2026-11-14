@@ -1,7 +1,9 @@
-"""Job search as phases: plan, strategy gate, sources, collect, screen, judge, score, identify."""
+"""Job search as phases: plan, strategy gate, sources, Telegram channels, collect, screen, judge,
+score, identify and report fields."""
 
 import logging
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -25,6 +27,13 @@ from mozg_outreach.pipelines.leads.identify import lead_input
 from mozg_outreach.pipelines.leads.models import LeadIdentity
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
+from mozg_outreach.sources.telegram import TelegramAdapter, TelegramConfig, channel_username
+from mozg_outreach.sources.telegram_discovery import (
+    MAX_QUERIES,
+    ChannelDiscovery,
+    DiscoveryRequest,
+    FoundChannel,
+)
 from mozg_outreach.storage.models import Item, SourceConfig
 from mozg_outreach.storage.repositories import ItemRepository
 
@@ -45,10 +54,16 @@ class JobOptions(BaseModel):
     )
 
 
+class ChannelChoice(BaseModel):
+    channels: list[FoundChannel]
+
+
 class JobSearchState(RunState):
     options: JobOptions = Field(default_factory=JobOptions)
     strategy: JobStrategy | None = None
     boards: list[JobSource] = Field(default_factory=list)
+    found: ChannelChoice | None = Field(default=None, description="Telegram channels to approve.")
+    offered: list[str] = Field(default_factory=list, description="Usernames shown at the gate.")
     scouted: list[SourcedListing] = Field(default_factory=list)
     kept: list[Listing] = Field(default_factory=list)
     excluded: list[Excluded] = Field(default_factory=list)
@@ -105,6 +120,85 @@ async def sources(ctx: Ctx) -> PhaseResult:
     ctx.state.boards = ranked[: ctx.state.options.max_boards]
     ctx.emit("sources", {"names": [b.name for b in ctx.state.boards]})
     return None
+
+
+async def discover_channels(ctx: Ctx) -> PhaseResult:
+    """Search Telegram for job channels matching the strategy's skills, for the user to approve."""
+    ctx.state.found, ctx.state.offered = None, []
+    rows = _discovering(ctx)
+    if not rows:
+        return None
+    configs = [TelegramConfig.model_validate(r.config) for r in rows]
+    room = configs[0].max_channels - len(configs[0].channels)
+    if room <= 0:
+        return None
+    adapter = ctx.adapters(TelegramAdapter.name, rows[0].config)
+    if not isinstance(adapter, TelegramAdapter):
+        raise TypeError(f"telegram source built {type(adapter).__name__}, not TelegramAdapter")
+    known = {
+        channel_username(u).casefold() for cfg in configs for u in [*cfg.channels, *cfg.excluded]
+    }
+    request = DiscoveryRequest(
+        terms=_discovery_terms(_strategy(ctx)), known=known, limit=room, now=datetime.now(UTC)
+    )
+    async with adapter.open_session() as session:
+        result = await ChannelDiscovery(session).find(request)
+    ctx.state.concerns += result.concerns
+    if result.channels:
+        ctx.state.found = ChannelChoice(channels=result.channels)
+        ctx.state.offered = [c.username for c in result.channels]
+    ctx.emit("channels_found", {"usernames": ctx.state.offered})
+    return None
+
+
+_channel_gate = Approval[JobSearchState](
+    kind="channels", back_to="discover_channels", field="found", model=ChannelChoice
+)
+
+
+async def approve_channels(ctx: Ctx) -> PhaseResult:
+    if ctx.state.found is None:
+        return None
+    outcome = await _channel_gate(ctx)
+    if outcome is None:
+        _save_channels(ctx, ctx.state.found)
+    return outcome
+
+
+def _discovery_terms(strategy: JobStrategy) -> list[str]:
+    """Must-haves first, then the CV's skills in its own order, which leads with the core stack."""
+    grouped = [s for group in strategy.must_have_or_groups for s in group]
+    terms = [*strategy.must_have_skills, *grouped, *strategy.cv.skills, *strategy.cv.top_titles]
+    return list(dict.fromkeys(terms))[:MAX_QUERIES]
+
+
+def _discovering(ctx: Ctx) -> list[SourceConfig]:
+    return [
+        r
+        for r in _sources(ctx)
+        if r.kind == TelegramAdapter.name and TelegramConfig.model_validate(r.config).discover
+    ]
+
+
+def _save_channels(ctx: Ctx, choice: ChannelChoice) -> None:
+    """Approved channels join the source; the rest are excluded so they aren't offered again."""
+    picked = [c.username for c in choice.channels]
+    taken = {u.casefold() for u in picked}
+    dropped = [u for u in ctx.state.offered if u.casefold() not in taken]
+    with ctx.db.session() as session:
+        for row in session.scalars(
+            select(SourceConfig).where(
+                SourceConfig.project_id == ctx.project_id,
+                SourceConfig.kind == TelegramAdapter.name,
+            )
+        ):
+            config = TelegramConfig.model_validate(row.config)
+            if config.discover:
+                channels, excluded = [*config.channels, *picked], [*config.excluded, *dropped]
+                merged = config.model_copy(update={"channels": channels, "excluded": excluded})
+                row.config = merged.model_dump(mode="json")
+    logger.info("telegram channels: %d added, %d excluded", len(picked), len(dropped))
+    ctx.emit("channels_saved", {"added": picked, "excluded": dropped})
 
 
 async def collect(ctx: Ctx) -> PhaseResult:
@@ -230,6 +324,8 @@ JOB_SEARCH = FlowSpec[JobSearchState](
         Phase("plan", plan),
         Phase("approve_strategy", approve_strategy),
         Phase("sources", sources),
+        Phase("discover_channels", discover_channels),
+        Phase("approve_channels", approve_channels),
         Phase("collect", collect),
         Phase("screen", screen),
         Phase("judge", judge),
