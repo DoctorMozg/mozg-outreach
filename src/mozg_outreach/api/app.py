@@ -42,7 +42,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db = Database(settings.database)
-        db.create_schema()
+        db.migrate()
         async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT}, timeout=30) as client:
             context = AdapterContext(client=client, forbidden_root=settings.workspaces)
 

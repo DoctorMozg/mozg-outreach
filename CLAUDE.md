@@ -18,6 +18,7 @@ uv run pytest tests/agents/test_prompt.py::TestParse::test_name_must_match_file 
 uv run pytest -m live                     # real Claude Code + web calls; costs subscription usage
 pre-commit run --files <changed files>    # ruff, ruff-format, mdformat, json format, mypy --strict, tsc
 uv run mozg-outreach                      # API on 127.0.0.1:8742; data in ~/.local/share/mozg-outreach (MOZG_OUTREACH_HOME)
+uv run python -m mozg_outreach.storage.revision "add x"   # autogenerate a migration after a model change; startup applies it
 cd ui && npm ci --ignore-scripts && npm run build   # build the UI into ui/dist, which the API serves at /
 cd ui && npm run dev                      # Vite on :5173, proxying /api to the running service
 ```

@@ -12,7 +12,7 @@ from mozg_outreach.storage.models import Project, Run
 @pytest.fixture
 def db(tmp_path: Path) -> Database:
     database = Database(tmp_path / "outreach.db")
-    database.create_schema()
+    database.migrate()
     return database
 
 
