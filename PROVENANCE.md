@@ -9,6 +9,8 @@ The agent prompts and reference material here come from [claude-pipelines](https
 | `prompts/job/sources/*.json`                          | `plugins/mz-job-outreach/skills/{job-search,freelance-search}/sources/` |
 | `prompts/creative/expert-{naturalizer,copywriter}.md` | `plugins/mz-creative/agents/` (forked; diverges on purpose)             |
 
+`prompts/biz/run-summarizer.md` is adapted from upstream `outreach-reporter`. Upstream `outreach-enrichment-orchestrator` and `outreach-card-writer` were dropped: Python fans out enrichment and builds the report from the database.
+
 The forked `expert-copywriter` is cut down to short outreach letters; the general marketing formats (landing pages, changelogs) were dropped.
 
 Verbatim copies of the plugins' skills and READMEs served as a porting reference during the migration. Python replaced them, and they were removed in milestone M11; git history before that commit still has them.

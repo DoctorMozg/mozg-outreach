@@ -1,5 +1,6 @@
 import pytest
 
+from mozg_outreach.agents import AgentRunError
 from mozg_outreach.api.schemas import ItemOut
 from mozg_outreach.pipelines.biz.assessment_models import FieldResearchResult, FitVerdict
 from mozg_outreach.pipelines.biz.models import (
@@ -9,6 +10,8 @@ from mozg_outreach.pipelines.biz.models import (
     SourceList,
     Strategy,
 )
+from mozg_outreach.pipelines.biz.summary import Pattern, RunSummary
+from mozg_outreach.storage.models import JsonObject
 from tests.pipelines.biz.conftest import load_fixture
 from tests.pipelines.conftest import Scripted
 
@@ -35,6 +38,14 @@ async def accepted_spec(api: Api, project_id: int, proposal: FieldProposal) -> N
     await api.ok("POST", f"/api/projects/{project_id}/fields/1/accept")
 
 
+SUMMARY = RunSummary(
+    summary="Two leads, both thinly assessed.",
+    patterns=[Pattern(pattern="Both sell to manufacturers.", item_ids=[1, 2])],
+    recommendations=["Research headcount before writing."],
+    concerns=[],
+)
+
+
 def search_script(strategy: Strategy) -> dict[str, list[Scripted]]:
     sources = load_fixture("sources", SourceList)
     two_sources = sources.model_copy(update={"sources": sources.sources[:2]})
@@ -44,6 +55,7 @@ def search_script(strategy: Strategy) -> dict[str, list[Scripted]]:
         "outreach-scout": [load_fixture("scout_results", list[ScoutResult])[0]],
         "field-researcher": [load_fixture("field_research", FieldResearchResult)] * 2,
         "fit-judge": [load_fixture("fit_verdict", FitVerdict)] * 2,
+        "run-summarizer": [SUMMARY],
     }
 
 
@@ -81,6 +93,60 @@ async def test_brief_to_scored_report_through_the_strategy_gate(
     assert len(api.runner.payloads["outreach-scout"]) == 1, "max_sources caps the scouts"
     researched = {f.id for f in proposal.spec.fields} & set(report[0].fields)
     assert researched, "researched field values reach the report"
+    state = done["state"]
+    assert isinstance(state, dict)
+    assert state["summary"] == SUMMARY.model_dump(mode="json")
+    sent = api.runner.payloads["run-summarizer"][0].model_dump()
+    assert {i["id"] for i in sent["items"]} == {item.id for item in report}
+
+
+async def approved_run(api: Api, strategy: Strategy, options: dict[str, object]) -> JsonObject:
+    project_id = await api.project(brief=biz_brief())
+    api.script(
+        {
+            "brief-reviewer": [load_fixture("brief_review", BriefReview)],
+            "field-proposer": [load_fixture("field_proposal", FieldProposal)],
+        }
+    )
+    fields_run = await api.ok("POST", f"/api/projects/{project_id}/fields/propose")
+    await api.settle(int(str(fields_run["id"])))
+    await api.ok("POST", f"/api/projects/{project_id}/fields/1/accept")
+    run = await api.ok("POST", f"/api/projects/{project_id}/runs", {"options": options})
+    run_id = int(str(run["id"]))
+    await api.settle(run_id)
+    await api.ok("POST", f"/api/runs/{run_id}/gate", {"approve": True})
+    return await api.settle(run_id)
+
+
+class TestRunSummary:
+    async def test_switched_off_skips_the_summarizer(self, api: Api, strategy: Strategy) -> None:
+        script = search_script(strategy)
+        del script["run-summarizer"]
+        api.script(script)
+
+        done = await approved_run(api, strategy, {"max_sources": 1, "summary": False})
+
+        assert done["status"] == "complete", done["error"]
+        assert "run-summarizer" not in api.runner.payloads
+
+    async def test_a_failed_summary_leaves_the_run_complete(
+        self, api: Api, strategy: Strategy
+    ) -> None:
+        script = search_script(strategy)
+        script["run-summarizer"] = [
+            AgentRunError("run-summarizer", "error_max_turns", "out of turns")
+        ]
+        api.script(script)
+
+        done = await approved_run(api, strategy, {"max_sources": 1})
+
+        assert done["status"] == "complete", done["error"]
+        state = done["state"]
+        assert isinstance(state, dict)
+        assert state["summary"] is None
+        assert "No run summary: run-summarizer: run failed (error_max_turns): out of turns" in str(
+            state["concerns"]
+        )
 
 
 async def test_events_replay_from_last_event_id(api: Api, proposal: FieldProposal) -> None:

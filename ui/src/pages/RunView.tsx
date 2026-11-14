@@ -22,6 +22,7 @@ const EVENT_KINDS = [
   "draft",
   "drafts",
   "skipped",
+  "summary",
 ];
 
 function useRunEvents(runId: number, onEvent: () => void): RunEvent[] {
@@ -91,6 +92,7 @@ export function RunView({ id }: { id: number }): ReactElement {
       </Section>
       {r.status === "awaiting_gate" && r.pending_gate && <Gate run={r} gate={r.pending_gate} onDone={refresh} />}
       {r.pipeline === "biz.fields" && r.status === "complete" && <FieldsDone run={r} />}
+      {isSummary(r.state.summary) && <SummaryView summary={r.state.summary} />}
       <Section title="Activity">
         <ol className="events">
           {events.map((e) => (
@@ -110,6 +112,53 @@ function describe(e: RunEvent): string {
   if (e.kind === "phase") return String(p.phase);
   if (e.kind === "gate") return String(p.kind);
   return JSON.stringify(p);
+}
+
+type RunSummary = {
+  summary: string;
+  patterns: { pattern: string; item_ids: number[] }[];
+  recommendations: string[];
+};
+
+function isSummary(value: unknown): value is RunSummary {
+  return typeof value === "object" && value !== null && typeof (value as RunSummary).summary === "string";
+}
+
+function SummaryView({ summary }: { summary: RunSummary }): ReactElement {
+  return (
+    <Section title="Run summary">
+      {summary.summary.split(/\n\s*\n/).map((paragraph, n) => (
+        <p key={n}>{paragraph}</p>
+      ))}
+      {summary.patterns.length > 0 && (
+        <>
+          <h3>Patterns</h3>
+          <ul>
+            {summary.patterns.map((p, n) => (
+              <li key={n}>
+                {p.pattern}{" "}
+                {p.item_ids.map((id) => (
+                  <a key={id} className="muted" href={href.item(id)}>
+                    #{id}{" "}
+                  </a>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {summary.recommendations.length > 0 && (
+        <>
+          <h3>Recommendations</h3>
+          <ol>
+            {summary.recommendations.map((r, n) => (
+              <li key={n}>{r}</li>
+            ))}
+          </ol>
+        </>
+      )}
+    </Section>
+  );
 }
 
 type BriefReview = { complete?: boolean; gaps?: { field: string; question: string }[]; suggestions?: string[] };

@@ -1,9 +1,10 @@
-"""Biz search as phases: plan, strategy gate, sources, scout, assess and score."""
+"""Biz search as phases: plan, strategy gate, sources, scout, assess and score, then summarize."""
 
 import logging
 
 from pydantic import BaseModel, Field
 
+from mozg_outreach.agents import AgentOutputError, AgentRunError
 from mozg_outreach.domain import ItemCandidate
 from mozg_outreach.pipelines.biz.assessment import BizAssessment
 from mozg_outreach.pipelines.biz.assessment_models import AssessmentContext
@@ -16,6 +17,12 @@ from mozg_outreach.pipelines.biz.models import (
     StrategyInput,
 )
 from mozg_outreach.pipelines.biz.outreach import ASSESSMENT
+from mozg_outreach.pipelines.biz.summary import (
+    BizRunSummarizer,
+    RunSummary,
+    SummaryRequest,
+    summary_item,
+)
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.scoring.biz import BizScoreInput, BizScorer
@@ -30,6 +37,7 @@ class BizOptions(BaseModel):
     region: str | None = Field(default=None, description="Hard filter over the brief's regions.")
     climate: bool = Field(default=False, description="Research the market climate first.")
     max_sources: int = Field(default=4, ge=1, le=10, description="Directories scouted by agents.")
+    summary: bool = Field(default=True, description="Summarize patterns across the scored leads.")
 
 
 class BizSearchState(RunState):
@@ -39,6 +47,7 @@ class BizSearchState(RunState):
     sources: list[DirectorySource] = Field(default_factory=list)
     candidates: list[ItemCandidate] = Field(default_factory=list)
     item_ids: list[int] = Field(default_factory=list)
+    summary: RunSummary | None = None
 
 
 type Ctx = FlowContext[BizSearchState]
@@ -143,6 +152,30 @@ async def assess(ctx: Ctx) -> PhaseResult:
     return None
 
 
+async def summarize(ctx: Ctx) -> PhaseResult:
+    if not ctx.state.options.summary:
+        return None
+    with ctx.db.session() as session:
+        found = [session.get(Item, i) for i in ctx.state.item_ids]
+        items = [summary_item(item) for item in found if item is not None]
+    if not items:
+        return None
+    items.sort(key=lambda i: -1 if i.score is None else i.score, reverse=True)
+    try:
+        summary = await BizRunSummarizer(ctx.steps).summarize(
+            SummaryRequest(strategy=_strategy(ctx), items=items)
+        )
+    except (AgentRunError, AgentOutputError) as exc:
+        # The report is complete without a summary, so a failed one doesn't fail the run.
+        logger.warning("run summary failed: %s", exc)
+        ctx.state.concerns.append(f"No run summary: {exc}")
+        return None
+    ctx.state.summary = summary
+    ctx.state.concerns += summary.concerns
+    ctx.emit("summary", {"patterns": len(summary.patterns)})
+    return None
+
+
 BIZ_SEARCH = FlowSpec[BizSearchState](
     pipeline="biz.search",
     state_type=BizSearchState,
@@ -152,5 +185,6 @@ BIZ_SEARCH = FlowSpec[BizSearchState](
         Phase("sources", sources),
         Phase("scout", scout),
         Phase("assess", assess),
+        Phase("summarize", summarize),
     ),
 )

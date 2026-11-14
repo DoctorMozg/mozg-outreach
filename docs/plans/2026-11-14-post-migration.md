@@ -36,6 +36,8 @@ Follow-up to `2026-11-14-plugin-migration.md`. It closes the gaps found during t
 - Update the prompt-count test (biz 15 to 13) and PROVENANCE (reporter adapted, two agents dropped).
 - verify: offline test with `RecordedRunner` (summary stored, an unknown item id dropped with a concern, `summary=False` skips the phase, an agent error leaves the run complete); one live summarize call on recorded items, about $0.4.
 
+Done, M13: `pipelines/biz/summary.py` holds the contracts, `summary_item` (score, fit verdict and field values of a stored item) and `cited_only`. The run page shows the summary, patterns link to their leads. Live call on the three M10 companies ($0.10): five patterns, all citing real ids, recommendations tied to the strategy's angles, and honest concerns (single source page, conflicting headcounts, a top score with half its axes unassessed).
+
 **M14 Registry ingest for job and freelance** (item 2)
 
 - This is the third ingest after biz, so the shared parts move to `registry/ingest.py`: observe a company with its sightings and link it to the item as `subject`; observe a person who `works_at` a company and link them as `contact`; suggest merges. `BizRegistryIngest` keeps only its biz mapping.
