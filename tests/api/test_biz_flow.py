@@ -1,7 +1,7 @@
 import pytest
 
 from mozg_outreach.agents import AgentRunError
-from mozg_outreach.api.schemas import ItemOut
+from mozg_outreach.api.schemas import ItemDetail, ItemOut
 from mozg_outreach.pipelines.biz.assessment_models import FitVerdict
 from mozg_outreach.pipelines.biz.models import (
     BriefReview,
@@ -93,6 +93,9 @@ async def test_brief_to_scored_report_through_the_strategy_gate(
     assert len(api.runner.payloads["outreach-scout"]) == 1, "max_sources caps the scouts"
     researched = {f.id for f in proposal.spec.fields} & set(report[0].fields)
     assert researched, "researched field values reach the report"
+    for item in report:
+        detail = await api.get(f"/api/items/{item.id}", ItemDetail)
+        assert [(e.kind, e.role) for e in detail.entities] == [("company", "subject")]
     state = done["state"]
     assert isinstance(state, dict)
     assert state["summary"] == SUMMARY.model_dump(mode="json")

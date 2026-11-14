@@ -16,13 +16,15 @@ from mozg_outreach.pipelines.biz.models import (
     Strategy,
     StrategyInput,
 )
-from mozg_outreach.pipelines.biz.outreach import ASSESSMENT
+from mozg_outreach.pipelines.biz.outreach import ASSESSMENT, stored_candidate
+from mozg_outreach.pipelines.biz.registry_ingest import BizRegistryIngest
 from mozg_outreach.pipelines.biz.summary import (
     BizRunSummarizer,
     RunSummary,
     SummaryRequest,
     summary_item,
 )
+from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.scoring.biz import BizScoreInput, BizScorer
@@ -130,6 +132,7 @@ async def assess(ctx: Ctx) -> PhaseResult:
     )
     with ctx.db.session() as session:
         items = ItemRepository(session)
+        ingest = BizRegistryIngest(session)
         pairs = zip(ctx.state.item_ids, ctx.state.candidates, results, strict=True)
         for item_id, candidate, result in pairs:
             item = session.get(Item, item_id)
@@ -148,6 +151,9 @@ async def assess(ctx: Ctx) -> PhaseResult:
                 )
             )
             items.set_score(item, score)
+            # Every scored company joins the registry now; enrichment later adds its people.
+            context = IngestContext(project_id=ctx.project_id, run_id=ctx.run_id, item_id=item.id)
+            ingest.company(stored_candidate(item), context)
     ctx.emit("scored", {"items": len(results)})
     return None
 

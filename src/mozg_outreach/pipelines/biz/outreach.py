@@ -51,7 +51,7 @@ class BizOutreach:
     ) -> CompanyDossier:
         """Run the five enrichment agents, then rescore with the dossier and register its people."""
         _require_selected(item)
-        candidate = _candidate(item)
+        candidate = stored_candidate(item)
         dossier = await BizEnrichment(self._steps).enrich(brief_from_candidate(candidate, strategy))
         self._items.set_detail(item, DOSSIER, dossier)
         ingest = BizRegistryIngest(self._session)
@@ -132,7 +132,7 @@ def _fields(item: Item) -> dict[str, FieldValue]:
     return {k: FieldValue.model_validate(v) for k, v in item.fields.items()}
 
 
-def _candidate(item: Item) -> ItemCandidate:
+def stored_candidate(item: Item) -> ItemCandidate:
     return ItemCandidate(
         kind=item.kind, dedup_key=item.dedup_key, title=item.title, fields=_fields(item)
     )
