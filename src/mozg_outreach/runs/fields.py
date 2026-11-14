@@ -1,9 +1,11 @@
-"""Review a biz brief, then propose report fields as a new draft spec version."""
+"""Propose report fields as a new draft spec version; biz reviews its brief first."""
 
 from pydantic import Field
 
+from mozg_outreach.domain import ProjectMode
 from mozg_outreach.pipelines.biz.discovery import BizDiscovery
 from mozg_outreach.pipelines.biz.models import BizBrief, BriefReview
+from mozg_outreach.pipelines.fields import FieldProposalInput, FieldProposer, SeekerBrief
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.storage.repositories import FieldSpecRepository
@@ -27,8 +29,16 @@ async def review(ctx: Ctx) -> PhaseResult:
 
 async def propose(ctx: Ctx) -> PhaseResult:
     inputs = ProjectInputs.load(ctx.db, ctx.project_id)
-    brief = BizBrief.model_validate(inputs.require_brief())
-    proposal = await BizDiscovery(ctx.steps).propose_fields(brief, inputs.spec)
+    raw = inputs.require_brief()
+    # Job and freelance briefs hold the CV, which proposing fields doesn't need.
+    brief = (
+        BizBrief.model_validate(raw)
+        if inputs.mode == ProjectMode.BIZ
+        else SeekerBrief.model_validate(raw)
+    )
+    proposal = await FieldProposer(ctx.steps).propose(
+        FieldProposalInput(mode=inputs.mode, brief=brief, current_spec=inputs.spec)
+    )
     with ctx.db.session() as session:
         ctx.state.version = (
             FieldSpecRepository(session).propose(ctx.project_id, proposal.spec).version
@@ -42,4 +52,10 @@ BIZ_FIELDS = FlowSpec[FieldProposalState](
     pipeline="biz.fields",
     state_type=FieldProposalState,
     phases=(Phase("review", review), Phase("propose", propose)),
+)
+JOB_FIELDS = FlowSpec[FieldProposalState](
+    pipeline="job.fields", state_type=FieldProposalState, phases=(Phase("propose", propose),)
+)
+FREELANCE_FIELDS = FlowSpec[FieldProposalState](
+    pipeline="freelance.fields", state_type=FieldProposalState, phases=(Phase("propose", propose),)
 )

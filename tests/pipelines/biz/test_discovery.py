@@ -4,6 +4,7 @@ from typing import Literal
 import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
+from mozg_outreach.domain import ProjectMode
 from mozg_outreach.pipelines.biz.discovery import (
     BizDiscovery,
     DiscoveryError,
@@ -16,13 +17,13 @@ from mozg_outreach.pipelines.biz.models import (
     ClimateReport,
     ClimateSources,
     DirectorySource,
-    FieldProposal,
     ScoutedCompany,
     ScoutResult,
     SourceList,
     Strategy,
     StrategyInput,
 )
+from mozg_outreach.pipelines.fields import FieldProposal, FieldProposalInput, FieldProposer
 from mozg_outreach.pipelines.steps import PipelineSteps
 from tests.pipelines.biz.conftest import load_fixture as load
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner, Scripted
@@ -70,7 +71,9 @@ async def test_recorded_chain_brief_to_deduped_candidates(
     d = BizDiscovery(steps)
 
     assert (await d.review_brief(brief)).complete
-    proposal = await d.propose_fields(brief, None)
+    proposal = await FieldProposer(steps).propose(
+        FieldProposalInput(mode=ProjectMode.BIZ, brief=brief)
+    )
     planned = await d.plan_strategy(
         StrategyInput(goal=brief.goal.goal, region="Estonia", brief=brief)
     )

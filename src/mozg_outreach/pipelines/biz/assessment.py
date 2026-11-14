@@ -3,35 +3,25 @@
 import asyncio
 import logging
 
-from pydantic import BaseModel
-
 from mozg_outreach.agents import AgentOutputError, AgentRunError
-from mozg_outreach.domain import (
-    FieldDefinition,
-    FieldScalar,
-    FieldSpec,
-    FieldType,
-    FieldValue,
-    ItemCandidate,
-)
+from mozg_outreach.domain import FieldSpec, FieldValue, ItemCandidate
 from mozg_outreach.pipelines.biz.assessment_models import (
     AssessmentContext,
     CompanyAssessment,
-    FieldResearchInput,
-    FieldResearchResult,
     FitJudgeInput,
     FitVerdict,
 )
 from mozg_outreach.pipelines.biz.enrichment import brief_from_candidate
 from mozg_outreach.pipelines.biz.enrichment_models import CompanyBrief
+from mozg_outreach.pipelines.fields import (
+    FieldResearcher,
+    FieldResearchInput,
+    FieldResearchOutcome,
+    FieldSubject,
+)
 from mozg_outreach.pipelines.steps import PipelineSteps
 
 logger = logging.getLogger(__name__)
-
-
-class FieldResearchOutcome(BaseModel):
-    values: dict[str, FieldValue]
-    concerns: list[str]
 
 
 class BizAssessment:
@@ -39,9 +29,10 @@ class BizAssessment:
         self._steps = steps
 
     async def research_fields(self, company: CompanyBrief, spec: FieldSpec) -> FieldResearchOutcome:
-        payload = FieldResearchInput(company=company, fields=spec.fields)
-        result = await self._steps.run("shared", "field-researcher", payload, FieldResearchResult)
-        return accept_field_values(result, spec)
+        subject = FieldSubject.model_validate(company, from_attributes=True)
+        return await FieldResearcher(self._steps).research(
+            FieldResearchInput(subject=subject, listing=None, fields=spec.fields)
+        )
 
     async def judge_fit(self, payload: FitJudgeInput) -> FitVerdict:
         return await self._steps.run("biz", "fit-judge", payload, FitVerdict)
@@ -79,41 +70,3 @@ class BizAssessment:
         self, candidates: list[ItemCandidate], context: AssessmentContext
     ) -> list[CompanyAssessment]:
         return list(await asyncio.gather(*(self.assess(c, context) for c in candidates)))
-
-
-def accept_field_values(result: FieldResearchResult, spec: FieldSpec) -> FieldResearchOutcome:
-    """Keep values for known fields that match their type and cite a source page."""
-    definitions = spec.by_id()
-    values: dict[str, FieldValue] = {}
-    concerns = list(result.concerns)
-    for researched in result.values:
-        definition = definitions.get(researched.field_id)
-        if definition is None:
-            concerns.append(f"Dropped value for unknown field '{researched.field_id}'.")
-        elif researched.value is None:
-            continue
-        elif not matches_type(researched.value, definition):
-            concerns.append(
-                f"Dropped '{definition.id}': {researched.value!r} is not a {definition.type}."
-            )
-        elif not researched.source_url:
-            concerns.append(f"Dropped '{definition.id}': no source page cited.")
-        else:
-            values[definition.id] = FieldValue(
-                value=researched.value, source_url=researched.source_url, quote=researched.quote
-            )
-    if len(concerns) > len(result.concerns):
-        logger.info("field research: %d values dropped", len(concerns) - len(result.concerns))
-    return FieldResearchOutcome(values=values, concerns=concerns)
-
-
-def matches_type(value: FieldScalar, definition: FieldDefinition) -> bool:
-    match definition.type:
-        case FieldType.NUMBER:
-            return isinstance(value, int | float) and not isinstance(value, bool)
-        case FieldType.BOOLEAN:
-            return isinstance(value, bool)
-        case FieldType.LIST:
-            return isinstance(value, list)
-        case _:
-            return isinstance(value, str) and bool(value.strip())

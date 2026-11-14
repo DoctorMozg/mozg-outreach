@@ -4,17 +4,21 @@ import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
 from mozg_outreach.domain import FieldDefinition, FieldSpec, FieldType, ItemCandidate
-from mozg_outreach.pipelines.biz.assessment import BizAssessment, accept_field_values
+from mozg_outreach.pipelines.biz.assessment import BizAssessment
 from mozg_outreach.pipelines.biz.assessment_models import (
     AssessmentContext,
     CompanyAssessment,
-    FieldResearchResult,
     FitJudgeInput,
     FitVerdict,
-    ResearchedValue,
 )
 from mozg_outreach.pipelines.biz.discovery import dedup_companies
-from mozg_outreach.pipelines.biz.models import FieldProposal, ScoutResult, Strategy
+from mozg_outreach.pipelines.biz.models import ScoutResult, Strategy
+from mozg_outreach.pipelines.fields import (
+    FieldProposal,
+    FieldResearchResult,
+    ResearchedValue,
+    accept_field_values,
+)
 from mozg_outreach.pipelines.steps import PipelineSteps
 from tests.pipelines.biz.conftest import load_fixture
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner, Scripted

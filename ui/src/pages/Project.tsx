@@ -15,14 +15,13 @@ export function Project({ id, tab }: { id: number; tab: string }): ReactElement 
   const project = useQuery({ queryKey: ["project", id], queryFn: () => get<ProjectRow>(`/api/projects/${id}`) });
   if (!project.data) return <ErrorBox error={project.error} />;
   const p = project.data;
-  const tabs = TABS.filter((t) => t !== "fields" || p.mode === "biz");
   return (
     <div className="stack">
       <h2>
         {p.name} <span className="tag">{p.mode}</span>
       </h2>
       <nav className="tabs">
-        {tabs.map((t) => (
+        {TABS.map((t) => (
           <a key={t} href={href.project(id, t)} className={t === tab ? "active" : ""}>
             {t}
           </a>

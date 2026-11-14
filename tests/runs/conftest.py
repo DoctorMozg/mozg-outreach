@@ -24,6 +24,7 @@ class FakeFeed:
 
     def __init__(self) -> None:
         self.cursors: list[str | None] = []
+        self.extra: list[SourceItem] = []
 
     async def fetch(self, query: SourceQuery, cursor: str | None) -> FetchResult:
         self.cursors.append(cursor)
@@ -40,7 +41,7 @@ class FakeFeed:
             org_name="Acme",
             location="Remote - EU",
         )
-        return FetchResult(items=[item], cursor="2026-11-13T09:00:00+00:00")
+        return FetchResult(items=[item, *self.extra], cursor="2026-11-13T09:00:00+00:00")
 
 
 class Harness:

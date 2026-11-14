@@ -24,6 +24,7 @@ const EVENT_KINDS = [
   "skipped",
   "summary",
   "identified",
+  "fields_researched",
 ];
 
 function useRunEvents(runId: number, onEvent: () => void): RunEvent[] {
@@ -92,7 +93,7 @@ export function RunView({ id }: { id: number }): ReactElement {
         <Concerns items={r.state.concerns} />
       </Section>
       {r.status === "awaiting_gate" && r.pending_gate && <Gate run={r} gate={r.pending_gate} onDone={refresh} />}
-      {r.pipeline === "biz.fields" && r.status === "complete" && <FieldsDone run={r} />}
+      {r.pipeline.endsWith(".fields") && r.status === "complete" && <FieldsDone run={r} />}
       {isSummary(r.state.summary) && <SummaryView summary={r.state.summary} />}
       <Section title="Activity">
         <ol className="events">

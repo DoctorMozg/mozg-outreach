@@ -1,5 +1,5 @@
 """Biz discovery phases. The run manager owns the strategy approval gate, so each phase is a
-separate call: review_brief, propose_fields, [research_climate], plan_strategy, [gate],
+separate call: review_brief, [research_climate], plan_strategy, [gate],
 find_sources, scout."""
 
 import asyncio
@@ -10,7 +10,7 @@ import re
 from pydantic import BaseModel
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
-from mozg_outreach.domain import FieldSpec, FieldValue, ItemCandidate, ItemKind
+from mozg_outreach.domain import FieldValue, ItemCandidate, ItemKind
 from mozg_outreach.pipelines.biz.models import (
     BizBrief,
     BriefReview,
@@ -19,8 +19,6 @@ from mozg_outreach.pipelines.biz.models import (
     ClimateSourceInput,
     ClimateSources,
     DirectorySource,
-    FieldProposal,
-    FieldProposalInput,
     ScoutedCompany,
     ScoutInput,
     ScoutResult,
@@ -55,10 +53,6 @@ class BizDiscovery:
 
     async def review_brief(self, brief: BizBrief) -> BriefReview:
         return await self._steps.run("shared", "brief-reviewer", brief, BriefReview)
-
-    async def propose_fields(self, brief: BizBrief, current: FieldSpec | None) -> FieldProposal:
-        payload = FieldProposalInput(mode="biz", brief=brief, current_spec=current)
-        return await self._steps.run("shared", "field-proposer", payload, FieldProposal)
 
     async def plan_strategy(self, request: StrategyInput) -> Strategy:
         return await self._steps.run("biz", "outreach-strategist", request, Strategy)

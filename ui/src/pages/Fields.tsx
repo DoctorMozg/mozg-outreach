@@ -52,7 +52,12 @@ export function Fields({ project }: { project: Project }): ReactElement {
       }
     >
       <p className="hint">
-        {accepted ? `Runs use v${accepted.version}.` : "Accept a version before running the search."} Accepted fields keep their type;
+        {accepted
+          ? `Runs use v${accepted.version}.`
+          : project.mode === "biz"
+            ? "Accept a version before running the search."
+            : "Optional: with an accepted version, each search researches these fields for its best leads."}{" "}
+        Accepted fields keep their type;
         add a new id to change one.
       </p>
       <table className="edit">

@@ -4,6 +4,7 @@ from collections import Counter
 
 from pydantic import BaseModel, Field
 
+from mozg_outreach.domain import FieldSpec
 from mozg_outreach.pipelines.freelance.models import (
     FreelanceBrief,
     FreelanceStrategy,
@@ -18,8 +19,10 @@ from mozg_outreach.pipelines.freelance.search import (
     to_candidate,
 )
 from mozg_outreach.pipelines.job.models import Excluded, JobSource
-from mozg_outreach.pipelines.leads.enrichment import LeadEnrichment, LeadTask, RunRef
+from mozg_outreach.pipelines.leads.enrichment import IDENTITY, LeadEnrichment, LeadTask, RunRef
+from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, field_task
 from mozg_outreach.pipelines.leads.identify import lead_input
+from mozg_outreach.pipelines.leads.models import LeadIdentity
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.runs.job import JOB_CANONICAL, MAX_EXCLUDED_KEPT
@@ -32,6 +35,9 @@ GIG, GIG_JUDGMENT = "gig", "judgment"
 
 class FreelanceOptions(BaseModel):
     max_boards: int = Field(default=3, ge=1, le=12, description="Boards scouted by agents.")
+    research_fields_top: int = Field(
+        default=10, ge=0, le=30, description="Best leads whose report fields are researched."
+    )
 
 
 class FreelanceSearchState(RunState):
@@ -126,8 +132,7 @@ async def score(ctx: Ctx) -> PhaseResult:
 
 async def identify(ctx: Ctx) -> PhaseResult:
     """Basic enrichment: the client and named people of every scored gig."""
-    catalog = load_catalog(FREELANCE_CATALOG)
-    boards = frozenset(b.name.casefold() for b in [*catalog.scrape, *catalog.guidance])
+    boards = _board_names()
     with ctx.db.session() as session:
         stored = [session.get(Item, i) for i in ctx.state.item_ids]
         tasks = [_gig_task(item, boards) for item in stored if item is not None]
@@ -137,6 +142,32 @@ async def identify(ctx: Ctx) -> PhaseResult:
     ctx.state.concerns += report.concerns
     ctx.emit("identified", {"companies": report.companies, "people": report.people})
     return None
+
+
+async def fields(ctx: Ctx) -> PhaseResult:
+    """Research the project's report fields for the best-scored gigs."""
+    spec = ProjectInputs.load(ctx.db, ctx.project_id).spec
+    top = ctx.state.options.research_fields_top
+    if spec is None or top == 0:
+        return None
+    with ctx.db.session() as session:
+        stored = [session.get(Item, i) for i in ctx.state.item_ids[:top]]
+        boards = _board_names()
+        tasks = [_field_task(item, spec, boards) for item in stored if item is not None]
+    ctx.state.concerns += await LeadFieldResearch(ctx.db, ctx.steps).run(tasks)
+    ctx.emit("fields_researched", {"items": len(tasks)})
+    return None
+
+
+def _field_task(item: Item, spec: FieldSpec, boards: frozenset[str]) -> FieldTask:
+    found = item.details.get(IDENTITY)
+    identity = LeadIdentity.model_validate(found) if found else None
+    return field_task(item.id, _gig_task(item, boards).lead, identity, spec)
+
+
+def _board_names() -> frozenset[str]:
+    catalog = load_catalog(FREELANCE_CATALOG)
+    return frozenset(b.name.casefold() for b in [*catalog.scrape, *catalog.guidance])
 
 
 def _gig_task(item: Item, boards: frozenset[str]) -> LeadTask:
@@ -166,5 +197,6 @@ FREELANCE_SEARCH = FlowSpec[FreelanceSearchState](
         Phase("judge", judge),
         Phase("score", score),
         Phase("identify", identify),
+        Phase("fields", fields),
     ),
 )

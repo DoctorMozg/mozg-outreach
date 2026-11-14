@@ -4,8 +4,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from mozg_outreach.domain import FieldSpec
-
 CONCERNS_DESCRIPTION = (
     "Caveats for the user: source conflicts, unverified claims, partial coverage. Empty if none."
 )
@@ -57,17 +55,6 @@ class BriefReview(BaseModel):
     complete: bool
     gaps: list[BriefGap]
     suggestions: list[str]
-
-
-class FieldProposalInput(BaseModel):
-    mode: Literal["biz", "job", "freelance"]
-    brief: BizBrief
-    current_spec: FieldSpec | None = None
-
-
-class FieldProposal(BaseModel):
-    spec: FieldSpec
-    rationale: str
 
 
 class GoalAnalysis(BaseModel):

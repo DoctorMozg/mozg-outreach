@@ -7,6 +7,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from mozg_outreach.domain import FieldSpec
 from mozg_outreach.pipelines.job.feeds import FeedRequest, JobFeeds
 from mozg_outreach.pipelines.job.listings import SourcedListing
 from mozg_outreach.pipelines.job.models import (
@@ -18,8 +19,10 @@ from mozg_outreach.pipelines.job.models import (
     ListingJudgment,
 )
 from mozg_outreach.pipelines.job.search import JobSearch, Judgments, load_canonical, to_candidate
-from mozg_outreach.pipelines.leads.enrichment import LeadEnrichment, LeadTask, RunRef
+from mozg_outreach.pipelines.leads.enrichment import IDENTITY, LeadEnrichment, LeadTask, RunRef
+from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, field_task
 from mozg_outreach.pipelines.leads.identify import lead_input
+from mozg_outreach.pipelines.leads.models import LeadIdentity
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.storage.models import Item, SourceConfig
@@ -37,6 +40,9 @@ MAX_EXCLUDED_KEPT = 100
 
 class JobOptions(BaseModel):
     max_boards: int = Field(default=4, ge=0, le=15, description="Web boards scouted by agents.")
+    research_fields_top: int = Field(
+        default=10, ge=0, le=30, description="Best leads whose report fields are researched."
+    )
 
 
 class JobSearchState(RunState):
@@ -184,6 +190,26 @@ async def identify(ctx: Ctx) -> PhaseResult:
     return None
 
 
+async def fields(ctx: Ctx) -> PhaseResult:
+    """Research the project's report fields for the best-scored listings."""
+    spec = ProjectInputs.load(ctx.db, ctx.project_id).spec
+    top = ctx.state.options.research_fields_top
+    if spec is None or top == 0:
+        return None
+    with ctx.db.session() as session:
+        stored = [session.get(Item, i) for i in ctx.state.item_ids[:top]]
+        tasks = [_field_task(item, spec) for item in stored if item is not None]
+    ctx.state.concerns += await LeadFieldResearch(ctx.db, ctx.steps).run(tasks)
+    ctx.emit("fields_researched", {"items": len(tasks)})
+    return None
+
+
+def _field_task(item: Item, spec: FieldSpec) -> FieldTask:
+    found = item.details.get(IDENTITY)
+    identity = LeadIdentity.model_validate(found) if found else None
+    return field_task(item.id, _listing_task(item).lead, identity, spec)
+
+
 def _listing_task(item: Item) -> LeadTask:
     listing, _ = listing_of(item)
     return LeadTask(
@@ -209,5 +235,6 @@ JOB_SEARCH = FlowSpec[JobSearchState](
         Phase("judge", judge),
         Phase("score", score),
         Phase("identify", identify),
+        Phase("fields", fields),
     ),
 )

@@ -2,15 +2,15 @@ import pytest
 
 from mozg_outreach.agents import AgentRunError
 from mozg_outreach.api.schemas import ItemOut
-from mozg_outreach.pipelines.biz.assessment_models import FieldResearchResult, FitVerdict
+from mozg_outreach.pipelines.biz.assessment_models import FitVerdict
 from mozg_outreach.pipelines.biz.models import (
     BriefReview,
-    FieldProposal,
     ScoutResult,
     SourceList,
     Strategy,
 )
 from mozg_outreach.pipelines.biz.summary import Pattern, RunSummary
+from mozg_outreach.pipelines.fields import FieldProposal, FieldResearchResult
 from mozg_outreach.storage.models import JsonObject
 from tests.pipelines.biz.conftest import load_fixture
 from tests.pipelines.conftest import Scripted

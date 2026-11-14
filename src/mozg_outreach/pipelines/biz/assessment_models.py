@@ -4,27 +4,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from mozg_outreach.domain import FieldDefinition, FieldScalar, FieldSpec, FieldValue
+from mozg_outreach.domain import FieldSpec, FieldValue
 from mozg_outreach.pipelines.biz.enrichment_models import CompanyBrief, CompanyDossier
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION, SearchSignals, Strategy
-
-
-class FieldResearchInput(BaseModel):
-    company: CompanyBrief
-    fields: list[FieldDefinition] = Field(min_length=1)
-
-
-class ResearchedValue(BaseModel):
-    field_id: str
-    value: FieldScalar = Field(description="Typed per the field's `type`; null when not found.")
-    source_url: str | None = Field(description="Page the value was read from.")
-    quote: str | None = Field(description="Verbatim text from source_url that supports the value.")
-
-
-class FieldResearchResult(BaseModel):
-    values: list[ResearchedValue]
-    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
-
 
 SignalKind = Literal["must_have", "strong_positive", "weak_positive", "disqualifying"]
 

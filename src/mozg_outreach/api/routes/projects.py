@@ -23,8 +23,7 @@ from mozg_outreach.domain import FieldSpec, ProjectMode
 from mozg_outreach.pipelines.biz.models import BizBrief
 from mozg_outreach.pipelines.freelance.models import FreelanceBrief
 from mozg_outreach.pipelines.job.models import JobBrief
-from mozg_outreach.runs.catalog import SEARCH_OPTIONS
-from mozg_outreach.runs.fields import BIZ_FIELDS
+from mozg_outreach.runs.catalog import FIELD_PIPELINES, SEARCH_OPTIONS
 from mozg_outreach.runs.job import WEB_SEARCH
 from mozg_outreach.sources.factory import source_kinds
 from mozg_outreach.storage.models import FieldSpecVersion, JsonObject, Project, Run, SourceConfig
@@ -144,14 +143,13 @@ async def accept_field_spec(project_id: int, version: int, svc: Svc) -> FieldSpe
 
 @router.post("/projects/{project_id}/fields/propose", status_code=202)
 async def propose_fields(project_id: int, svc: Svc) -> RunOut:
-    """Start a run that reviews the brief and proposes report fields as a draft version."""
+    """Start a run that proposes report fields as a draft version; biz reviews its brief first."""
     with svc.db.session() as session:
         project = get_or_404(session, Project, project_id)
-        if project.mode != ProjectMode.BIZ:
-            raise HTTPException(409, f"{project.mode} reports have fixed columns")
         if not project.brief:
             raise HTTPException(409, "write the brief first")
-    run_id = svc.runs.start(project_id, BIZ_FIELDS.pipeline, {})
+        pipeline = FIELD_PIPELINES[project.mode]
+    run_id = svc.runs.start(project_id, pipeline, {})
     with svc.db.session() as session:
         return RunOut.model_validate(get_or_404(session, Run, run_id))
 
