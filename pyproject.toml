@@ -10,11 +10,18 @@ license = "GPL-3.0-or-later"
 requires-python = ">=3.12"
 dependencies = [
   "claude-agent-sdk>=0.2.182,<0.3",
+  "fastapi>=0.115,<1",
   "httpx>=0.28,<1",
   "pydantic>=2.11,<3",
   "sqlalchemy>=2.0.40,<3",
+  "sse-starlette>=2.1,<4",
   "telethon>=1.40,<2",
+  "uvicorn>=0.32,<1",
 ]
+
+
+[project.scripts]
+mozg-outreach = "mozg_outreach.api.__main__:main"
 
 [dependency-groups]
 dev = [

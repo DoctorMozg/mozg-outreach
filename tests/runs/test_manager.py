@@ -1,12 +1,14 @@
-import asyncio
+from pathlib import Path
 
 from mozg_outreach.agents import AgentRunError
 from mozg_outreach.domain import RunStatus
 from mozg_outreach.pipelines.job.models import JobStrategy
 from mozg_outreach.runs.flow import GateAnswer
 from mozg_outreach.runs.job import JUDGMENT, LISTING
+from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import Item, Run, SourceConfig
 from mozg_outreach.storage.repositories import ItemRepository
+from tests.pipelines.conftest import HangingRunner
 
 from .conftest import FEED_URL, Harness, judged
 
@@ -87,17 +89,11 @@ class TestLifecycle:
         await harness.manager.wait(run_id)
         assert run_row(harness, run_id).status == RunStatus.AWAITING_GATE
 
-    async def test_cancel_stops_a_running_phase(self, harness: Harness) -> None:
-        project_id = harness.job_project()
-        started = asyncio.Event()
-
-        async def hang(*_args: object, **_kwargs: object) -> None:
-            started.set()
-            await asyncio.Event().wait()
-
-        harness.runner.run = hang  # type: ignore[method-assign,assignment]
-        run_id = harness.manager.start(project_id, "job.search", {})
-        await started.wait()
+    async def test_cancel_stops_a_running_phase(self, db: Database, tmp_path: Path) -> None:
+        runner = HangingRunner()
+        harness = Harness(db, tmp_path, runner)
+        run_id = harness.manager.start(harness.job_project(), "job.search", {})
+        await runner.started.wait()
         harness.manager.cancel(run_id)
         await harness.manager.wait(run_id)
         assert run_row(harness, run_id).status == RunStatus.CANCELLED

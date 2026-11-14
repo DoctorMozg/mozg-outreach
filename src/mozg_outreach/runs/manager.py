@@ -16,6 +16,7 @@ from mozg_outreach.runs.events import RunLog
 from mozg_outreach.runs.flow import (
     AdapterFactory,
     AnyFlow,
+    Approval,
     FlowContext,
     GateAnswer,
     GateRequest,
@@ -72,6 +73,10 @@ class RunManager:
             if run.status != RunStatus.AWAITING_GATE or run.pending_gate is None:
                 raise RunStateError(f"run {run_id} is {run.status}, not waiting at a gate")
             kind = str(run.pending_gate["kind"])
+            flow = self._flow(run.pipeline)
+            phase = flow.phases[flow.index(run.phase)]
+            if answer.revised is not None and isinstance(phase.run, Approval):
+                phase.run.check(answer.revised)
             run.state = {**run.state, "answers": {kind: answer.model_dump(mode="json")}}
             run.pending_gate = None
             run.status = RunStatus.PENDING

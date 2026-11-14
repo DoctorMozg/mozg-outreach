@@ -81,20 +81,25 @@ class FlowSpec[TState: RunState]:
 
 @dataclass(frozen=True)
 class Approval[TState: RunState]:
-    """A gate that shows a draft, takes edits, or sends the run back with the user's notes."""
+    """A gate that shows a draft from the state, takes edits, or sends the run back with notes."""
 
     kind: str
     back_to: str
-    show: Callable[[TState], JsonObject]
-    revise: Callable[[TState, JsonObject], None]
+    field: str
+    model: type[BaseModel]
+
+    def check(self, revised: JsonObject) -> BaseModel:
+        return self.model.model_validate(revised)
 
     async def __call__(self, ctx: FlowContext[TState]) -> PhaseResult:
         answer = ctx.state.answers.pop(self.kind, None)
         if answer is None:
-            return GateRequest(kind=self.kind, payload=self.show(ctx.state))
+            draft = getattr(ctx.state, self.field)
+            shown = draft.model_dump(mode="json") if isinstance(draft, BaseModel) else None
+            return GateRequest(kind=self.kind, payload={self.field: shown})
         if answer.approve:
             if answer.revised is not None:
-                self.revise(ctx.state, answer.revised)
+                setattr(ctx.state, self.field, self.check(answer.revised))
             ctx.state.feedback = None
             return None
         ctx.state.feedback = answer.feedback or "Rejected without notes; take a different approach."

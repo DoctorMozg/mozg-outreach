@@ -1,0 +1,140 @@
+from pathlib import Path
+
+from sqlalchemy.orm import Session
+
+from mozg_outreach.api.schemas import EntityDetail, GraphOut
+from mozg_outreach.domain import EntityKind, ItemKind
+from mozg_outreach.naturalize.voice import VoiceNotes
+from mozg_outreach.pipelines.biz.models import Strategy
+from mozg_outreach.storage.models import Entity, Item, ItemLink, MergeSuggestion, Relation
+from tests.pipelines.conftest import HangingRunner
+from tests.pipelines.job.conftest import CV_TEXT
+
+from .conftest import Api, biz_brief, open_api
+
+
+class TestRuns:
+    async def test_cancel_through_the_api(self, tmp_path: Path) -> None:
+        runner = HangingRunner()
+        async for api in open_api(tmp_path, runner):
+            project_id = await api.project(brief=biz_brief())
+            run = await api.ok("POST", f"/api/projects/{project_id}/runs", {})
+            await runner.started.wait()
+            cancelled = await api.ok("POST", f"/api/runs/{run['id']}/cancel")
+            assert cancelled["status"] == "cancelled"
+            again = await api.client.post(f"/api/runs/{run['id']}/cancel")
+            assert again.status_code == 409
+
+    async def test_gate_errors(self, api: Api, strategy: Strategy) -> None:
+        project_id = await api.project(brief=biz_brief())
+        api.script({"outreach-strategist": [strategy]})
+        run = await api.ok("POST", f"/api/projects/{project_id}/runs", {})
+        await api.settle(int(str(run["id"])))
+        bad_edit = await api.client.post(
+            f"/api/runs/{run['id']}/gate", json={"approve": True, "revised": {"goal": 1}}
+        )
+        assert bad_edit.status_code == 422
+        assert (await api.client.get("/api/runs/999")).status_code == 404
+
+    async def test_search_needs_a_brief(self, api: Api) -> None:
+        project_id = await api.project()
+        assert (
+            await api.client.post(f"/api/projects/{project_id}/runs", json={})
+        ).status_code == 409
+
+
+class TestProjects:
+    async def test_brief_is_validated_against_the_mode(self, api: Api) -> None:
+        bad = await api.client.post(
+            "/api/projects", json={"name": "x", "mode": "job", "brief": biz_brief()}
+        )
+        assert bad.status_code == 422
+        project_id = await api.project("job", {"cv_text": CV_TEXT, "preferences": "Remote EU"})
+        patched = await api.ok("PATCH", f"/api/projects/{project_id}", {"sender_tone": "warm"})
+        assert patched["sender_tone"] == "warm"
+        assert patched["brief"] is not None
+
+    async def test_feeds_belong_to_job_projects(self, api: Api) -> None:
+        biz = await api.project(brief=biz_brief())
+        refused = await api.client.post(
+            f"/api/projects/{biz}/sources", json={"kind": "greenhouse", "config": {}}
+        )
+        assert refused.status_code == 422
+        job = await api.project("job")
+        added = await api.ok(
+            "POST",
+            f"/api/projects/{job}/sources",
+            {"kind": "greenhouse", "config": {"boards": ["acme"]}},
+        )
+        kinds = [s["kind"] for s in await api.ok_list(f"/api/projects/{job}/sources")]
+        assert kinds == ["web_search", "greenhouse"]
+        assert added["cursor"] is None
+
+    async def test_item_actions_need_selection_and_a_pipeline(self, api: Api) -> None:
+        project_id = await api.project("freelance")
+        with api.services.db.session() as session:
+            item = Item(project_id=project_id, kind=ItemKind.GIG, dedup_key="g", title="Gig")
+            session.add(item)
+            session.flush()
+            item_id = item.id
+        assert (await api.client.post(f"/api/items/{item_id}/letters")).status_code == 409
+        await api.ok("PATCH", f"/api/items/{item_id}", {"selected": True})
+        assert (await api.client.post(f"/api/items/{item_id}/enrich")).status_code == 409
+        detail = await api.ok("GET", f"/api/items/{item_id}")
+        assert detail["selected"] is True
+        assert detail["drafts"] == []
+
+
+async def test_voice_profile_needs_samples_then_builds(api: Api) -> None:
+    sample = "Hi Anna, thanks for the quick reply. Tuesday works, I will send the agenda tonight."
+    for _ in range(2):
+        await api.ok("POST", "/api/voice/email/samples", {"text": sample})
+    early = await api.client.post("/api/voice/email/profile", json={})
+    assert early.status_code == 409
+    await api.ok("POST", "/api/voice/email/samples", {"text": sample})
+    notes = VoiceNotes(tone="plain", habits=["short"], vocabulary=[], avoid=[], concerns=[])
+    api.script({"voice-profiler": [notes]})
+    built = await api.ok("POST", "/api/voice/email/profile", {"style_prompts": ["No jargon."]})
+    assert "No jargon." in str(built["rendered"])
+    stored = await api.ok("GET", "/api/voice/email/profile")
+    assert stored["profile"] == built["profile"]
+
+
+class TestRegistry:
+    def seed(self, session: Session, project_id: int) -> tuple[int, int, int]:
+        acme = Entity(kind=EntityKind.COMPANY, name="Acme GmbH")
+        twin = Entity(kind=EntityKind.COMPANY, name="Acme Gmbh.")
+        jane = Entity(kind=EntityKind.PERSON, name="Jane Example")
+        item = Item(project_id=project_id, kind=ItemKind.COMPANY, dedup_key="acme", title="Acme")
+        session.add_all([acme, twin, jane, item])
+        session.flush()
+        session.add_all(
+            [
+                Relation(from_id=jane.id, to_id=acme.id, type="works_at"),
+                ItemLink(item_id=item.id, entity_id=acme.id, role="target"),
+                MergeSuggestion(entity_a_id=acme.id, entity_b_id=twin.id, reason="similar names"),
+            ]
+        )
+        return acme.id, jane.id, item.id
+
+    async def test_profile_graph_and_merge(self, api: Api) -> None:
+        project_id = await api.project(brief=biz_brief())
+        with api.services.db.session() as session:
+            acme, jane, item = self.seed(session, project_id)
+
+        profile = await api.get(f"/api/entities/{acme}", EntityDetail)
+        [works_at] = profile.relations
+        assert (works_at.type, works_at.direction, works_at.other_id) == ("works_at", "in", jane)
+        assert works_at.other_name == "Jane Example"
+        assert [lead.item_id for lead in profile.leads] == [item]
+
+        by_project = await api.get(f"/api/graph?project_id={project_id}", GraphOut)
+        assert {e.label for e in by_project.edges} == {"target"}
+        around_jane = await api.get(f"/api/graph?entity_id={jane}", GraphOut)
+        assert {n.id for n in around_jane.nodes} == {f"e{jane}", f"e{acme}", f"i{item}"}
+        assert (await api.client.get("/api/graph")).status_code == 422
+
+        [suggestion] = await api.ok_list("/api/merge-suggestions")
+        kept = await api.ok("POST", f"/api/merge-suggestions/{suggestion['id']}/accept")
+        assert kept["id"] == acme
+        assert await api.ok_list("/api/merge-suggestions") == []

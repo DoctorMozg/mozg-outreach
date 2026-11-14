@@ -79,15 +79,8 @@ async def plan(ctx: Ctx) -> PhaseResult:
     return None
 
 
-def _revise(state: BizSearchState, revised: dict[str, object]) -> None:
-    state.strategy = Strategy.model_validate(revised)
-
-
 approve_strategy = Approval[BizSearchState](
-    kind="strategy",
-    back_to="plan",
-    show=lambda s: {"strategy": s.strategy.model_dump(mode="json") if s.strategy else None},
-    revise=_revise,
+    kind="strategy", back_to="plan", field="strategy", model=Strategy
 )
 
 

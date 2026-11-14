@@ -46,10 +46,10 @@ class FakeFeed:
 class Harness:
     """A run manager over a temp database, with scripted agents and one fake feed."""
 
-    def __init__(self, db: Database, tmp_path: Path) -> None:
+    def __init__(self, db: Database, tmp_path: Path, runner: RecordedRunner | None = None) -> None:
         self.db = db
         self.feed = FakeFeed()
-        self.runner = RecordedRunner({})
+        self.runner = runner or RecordedRunner({})
         self.manager = RunManager(
             RunEnvironment(
                 db=db,

@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from pathlib import Path
 
@@ -42,3 +43,25 @@ class RecordedRunner:
             session_id="recorded",
             models=("recorded",),
         )
+
+
+class HangingRunner(RecordedRunner):
+    """Never finishes an agent call, so a run can be cancelled mid-phase."""
+
+    def __init__(self) -> None:
+        super().__init__({})
+        self.started = asyncio.Event()
+
+    async def run[TResult: BaseModel](
+        self,
+        prompt: AgentPrompt,
+        payload: BaseModel,
+        result_type: type[TResult],
+        *,
+        workspace: Path,
+        budget_usd: float | None = None,
+        on_event: EventSink | None = None,
+    ) -> AgentResult[TResult]:
+        self.started.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable: the wait above never ends")

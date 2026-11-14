@@ -24,9 +24,13 @@ class RunLog:
         with self._db.session() as session:
             return RunEventRepository(session).after(run_id, seq)
 
-    async def wait(self, run_id: int, timeout: float) -> None:
-        """Return when a new event is appended, or after `timeout` seconds."""
+    def signal(self, run_id: int) -> asyncio.Event:
+        """Take this before reading: an append landing while the reader yields still wakes it."""
+        return self._waiters[run_id]
+
+    @staticmethod
+    async def wait(signal: asyncio.Event, timeout: float) -> None:
         try:
-            await asyncio.wait_for(self._waiters[run_id].wait(), timeout)
+            await asyncio.wait_for(signal.wait(), timeout)
         except TimeoutError:
             return
