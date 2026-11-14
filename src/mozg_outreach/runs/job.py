@@ -262,7 +262,10 @@ async def screen(ctx: Ctx) -> PhaseResult:
     ctx.state.kept = screening.kept[: brief.limit]
     ctx.state.excluded = screening.excluded[:MAX_EXCLUDED_KEPT]
     reasons = Counter(e.reason for e in screening.excluded)
-    ctx.emit("screened", {"kept": len(ctx.state.kept), "excluded": dict(reasons)})
+    over = len(screening.kept) - len(ctx.state.kept)
+    ctx.emit(
+        "screened", {"kept": len(ctx.state.kept), "over_limit": over, "excluded": dict(reasons)}
+    )
     return None
 
 

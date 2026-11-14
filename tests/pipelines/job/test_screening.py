@@ -77,6 +77,16 @@ class TestSkills:
 
 
 class TestScreener:
+    def test_kept_listings_come_newest_first(self, strategy: JobStrategy, brief: JobBrief) -> None:
+        screening = ListingScreener(ScreenRules.for_jobs(strategy, brief), TODAY).screen(
+            [
+                scouted("telegram", url="https://t.me/a/1", title="Old", posted_date="2026-11-09"),
+                scouted(url="https://a.example/2", title="New", posted_date="2026-11-14"),
+                scouted(url="https://a.example/3", title="Undated", posted_date=None),
+            ]
+        )
+        assert [item.title for item in screening.kept] == ["New", "Old", "Undated"]
+
     def test_each_gate_names_its_reason(self, strategy: JobStrategy, brief: JobBrief) -> None:
         screening = ListingScreener(ScreenRules.for_jobs(strategy, brief), TODAY).screen(
             [

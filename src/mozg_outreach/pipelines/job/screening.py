@@ -63,7 +63,7 @@ class ListingScreener:
         self._blocklist = rules.blocklist
 
     def screen(self, scouted: list[SourcedListing]) -> Screening:
-        """Recency, blocklists, location, then must-have skills; the first failure excludes."""
+        """Recency, blocklists, location, then must-have skills; kept listings come newest first."""
         screening = Screening(kept=[], excluded=[])
         for listing in ListingNormalizer(self._today).normalize(scouted):
             outcome = self._check(listing)
@@ -71,6 +71,8 @@ class ListingScreener:
                 screening.excluded.append(outcome)
             else:
                 screening.kept.append(outcome)
+        # A brief's limit then keeps the freshest listings, whichever source was collected first.
+        screening.kept.sort(key=lambda listing: listing.posted_on or date.min, reverse=True)
         logger.info(
             "screening kept %d listings, excluded %d",
             len(screening.kept),
