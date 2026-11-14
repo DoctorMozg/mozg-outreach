@@ -77,6 +77,7 @@ async def test_selected_company_gets_a_framed_naturalized_letter(
     review = letter.review
     assert (review.address, review.address_confidence) == ("hello@katanamrp.com", "shared_inbox")
     assert review.naturalized
+    assert "Congrats on" in review.before_naturalize
     assert review.changes == ["Plainer verbs."]
     assert review.problems == []
     assert review.reader_calibration == "role priorities: technical fit, reliability"

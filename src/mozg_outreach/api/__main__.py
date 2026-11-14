@@ -13,7 +13,7 @@ def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
-    port = int(os.environ.get("MOZG_OUTREACH_PORT", "8765"))
+    port = int(os.environ.get("MOZG_OUTREACH_PORT", "8742"))
     # Local only: the API has no auth and drives the user's Claude Code login.
     uvicorn.run(create_app(Settings.from_env()), host="127.0.0.1", port=port)
 

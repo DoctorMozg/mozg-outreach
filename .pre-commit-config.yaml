@@ -6,6 +6,8 @@ repos:
     hooks:
       - id: pretty-format-json
         args: [--autofix, --indent, "2"]
+        # npm owns its lockfile layout; reformatting it churns on every install.
+        exclude: ^ui/package-lock\.json$
       - id: check-toml
       - id: check-yaml
   - repo: https://github.com/executablebooks/mdformat
@@ -30,3 +32,9 @@ repos:
         entry: uv run --frozen mypy
         pass_filenames: false
         types: [python]
+      - id: ui-typecheck
+        name: tsc (ui)
+        language: system
+        entry: npm --prefix ui run typecheck
+        pass_filenames: false
+        files: ^ui/.*\.(ts|tsx)$

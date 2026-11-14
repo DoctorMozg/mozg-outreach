@@ -218,6 +218,7 @@ class TestDraftsAndInteractions:
             angle_used="a",
             reader_calibration="role priorities",
             naturalized=True,
+            before_naturalize="draft",
             changes=[],
             problems=[],
             review_notes=[],

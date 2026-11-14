@@ -26,16 +26,17 @@ def run_out(svc: Services, run_id: int) -> RunOut:
         return RunOut.model_validate(get_or_404(session, Run, run_id))
 
 
-def ensure_idle(svc: Services, project_id: int, pipeline: str) -> None:
-    """Two runs of one pipeline would race on the same items, so a second waits its turn."""
+def ensure_idle(svc: Services, project_id: int, pipeline: str, item_id: int | None = None) -> None:
+    """Two runs on the same items would race, so a second waits; other items run in parallel."""
     with svc.db.session() as session:
-        open_run = session.scalar(
-            select(Run.id).where(
+        open_runs = session.scalars(
+            select(Run).where(
                 Run.project_id == project_id, Run.pipeline == pipeline, Run.finished_at.is_(None)
             )
         )
-    if open_run is not None:
-        raise HTTPException(409, f"run {open_run} of {pipeline} is still open")
+        clash = next((r.id for r in open_runs if r.state.get("item_id") == item_id), None)
+    if clash is not None:
+        raise HTTPException(409, f"run {clash} of {pipeline} is still open")
 
 
 @router.post("/projects/{project_id}/runs", status_code=202)

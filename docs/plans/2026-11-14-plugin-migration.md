@@ -190,6 +190,8 @@ Done, M9b (API): `api/` serves projects (briefs validated per mode), field specs
 - Projects list, brief and field editor, source picker, run view with live progress and gates, report table with per-axis score reasons and source quotes, selection and enrichment, draft editor with naturalization diff, voice samples page, person and company profiles with every source and connection, merge suggestions, and an interactive graph view of people, companies and leads.
 - verify: run the app, walk a biz project end to end on a live tiny brief.
 
+Done, M10 (UI): `ui/` is React + Vite + TypeScript with react-query and cytoscape, hash routes, and forms rendered from the pydantic JSON schemas (`/api/modes/{mode}/schemas`). Pages: projects, brief and sender, report fields (edit, propose, accept), sources, runs with live SSE activity and the strategy gate (approve, edit JSON, or send back with notes), report with per-axis reasons, column chooser and project graph, lead page with sourced fields, drafts by recipient with versions, naturalizer and version diffs, hand edits and interaction history, voice samples and profile, registry with merge suggestions, and entity profiles with sightings, connections and graph. `DraftReview.before_naturalize` keeps the pre-naturalization text for the diff. Biz search gained `max_sources` (default 4). Live walk on a tiny Estonian SaaS brief: fields $0.37, search with gate $3.27 (3 leads), enrichment $2.17 (6 registry entities), 5 letters $2.34. The default port moved to 8742 because 8765 is commonly taken.
+
 **M11 Cutover**
 
 - Delete `legacy/`; update CLAUDE.md and README.

@@ -41,9 +41,9 @@ class BizBrief(BaseModel):
     """What the user fills in the brief form; replaces the old intake question loop."""
 
     offering: Offering
-    icp: Icp
+    icp: Icp = Field(title="Ideal customer profile")
     geography: Geography
-    goal: GoalAndVoice
+    goal: GoalAndVoice = Field(title="Goal and voice")
     competitors: list[str] = Field(default_factory=list)
     notes: str = ""
 

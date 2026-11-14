@@ -98,6 +98,7 @@ class DraftReview(BaseModel):
     angle_used: str
     reader_calibration: str = Field(description="Style read used, or the role-priority fallback.")
     naturalized: bool
+    before_naturalize: str = Field(description="The checked draft the naturalizer started from.")
     changes: list[str]
     problems: list[str] = Field(description="Format or evidence rules the final text still breaks.")
     review_notes: list[str] = Field(description="Facts to check: unverified names, vague claims.")

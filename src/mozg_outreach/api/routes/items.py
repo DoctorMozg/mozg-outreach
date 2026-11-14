@@ -88,7 +88,7 @@ def _start_item_run(svc: Services, item_id: int, action: str) -> RunOut:
     pipeline = actions.enrich if action == "enrich" else actions.letters
     if pipeline is None:
         raise HTTPException(409, f"{project.mode} items have nothing to enrich")
-    ensure_idle(svc, project.id, pipeline)
+    ensure_idle(svc, project.id, pipeline, item_id)
     return run_out(svc, svc.runs.start(project.id, pipeline, {"item_id": item_id}))
 
 

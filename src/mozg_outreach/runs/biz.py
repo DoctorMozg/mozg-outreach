@@ -29,6 +29,7 @@ class BizOptions(BaseModel):
     limit: int = Field(default=20, ge=1, le=100)
     region: str | None = Field(default=None, description="Hard filter over the brief's regions.")
     climate: bool = Field(default=False, description="Research the market climate first.")
+    max_sources: int = Field(default=4, ge=1, le=10, description="Directories scouted by agents.")
 
 
 class BizSearchState(RunState):
@@ -86,7 +87,7 @@ approve_strategy = Approval[BizSearchState](
 
 async def sources(ctx: Ctx) -> PhaseResult:
     found = await BizDiscovery(ctx.steps).find_sources(_strategy(ctx), _region(ctx, _brief(ctx)))
-    ctx.state.sources = found.sources
+    ctx.state.sources = found.sources[: ctx.state.options.max_sources]
     ctx.state.concerns += found.concerns
     ctx.emit("sources", {"names": [s.name for s in found.sources]})
     return None

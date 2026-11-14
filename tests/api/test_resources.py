@@ -6,7 +6,15 @@ from mozg_outreach.api.schemas import EntityDetail, GraphOut
 from mozg_outreach.domain import EntityKind, ItemKind
 from mozg_outreach.naturalize.voice import VoiceNotes
 from mozg_outreach.pipelines.biz.models import Strategy
-from mozg_outreach.storage.models import Entity, Item, ItemLink, MergeSuggestion, Relation
+from mozg_outreach.storage.models import (
+    Entity,
+    Item,
+    ItemLink,
+    JsonObject,
+    MergeSuggestion,
+    Relation,
+    Run,
+)
 from tests.pipelines.conftest import HangingRunner
 from tests.pipelines.job.conftest import CV_TEXT
 
@@ -54,6 +62,12 @@ class TestProjects:
         assert patched["sender_tone"] == "warm"
         assert patched["brief"] is not None
 
+    async def test_schemas_describe_brief_and_options(self, api: Api) -> None:
+        schemas = await api.ok("GET", "/api/modes/biz/schemas")
+        assert set(schemas) == {"brief", "options"}
+        assert "offering" in str(schemas["brief"])
+        assert "limit" in str(schemas["options"])
+
     async def test_feeds_belong_to_job_projects(self, api: Api) -> None:
         biz = await api.project(brief=biz_brief())
         refused = await api.client.post(
@@ -69,6 +83,22 @@ class TestProjects:
         kinds = [s["kind"] for s in await api.ok_list(f"/api/projects/{job}/sources")]
         assert kinds == ["web_search", "greenhouse"]
         assert added["cursor"] is None
+
+    async def test_only_the_same_item_waits_for_its_open_run(self, api: Api) -> None:
+        project_id = await api.project("job")
+        with api.services.db.session() as session:
+            rows = [
+                Item(project_id=project_id, kind=ItemKind.JOB, dedup_key=k, title=k, selected=True)
+                for k in ("a", "b")
+            ]
+            session.add_all(rows)
+            session.flush()
+            busy, free = rows[0].id, rows[1].id
+            state: JsonObject = {"item_id": busy}
+            session.add(Run(project_id=project_id, pipeline="job.enrich", state=state))
+        clash = await api.client.post(f"/api/items/{busy}/enrich")
+        assert clash.status_code == 409
+        assert (await api.client.post(f"/api/items/{free}/enrich")).status_code == 202
 
     async def test_item_actions_need_selection_and_a_pipeline(self, api: Api) -> None:
         project_id = await api.project("freelance")

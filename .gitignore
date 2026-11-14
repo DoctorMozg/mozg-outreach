@@ -14,3 +14,6 @@ dist/
 .env
 *.session
 *.session-journal
+
+# UI build output and packages
+/ui/node_modules/

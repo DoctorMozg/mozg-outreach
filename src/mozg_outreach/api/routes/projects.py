@@ -23,6 +23,7 @@ from mozg_outreach.domain import FieldSpec, ProjectMode
 from mozg_outreach.pipelines.biz.models import BizBrief
 from mozg_outreach.pipelines.freelance.models import FreelanceBrief
 from mozg_outreach.pipelines.job.models import JobBrief
+from mozg_outreach.runs.catalog import SEARCH_OPTIONS
 from mozg_outreach.runs.fields import BIZ_FIELDS
 from mozg_outreach.runs.job import WEB_SEARCH
 from mozg_outreach.sources.factory import source_kinds
@@ -49,6 +50,15 @@ def _brief(mode: ProjectMode, brief: JsonObject | None) -> JsonObject | None:
     if brief is None:
         return None
     return BRIEFS[mode].model_validate(brief).model_dump(mode="json")
+
+
+@router.get("/modes/{mode}/schemas")
+async def mode_schemas(mode: ProjectMode) -> dict[str, JsonObject]:
+    """JSON schemas the UI renders as forms: the brief and the search run's options."""
+    return {
+        "brief": BRIEFS[mode].model_json_schema(),
+        "options": SEARCH_OPTIONS[mode].model_json_schema(),
+    }
 
 
 @router.get("/projects")

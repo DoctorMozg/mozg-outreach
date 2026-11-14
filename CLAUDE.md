@@ -17,7 +17,9 @@ uv run pytest                             # offline tests (live tests are desele
 uv run pytest tests/test_prompts.py::test_prompt_frontmatter_names_match_files   # one test
 uv run pytest -m live                     # real Claude Code + web calls; costs subscription usage
 pre-commit run --files <changed files>    # ruff, ruff-format, mdformat, json format, mypy --strict
-uv run mozg-outreach                      # API on 127.0.0.1:8765; data in ~/.local/share/mozg-outreach (MOZG_OUTREACH_HOME)
+uv run mozg-outreach                      # API on 127.0.0.1:8742; data in ~/.local/share/mozg-outreach (MOZG_OUTREACH_HOME)
+cd ui && npm ci --ignore-scripts && npm run build   # build the UI into ui/dist, which the API serves at /
+cd ui && npm run dev                      # Vite on :5173, proxying /api to the running service
 ```
 
 `legacy/` is excluded from every hook and from ruff and mypy. Don't edit it; port from it.

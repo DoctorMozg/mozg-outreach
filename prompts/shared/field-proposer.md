@@ -48,8 +48,8 @@ Return the structured output:
       }
     ]
   },
-  "rationale": "Two or three sentences on why these fields fit this brief."
+  "rationale": "Two or three sentences on why these fields fit this brief, in the brief's language."
 }
 ```
 
-Write labels, descriptions and the rationale in the language of the brief.
+Write labels, descriptions and the rationale in the language of the brief. A brief in English gets an English rationale even when the target region speaks Estonian, German or anything else.

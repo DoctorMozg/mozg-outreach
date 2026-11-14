@@ -83,6 +83,7 @@ class LetterComposer:
             angle_used=attempt.draft.angle_used,
             reader_calibration=job.calibration,
             naturalized=not outcome.reverted,
+            before_naturalize=attempt.text,
             changes=outcome.changes,
             problems=[p.detail for p in checker.check(subject, outcome.text)],
             review_notes=notes,

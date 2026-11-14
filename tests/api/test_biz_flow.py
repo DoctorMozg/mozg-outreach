@@ -37,10 +37,10 @@ async def accepted_spec(api: Api, project_id: int, proposal: FieldProposal) -> N
 
 def search_script(strategy: Strategy) -> dict[str, list[Scripted]]:
     sources = load_fixture("sources", SourceList)
-    one_source = sources.model_copy(update={"sources": sources.sources[:1]})
+    two_sources = sources.model_copy(update={"sources": sources.sources[:2]})
     return {
         "outreach-strategist": [strategy, strategy],
-        "outreach-source-researcher": [one_source],
+        "outreach-source-researcher": [two_sources],
         "outreach-scout": [load_fixture("scout_results", list[ScoutResult])[0]],
         "field-researcher": [load_fixture("field_research", FieldResearchResult)] * 2,
         "fit-judge": [load_fixture("fit_verdict", FitVerdict)] * 2,
@@ -54,7 +54,9 @@ async def test_brief_to_scored_report_through_the_strategy_gate(
     await accepted_spec(api, project_id, proposal)
     api.script(search_script(strategy))
 
-    run = await api.ok("POST", f"/api/projects/{project_id}/runs", {"options": {"limit": 5}})
+    run = await api.ok(
+        "POST", f"/api/projects/{project_id}/runs", {"options": {"limit": 5, "max_sources": 1}}
+    )
     run_id = int(str(run["id"]))
     parked = await api.settle(run_id)
     assert parked["status"] == "awaiting_gate"
@@ -76,6 +78,7 @@ async def test_brief_to_scored_report_through_the_strategy_gate(
     report = await api.get(f"/api/projects/{project_id}/items", list[ItemOut])
     assert len(report) == 2
     assert all(item.score_total is not None for item in report)
+    assert len(api.runner.payloads["outreach-scout"]) == 1, "max_sources caps the scouts"
     researched = {f.id for f in proposal.spec.fields} & set(report[0].fields)
     assert researched, "researched field values reach the report"
 
