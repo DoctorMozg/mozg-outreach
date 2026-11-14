@@ -5,11 +5,13 @@ import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
 from mozg_outreach.pipelines.job import telegram_posts
+from mozg_outreach.pipelines.job.models import TelegramContact
 from mozg_outreach.pipelines.job.telegram_posts import (
     ParsedPost,
     ParserResult,
     TelegramPosts,
     TelegramRequest,
+    telegram_contact,
     to_scouted,
 )
 from mozg_outreach.pipelines.steps import PipelineSteps
@@ -46,6 +48,8 @@ def parsed(n: int, **fields: object) -> ParsedPost:
         "remote": "remote",
         "salary": "от 400к",
         "apply_url": VACANCY,
+        "contact_handle": "@hr_anna",
+        "contact_name": None,
         "reason": "Concrete role.",
     }
     return ParsedPost.model_validate(values | fields)
@@ -114,6 +118,43 @@ class TestToScouted:
     )
     def test_unusable_posts_give_no_listing(self, item: SourceItem, result: ParsedPost) -> None:
         assert to_scouted(item, result, []) is None
+
+
+class TestContact:
+    def test_handle_in_the_post_is_kept_with_its_line(self) -> None:
+        text = "Python developer at Acme\nWrite to Anna: @HR_Anna"
+        result = parsed(1, contact_handle="@hr_anna", contact_name="Anna")
+
+        contact = telegram_contact(post(1, text=text), result, [])
+
+        quote = "Write to Anna: @HR_Anna"
+        assert contact == TelegramContact(handle="hr_anna", name="Anna", quote=quote)
+
+    def test_handle_only_in_a_link_quotes_the_link(self) -> None:
+        item = post(1, text="Python developer, apply below", links=["https://t.me/hr_anna"])
+
+        contact = telegram_contact(item, parsed(1, contact_name="Anna"), [])
+
+        assert contact == TelegramContact(handle="hr_anna", name=None, quote="https://t.me/hr_anna")
+
+    @pytest.mark.parametrize(
+        ("text", "handle"),
+        [
+            ("Write to @hr_annabel", "@hr_anna"),
+            ("Subscribe to @py_jobs", "@py_jobs"),
+            ("Apply via @jobs_apply_bot", "@jobs_apply_bot"),
+        ],
+        ids=["not in the post", "the channel itself", "a bot"],
+    )
+    def test_handles_that_are_no_person_in_the_post_are_dropped(
+        self, text: str, handle: str
+    ) -> None:
+        concerns: list[str] = []
+
+        contact = telegram_contact(post(1, text=text), parsed(1, contact_handle=handle), concerns)
+
+        assert contact is None
+        assert len(concerns) == 1
 
 
 class TestCollect:

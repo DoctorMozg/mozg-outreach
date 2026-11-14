@@ -145,6 +145,16 @@ class JobScoutInput(BaseModel):
     max_results: int = Field(ge=1, le=50)
 
 
+class TelegramContact(BaseModel):
+    """The person a Telegram post says to write to, checked against the post itself."""
+
+    handle: str = Field(description="Normalized username, without '@'.")
+    name: str | None = Field(
+        description="As the post writes it; null when only the handle is given."
+    )
+    quote: str = Field(description="The post's line that names the contact.")
+
+
 class ScoutedListing(BaseModel):
     title: str = Field(min_length=1)
     company: str = Field(description="The employer; empty only when the listing names none.")
@@ -155,6 +165,7 @@ class ScoutedListing(BaseModel):
     salary_string: str | None
     summary_snippet: str
     apply_url: str | None = Field(default=None, description="Vacancy page a post links to.")
+    telegram_contact: TelegramContact | None = None
 
 
 class JobScoutResult(BaseModel):
@@ -192,6 +203,7 @@ class Listing(BaseModel):
     # The whole description, so Python screening sees requirements that follow long boilerplate.
     summary: str
     apply_url: str | None = None
+    telegram_contact: TelegramContact | None = None
     eligibility: Literal["yes", "no", "unknown"] = "unknown"
     eligibility_evidence: str | None = None
 

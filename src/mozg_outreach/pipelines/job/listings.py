@@ -81,6 +81,7 @@ class ListingNormalizer:
             salary=self._salary.parse(raw.salary_string),
             summary=raw.summary_snippet,
             apply_url=raw.apply_url,
+            telegram_contact=raw.telegram_contact,
         )
 
 
@@ -142,6 +143,7 @@ def _merge_posting(kept: Listing, other: Listing) -> Listing:
         update={
             "sources": list(dict.fromkeys([*first.sources, *second.sources])),
             "salary": first.salary or second.salary,
+            "telegram_contact": first.telegram_contact or second.telegram_contact,
             "merged_urls": [*first.merged_urls, second.url, *second.merged_urls],
         }
     )

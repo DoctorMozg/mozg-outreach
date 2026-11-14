@@ -2,17 +2,20 @@
 
 import asyncio
 import logging
+import re
 from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
+from mozg_outreach.domain import IdentifierKind
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
 from mozg_outreach.pipelines.job.feeds import FeedOutcome
 from mozg_outreach.pipelines.job.listings import SourcedListing
-from mozg_outreach.pipelines.job.models import ScoutedListing
+from mozg_outreach.pipelines.job.models import ScoutedListing, TelegramContact
 from mozg_outreach.pipelines.steps import PipelineSteps
+from mozg_outreach.registry.identifiers import normalize
 from mozg_outreach.sources.base import SourceAdapter
 from mozg_outreach.sources.models import SourceItem, SourceQuery
 
@@ -48,6 +51,8 @@ class ParsedPost(BaseModel):
     remote: Literal["remote", "hybrid", "onsite"] | None
     salary: str | None
     apply_url: str | None = Field(description="One of the post's links, copied exactly.")
+    contact_handle: str | None = Field(description="The person to write to, as '@username'.")
+    contact_name: str | None = Field(description="That person's name as the post writes it.")
     reason: str
 
 
@@ -79,6 +84,7 @@ def to_scouted(item: SourceItem, parsed: ParsedPost, concerns: list[str]) -> Sco
     apply_url = parsed.apply_url if parsed.apply_url in links else None
     if parsed.apply_url and apply_url is None:
         concerns.append(f"{item.source_item_id}: dropped apply link, not one of the post's links.")
+    contact = telegram_contact(item, parsed, concerns)
     footer = f"\n\nLinks: {' '.join(links)}" if links else ""
     return ScoutedListing(
         title=parsed.title.strip(),
@@ -90,7 +96,29 @@ def to_scouted(item: SourceItem, parsed: ParsedPost, concerns: list[str]) -> Sco
         salary_string=parsed.salary,
         summary_snippet=item.raw_text + footer,
         apply_url=apply_url,
+        telegram_contact=contact,
     )
+
+
+def telegram_contact(
+    item: SourceItem, parsed: ParsedPost, concerns: list[str]
+) -> TelegramContact | None:
+    """A handle counts only when the post shows it and it isn't the channel itself or a bot."""
+    found = normalize(IdentifierKind.TELEGRAM, parsed.contact_handle)
+    if found is None:
+        return None
+    handle = found.value
+    mention = re.compile(rf"@{re.escape(handle)}\b", re.IGNORECASE)
+    lines = [x.strip() for x in item.raw_text.splitlines() if mention.search(x)]
+    linked = any(normalize(IdentifierKind.TELEGRAM, x) == found for x in post_links(item))
+    quote = lines[0] if lines else f"https://t.me/{handle}" if linked else None
+    channel = str(item.raw_payload.get("channel", "")).casefold()
+    if quote is None or handle == channel or handle.endswith("bot"):
+        concerns.append(f"{item.source_item_id}: dropped contact '@{handle}', not a person in it.")
+        return None
+    name = (parsed.contact_name or "").strip()
+    named = name if name and name.casefold() in item.raw_text.casefold() else None
+    return TelegramContact(handle=handle, name=named, quote=quote[:300])
 
 
 class TelegramPosts:

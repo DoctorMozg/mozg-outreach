@@ -26,6 +26,8 @@ A JSON object:
 - `location` is the city or country the post states, or `null`. `remote` is `remote`, `hybrid` or `onsite` only when the post says so (`удалённо` and `удаленка` mean remote), else `null`.
 - `salary` is the pay as written, with currency and period, or `null`.
 - `apply_url` is the one link from `links` that leads to the vacancy itself: a careers page, a job board entry (hh.ru, career.habr.com, LinkedIn, Greenhouse and the like) or an application form. Copy it exactly from `links`. Use `null` when the only links are Telegram contacts, the channel itself, ads or courses.
+- `contact_handle` is the Telegram username of the person the post says to write to, such as a recruiter or hiring manager, written `@username` exactly as in the post or its `t.me/username` link. Use `null` when the post gives only an email, a form or a vacancy page, and never use the channel itself, another channel or a bot.
+- `contact_name` is that person's name exactly as the post writes it, such as `Анна` in "пишите Анне @hr_anna", or `null` when the post gives only the handle.
 - `concerns` holds only doubts that change how a listing should be read, one plain sentence each that names the post `id`: you couldn't tell whether a post offers one job, the employer could be either of two names, or the post contradicts itself on place or pay. Don't report missing fields, a salary without a currency, a LinkedIn or Telegram link, or a repost of another post; the caller handles those. Most batches have no concerns.
 
 ## Output Format
@@ -44,6 +46,8 @@ Return the structured output:
       "remote": "hybrid",
       "salary": "от 350 000 ₽ на руки",
       "apply_url": "https://job.2gis.ru/vacancy/go-senior",
+      "contact_handle": "@hr_anna",
+      "contact_name": "Анна",
       "reason": "Concrete role with employer and vacancy link."
     },
     {
@@ -55,6 +59,8 @@ Return the structured output:
       "remote": null,
       "salary": null,
       "apply_url": null,
+      "contact_handle": null,
+      "contact_name": null,
       "reason": "Advertises a Go course."
     }
   ],

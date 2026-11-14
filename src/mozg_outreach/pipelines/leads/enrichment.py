@@ -49,12 +49,17 @@ class LeadEnrichment:
             for task, outcome in zip(tasks, outcomes, strict=True):
                 report.concerns += outcome.concerns
                 item = session.get(Item, task.item_id)
-                if item is None or outcome.identity is None:
-                    continue  # deleted mid-run, or the identifier failed
-                items.set_detail(item, IDENTITY, outcome.identity)
+                if item is None:
+                    continue  # deleted mid-run
                 context = IngestContext(
                     project_id=ref.project_id, run_id=ref.run_id, item_id=task.item_id
                 )
+                # The post names its contact itself, so it counts even when identification fails.
+                if ingest.telegram_contact(task.listing, context) is not None:
+                    report.people += 1
+                if outcome.identity is None:
+                    continue
+                items.set_detail(item, IDENTITY, outcome.identity)
                 counts = ingest.identity(task.listing, outcome.identity, context)
                 report.companies += counts.companies
                 report.people += counts.people

@@ -43,6 +43,7 @@ class PersonSeen(BaseModel):
     quote: str = ""
     linkedin: str | None = None
     email: SeenEmail | None = None
+    telegram: str | None = Field(default=None, description="Username, which identifies them.")
 
 
 class CompanySeen(BaseModel):
@@ -81,6 +82,7 @@ class LeadIngest:
             [
                 person_at_company(seen.name, self.employer_key(company)) if company else None,
                 normalize(IdentifierKind.LINKEDIN, seen.linkedin),
+                normalize(IdentifierKind.TELEGRAM, seen.telegram),
                 normalize(IdentifierKind.EMAIL, email.address)
                 if email and email.published
                 else None,

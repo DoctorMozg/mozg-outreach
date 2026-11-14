@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from mozg_outreach.domain import RunStatus, SourceKind
+from mozg_outreach.domain import IdentifierKind, RunStatus, SourceKind
 from mozg_outreach.pipelines.job.models import JobStrategy, JudgeResult
 from mozg_outreach.pipelines.job.telegram_posts import ParsedPost, ParserResult
 from mozg_outreach.runs.flow import GateAnswer
@@ -15,7 +15,16 @@ from mozg_outreach.sources.telegram import (
     TelegramConfig,
     TelegramCredentials,
 )
-from mozg_outreach.storage.models import Item, ItemLink, JsonObject, Run, Sighting, SourceConfig
+from mozg_outreach.storage.models import (
+    EntityIdentifier,
+    Item,
+    ItemLink,
+    JsonObject,
+    Relation,
+    Run,
+    Sighting,
+    SourceConfig,
+)
 from tests.pipelines.conftest import Scripted
 from tests.pipelines.job.conftest import judgment
 from tests.pipelines.leads.conftest import company, identity
@@ -149,7 +158,7 @@ def test_discovery_searches_cv_skills_when_the_gate_cleared_must_haves(
 
 TG_URL = "https://t.me/py_jobs/1"
 VACANCY = "https://career.habr.com/vacancies/1000"
-TG_POST = "Senior Python developer at Acme GmbH, PostgreSQL, remote within the EU"
+TG_POST = "Senior Python developer at Acme GmbH, PostgreSQL, remote within the EU\nCV: @hr_anna"
 
 
 async def test_telegram_post_becomes_a_lead_with_a_telegram_sighting(
@@ -173,6 +182,8 @@ async def test_telegram_post_becomes_a_lead_with_a_telegram_sighting(
         remote="remote",
         salary=None,
         apply_url=VACANCY,
+        contact_handle="@hr_anna",
+        contact_name=None,
         reason="Concrete role.",
     )
     judged = JudgeResult(judgments=[judgment(FEED_URL), judgment(TG_URL)], concerns=[])
@@ -200,3 +211,11 @@ async def test_telegram_post_becomes_a_lead_with_a_telegram_sighting(
             .filter(ItemLink.item_id == item.id)
         }
     assert SourceKind.TELEGRAM in kinds
+    with harness.db.session() as db:
+        handle = db.query(EntityIdentifier).filter_by(kind=IdentifierKind.TELEGRAM).one()
+        roles = {
+            (link.role, link.entity_id) for link in db.query(ItemLink).filter_by(item_id=item.id)
+        }
+        relations = db.query(Relation).filter_by(from_id=handle.entity_id).count()
+    assert (handle.value, ("contact", handle.entity_id) in roles) == ("hr_anna", True)
+    assert relations == 0, "a Telegram recruiter isn't tied to the employer"

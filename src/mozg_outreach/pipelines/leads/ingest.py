@@ -53,6 +53,21 @@ class LeadRegistryIngest:
             self._leads.person(seen, company, context)
         return IngestCounts(companies=int(company is not None), people=len(identity.people))
 
+    def telegram_contact(self, listing: Listing, context: IngestContext) -> Entity | None:
+        """A post's contact links to the vacancy only: Telegram recruiters often post for many
+        employers, so the post shows no tie to the company."""
+        contact = listing.telegram_contact
+        if contact is None:
+            return None
+        seen = PersonSeen(
+            name=contact.name or f"@{contact.handle}",
+            title=None,
+            source_url=listing.url,
+            quote=contact.quote,
+            telegram=contact.handle,
+        )
+        return self._leads.person(seen, None, context)
+
     def contacts(self, contacts: JobContacts, context: IngestContext) -> Entity | None:
         """The contact finder's named person joins the lead's company, if one was confirmed."""
         company = self._leads.subject(context)
