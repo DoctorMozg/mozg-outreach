@@ -35,7 +35,7 @@ def katana() -> ItemCandidate:
 def dossier() -> CompanyDossier:
     contacts = load_fixture("enrichment/contacts", ContactsResult)
     guessed = EmailContact(
-        address="jane@katanamrp.com",
+        address="jane@example.com",
         kind="pattern_guess",
         source_url="https://katanamrp.com/about/",
     )
@@ -76,7 +76,7 @@ def test_lead_links_company_and_people_with_their_sources(
         (IdentifierKind.NAME_AT_COMPANY, "jane example@katanamrp.com"),
     }
     email = FieldValue.model_validate(jane.profile["email"])
-    assert (email.value, email.confidence) == ("jane@katanamrp.com", "guessed")
+    assert (email.value, email.confidence) == ("jane@example.com", "guessed")
     [works_at] = rows(session, Relation)
     assert (works_at.from_id, works_at.to_id, works_at.detail) == (jane.id, company.id, "CTO")
     links = {(link.entity_id, link.role) for link in rows(session, ItemLink)}

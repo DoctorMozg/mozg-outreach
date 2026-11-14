@@ -212,7 +212,7 @@ class TestDraftsAndInteractions:
     def test_regenerated_letter_gets_next_version(self, session: Session, item_id: int) -> None:
         drafts = DraftRepository(session)
         review = DraftReview(
-            address="jane@acme.io",
+            address="jane@acme.example",
             address_confidence="published",
             hook_used="h",
             angle_used="a",

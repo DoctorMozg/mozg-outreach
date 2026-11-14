@@ -33,10 +33,10 @@ class TestRecipients:
     @pytest.mark.parametrize(
         ("email", "guessed", "linkedin", "expected"),
         [
-            ("jane@katanamrp.com", False, "linkedin.com/in/jane", ("email", "published", False)),
+            ("jane@example.com", False, "linkedin.com/in/jane", ("email", "published", False)),
             (None, False, "linkedin.com/in/jane", ("dm", "linkedin", False)),
-            ("jane@katanamrp.com", True, "linkedin.com/in/jane", ("dm", "linkedin", False)),
-            ("jane@katanamrp.com", True, None, ("email", "guessed", False)),
+            ("jane@example.com", True, "linkedin.com/in/jane", ("dm", "linkedin", False)),
+            ("jane@example.com", True, None, ("email", "guessed", False)),
             (None, False, None, ("email", "shared_inbox", True)),
         ],
     )
