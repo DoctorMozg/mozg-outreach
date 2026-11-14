@@ -79,6 +79,19 @@ Done, M16 part 1: `sources/telegram_discovery.py`, `TelegramAdapter.open_session
 
 Done, M17: the reader keeps every link of a post (`message_links`: links hidden behind words, visible URLs sliced by UTF-16 offsets, and URL buttons). `pipelines/job/telegram_posts.py` filters posts by skill, caps a run at 40 posts per channel and 120 in total, and sends batches of 20 to the haiku `telegram-post-parser`. Python keeps a company only if the post's text contains it, and an apply link only if it is one of the post's links. A failed batch leaves the cursor where it was. Listings gained `apply_url`, which the lead identifier and field researcher read first. A listing without a company is allowed and never merges with another by title. Live run on the 6 discovered channels ($1.98): 35 listings, 5 kept by screening and scored, and 3 companies confirmed from their vacancy pages (Orion soft, Freedom Holding, SimbirSoft), each with a `telegram` sighting. The other two stayed unlinked: one had only an `lnkd.in` link, the other no link. The parser adds many minor concerns (50 in that run, such as a salary without a currency), which the run page lists in full.
 
+**M18 Follow-ups** (approved by the user, 2026-11-15, items 1 to 7)
+
+Done, M18:
+
+1. Feed listings keep the whole description, up to 16,000 characters, so screening sees requirements that follow long boilerplate. On 300 real Greenhouse postings, 84 of 99 first skill mentions came after character 2,000. Agents get `Listing.excerpt`: the opening plus each line naming a skill, at most 4,000 characters.
+1. The Telegram parser reports only doubts that change a listing. The live run had about 6 parser concerns, down from about 45.
+1. Telegram listings ignore the parsed place when matching reposts, and listings that link the same vacancy page merge. Live: the Альфа-Банк repost across two channels merged.
+1. The field proposer gets the report's `built_in` column ids, and Python drops new proposals that repeat one. Job reports gained an `apply_url` column. Live: 13 proposed fields, none built in.
+1. The lead identifier always fetches the confirmed company's own site for its domain. Live: all 4 confirmed companies got a domain.
+1. Biz search registers every scored company. Job and freelance runs end with a `seeker-run-summarizer` summary in the language of the preferences. There's a freelance field-proposal test, and the test emails use reserved domains.
+
+Found on the way and fixed: a brief's `limit` cut screened listings in collection order, so Telegram posts always took the slots. Kept listings now come newest first, and the `screened` event reports `over_limit`. Combined live run (7 Greenhouse boards, 6 channels, 3 leads researched): $3.64 for the search and $0.25 for the field proposal. Not covered: there's still no run-level freelance search test, so the freelance summary phase is checked only through code shared with job.
+
 ## Order and size
 
 M12 comes first, so any later schema change gets a migration. M13 to M15 are independent of each other. M16 waits on your credentials and can run whenever they exist. Each milestone stays within about 10 files and 400 changed lines, ends with `uv run pytest` and pre-commit on the changed files, and is committed on its own on `feat/service-migration`.
