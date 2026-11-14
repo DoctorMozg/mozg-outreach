@@ -1,5 +1,6 @@
 """Contracts between the job-search pipeline and its agents, and the normalized listings."""
 
+import re
 from datetime import date
 from typing import Literal
 
@@ -36,6 +37,10 @@ class Money(BaseModel):
     amount: float = Field(gt=0)
     currency: str = Field(min_length=3, max_length=3, description="ISO 4217 code, e.g. EUR.")
     period: Period = "year"
+
+
+AGENT_CHARS = 4000
+OPENING_CHARS = 800
 
 
 class CvProfile(BaseModel):
@@ -97,6 +102,11 @@ class JobStrategy(SkillRules):
     scoring_weights: JobScoringWeights
     scoring_rationale: str
     concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
+
+    def skills(self) -> list[str]:
+        """Must-haves first, then the CV's skills in its order, which leads with the core stack."""
+        grouped = [s for group in self.must_have_or_groups for s in group]
+        return list(dict.fromkeys([*self.must_have_skills, *grouped, *self.cv.skills]))
 
 
 class JobSource(BaseModel):
@@ -179,10 +189,31 @@ class Listing(BaseModel):
     merged_urls: list[str] = Field(default_factory=list)
     posted_on: date | None
     salary: Salary | None
+    # The whole description, so Python screening sees requirements that follow long boilerplate.
     summary: str
     apply_url: str | None = None
     eligibility: Literal["yes", "no", "unknown"] = "unknown"
     eligibility_evidence: str | None = None
+
+    def excerpt(self, terms: list[str], chars: int = AGENT_CHARS) -> str:
+        """The opening, then each line naming a term: what an agent needs from a long posting."""
+        if len(self.summary) <= chars:
+            return self.summary
+        named = re.compile("|".join(rf"\b{re.escape(t)}\b" for t in terms), re.I) if terms else None
+        head, rest = self.summary[:OPENING_CHARS], self.summary[OPENING_CHARS:]
+        kept = [head]
+        size = len(head)
+        for line in rest.splitlines():
+            if named is None or not line.strip() or not named.search(line):
+                continue
+            if size + len(line) + 1 > chars:
+                break
+            kept.append(line)
+            size += len(line) + 1
+        return "\n".join(kept) if len(kept) > 1 else self.summary[:chars]
+
+    def for_agents(self, terms: list[str]) -> "Listing":
+        return self.model_copy(update={"summary": self.excerpt(terms)})
 
 
 class Excluded(BaseModel):

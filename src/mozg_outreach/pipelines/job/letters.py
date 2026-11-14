@@ -22,6 +22,7 @@ from mozg_outreach.pipelines.steps import PipelineSteps
 logger = logging.getLogger(__name__)
 
 HIRING_TEAM = "Hiring Team"
+LETTER_CHARS = 2000
 
 
 class CoverLetterRequest(BaseModel):
@@ -80,15 +81,18 @@ class JobLetterWriter:
     @staticmethod
     def _angle(listing: Listing, skills: SkillMatch) -> Angle:
         matched = [h.skill for h in [*skills.must_haves, *skills.or_groups, *skills.nice_to_haves]]
+        need = listing.excerpt(matched, LETTER_CHARS)
         return Angle(
             name="role fit",
-            pain_point=f"{listing.company} needs a {listing.title}: {listing.summary}",
+            pain_point=f"{listing.company} needs a {listing.title}: {need}",
             value_prop=f"The CV shows hands-on work with {', '.join(matched) or 'the role stack'}.",
         )
 
     @staticmethod
     def _hooks(listing: Listing, judgment: ListingJudgment | None) -> list[Hook]:
-        hooks = [Hook(signal=listing.summary, source="listing", source_url=listing.url)]
+        hooks = [
+            Hook(signal=listing.excerpt([], LETTER_CHARS), source="listing", source_url=listing.url)
+        ]
         if judgment and judgment.employer_evidence:
             hooks.append(
                 Hook(signal=judgment.employer_evidence, source="listing", source_url=listing.url)

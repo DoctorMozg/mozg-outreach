@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from mozg_outreach.pipelines.job.feeds import FeedRequest, JobFeeds, to_listing
 from mozg_outreach.sources.models import FetchResult, SourceItem, SourceQuery
 
-from .conftest import TODAY
+from .conftest import LONG_POSTING, TODAY
 
 NOW = datetime(2026, 11, 14, 9, tzinfo=UTC)
 
@@ -43,6 +43,13 @@ def test_hn_title_splits_into_company_and_role() -> None:
     assert listing is not None
     assert (listing.company, listing.title) == ("Acme", "Staff Engineer")
     assert listing.remote_status_raw == "Remote"
+
+
+def test_long_description_is_kept_whole() -> None:
+    listing = to_listing(item(raw_text=LONG_POSTING))
+
+    assert listing is not None
+    assert listing.summary_snippet == LONG_POSTING
 
 
 def test_item_without_employer_or_link_is_dropped() -> None:

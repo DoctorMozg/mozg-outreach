@@ -145,6 +145,7 @@ class JobSearch:
 
     async def judge(self, listings: list[Listing], strategy: JobStrategy) -> Judgments:
         batches = [listings[i : i + JUDGE_BATCH] for i in range(0, len(listings), JUDGE_BATCH)]
+        terms = [*strategy.skills(), *strategy.nice_to_have_skills]
         results = await asyncio.gather(
             *(
                 self._steps.run(
@@ -153,7 +154,7 @@ class JobSearch:
                     JudgeInput(
                         cv=strategy.cv,
                         deal_breakers=strategy.preferences.deal_breakers,
-                        listings=batch,
+                        listings=[listing.for_agents(terms) for listing in batch],
                     ),
                     JudgeResult,
                 )
@@ -201,7 +202,7 @@ class JobSearch:
 
     async def contacts(self, listing: Listing) -> JobContacts:
         return await self._steps.run(
-            "job", "job-contact-finder", ContactInput(listing=listing), JobContacts
+            "job", "job-contact-finder", ContactInput(listing=listing.for_agents([])), JobContacts
         )
 
 

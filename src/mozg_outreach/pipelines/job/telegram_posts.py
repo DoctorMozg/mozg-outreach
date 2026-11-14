@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
-from mozg_outreach.pipelines.job.feeds import SUMMARY_CHARS, FeedOutcome
+from mozg_outreach.pipelines.job.feeds import FeedOutcome
 from mozg_outreach.pipelines.job.listings import SourcedListing
 from mozg_outreach.pipelines.job.models import ScoutedListing
 from mozg_outreach.pipelines.steps import PipelineSteps
@@ -88,7 +88,7 @@ def to_scouted(item: SourceItem, parsed: ParsedPost, concerns: list[str]) -> Sco
         url=item.url,
         posted_date=item.published_at.date().isoformat() if item.published_at else None,
         salary_string=parsed.salary,
-        summary_snippet=item.raw_text[: SUMMARY_CHARS - len(footer)] + footer,
+        summary_snippet=item.raw_text + footer,
         apply_url=apply_url,
     )
 

@@ -13,7 +13,8 @@ from mozg_outreach.sources.models import FetchResult, SourceItem, SourceQuery
 
 logger = logging.getLogger(__name__)
 
-SUMMARY_CHARS = 2000
+# The longest Greenhouse posting measured was about 15,000 characters.
+DESCRIPTION_CHARS = 16000
 
 
 class FeedOutcome(BaseModel):
@@ -79,5 +80,5 @@ def to_listing(item: SourceItem) -> ScoutedListing | None:
         url=item.url,
         posted_date=item.published_at.date().isoformat() if item.published_at else None,
         salary_string=None,
-        summary_snippet=item.raw_text[:SUMMARY_CHARS],
+        summary_snippet=item.raw_text[:DESCRIPTION_CHARS],
     )

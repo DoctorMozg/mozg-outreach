@@ -166,14 +166,8 @@ async def approve_channels(ctx: Ctx) -> PhaseResult:
     return outcome
 
 
-def _skills(strategy: JobStrategy) -> list[str]:
-    """Must-haves first, then the CV's skills in its own order, which leads with the core stack."""
-    grouped = [s for group in strategy.must_have_or_groups for s in group]
-    return list(dict.fromkeys([*strategy.must_have_skills, *grouped, *strategy.cv.skills]))
-
-
 def _discovery_terms(strategy: JobStrategy) -> list[str]:
-    return list(dict.fromkeys([*_skills(strategy), *strategy.cv.top_titles]))[:MAX_QUERIES]
+    return list(dict.fromkeys([*strategy.skills(), *strategy.cv.top_titles]))[:MAX_QUERIES]
 
 
 def _discovering(ctx: Ctx) -> list[SourceConfig]:
@@ -213,7 +207,7 @@ async def collect(ctx: Ctx) -> PhaseResult:
         posts = await TelegramPosts(ctx.steps).collect(
             ctx.adapters(row.kind, row.config),
             TelegramRequest(
-                skills=_skills(strategy),
+                skills=strategy.skills(),
                 oldest=ctx.today - timedelta(days=brief.recency_days),
                 cursor=row.cursor,
             ),

@@ -33,6 +33,14 @@ def scouted(source: str = "Remotive", **fields: object) -> SourcedListing:
     return SourcedListing(source=source, listing=ScoutedListing.model_validate(values | fields))
 
 
+# Greenhouse postings open with about 3,000 characters of company text before the requirements.
+BOILERPLATE = "\n".join(
+    f"About Acme, part {n}: our mission, values and benefits." for n in range(60)
+)
+REQUIREMENTS = "- 5+ years of Python services on PostgreSQL"
+LONG_POSTING = f"{BOILERPLATE}\n{REQUIREMENTS}\n- Remote within the EU"
+
+
 def listing(**fields: object) -> Listing:
     values: dict[str, object] = {
         "key": "https://jobs.acme.example/backend",

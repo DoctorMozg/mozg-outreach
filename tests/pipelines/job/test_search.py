@@ -4,6 +4,8 @@ import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
 from mozg_outreach.pipelines.job.models import (
+    AGENT_CHARS,
+    OPENING_CHARS,
     ContactInput,
     JobBrief,
     JobContacts,
@@ -20,7 +22,7 @@ from mozg_outreach.pipelines.job.search import JobSearch, Judgments, load_canoni
 from mozg_outreach.pipelines.steps import PipelineSteps
 
 from ..conftest import REPO_PROMPTS, RecordedRunner
-from .conftest import TODAY, judgment, listing, scouted
+from .conftest import LONG_POSTING, REQUIREMENTS, TODAY, judgment, listing, scouted
 
 CANONICAL = REPO_PROMPTS / "job" / "sources" / "job_canonical.json"
 
@@ -119,7 +121,40 @@ class TestScouting:
         assert payloads[0].max_results == 34
 
 
+class TestExcerpt:
+    def test_short_description_is_unchanged(self) -> None:
+        assert (
+            listing(summary="Python on PostgreSQL.").excerpt(["Python"]) == "Python on PostgreSQL."
+        )
+
+    def test_long_description_keeps_the_opening_and_lines_naming_a_term(self) -> None:
+        text = listing(summary=LONG_POSTING).excerpt(["PostgreSQL"], chars=1200)
+
+        assert text.startswith(LONG_POSTING[:OPENING_CHARS])
+        assert text.endswith(REQUIREMENTS)
+        assert len(text) <= 1200
+
+    def test_without_matching_lines_the_opening_is_cut(self) -> None:
+        assert listing(summary=LONG_POSTING).excerpt(["Rust"], chars=1200) == LONG_POSTING[:1200]
+
+
 class TestJudging:
+    async def test_judge_reads_the_requirements_of_a_long_posting(
+        self, tmp_path: Path, strategy: JobStrategy
+    ) -> None:
+        posting = listing(summary=LONG_POSTING * 3)
+        runner = RecordedRunner(
+            {"job-listing-judge": [JudgeResult(judgments=[judgment(posting.key)], concerns=[])]}
+        )
+
+        await search(runner, tmp_path, []).judge([posting], strategy)
+
+        [payload] = runner.payloads["job-listing-judge"]
+        assert isinstance(payload, JudgeInput)
+        [sent] = payload.listings
+        assert len(sent.summary) <= AGENT_CHARS
+        assert REQUIREMENTS in sent.summary
+
     async def test_batches_of_ten_and_foreign_keys_dropped(
         self, tmp_path: Path, strategy: JobStrategy
     ) -> None:
