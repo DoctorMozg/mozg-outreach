@@ -105,6 +105,30 @@ class TestListings:
         )
         assert len(listings) == 2
 
+    def test_telegram_reposts_merge_whatever_place_the_parser_read(self) -> None:
+        listings = ListingNormalizer(TODAY).normalize(
+            [
+                scouted("telegram", url="https://t.me/py_jobs/1", location_string="Moscow"),
+                scouted("telegram", url="https://t.me/go_jobs/7", remote_status_raw="Remote"),
+                scouted(
+                    url="https://b.example/1", location_string="Berlin", remote_status_raw=None
+                ),
+            ]
+        )
+        assert sorted(len(x.merged_urls) for x in listings) == [0, 1]
+
+    def test_posts_linking_one_vacancy_page_merge(self) -> None:
+        vacancy = "https://career.habr.com/vacancies/1?utm_source=tg"
+        listings = ListingNormalizer(TODAY).normalize(
+            [
+                scouted("telegram", url="https://t.me/a/1", title="Go dev", apply_url=vacancy),
+                scouted("telegram", url="https://t.me/b/2", title="Golang", apply_url=vacancy),
+                scouted("Habr", url="https://career.habr.com/vacancies/1", title="Go"),
+            ]
+        )
+        assert len(listings) == 1
+        assert set(listings[0].sources) == {"telegram", "Habr"}
+
     def test_different_roles_stay_apart(self) -> None:
         listings = ListingNormalizer(TODAY).normalize(
             [scouted(), scouted(title="Data Engineer", url="https://jobs.acme.example/data")]

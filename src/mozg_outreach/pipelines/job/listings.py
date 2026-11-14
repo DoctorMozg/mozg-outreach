@@ -2,6 +2,7 @@
 
 import logging
 import re
+from collections.abc import Callable, Hashable
 from datetime import date, timedelta
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -19,6 +20,8 @@ _LEGAL = re.compile(r"\b(?:inc|ltd|gmbh|llc|sa|srl|ag|bv|oy|ab|plc|corp)\b")
 _AGO = re.compile(r"(\d+)\+?\s*(hour|day|week|month)s?\s+ago", re.IGNORECASE)
 _ISO = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 _DAYS_PER_UNIT = {"hour": 0, "day": 1, "week": 7, "month": 30}
+TELEGRAM = "telegram"
+Merge = Callable[[Listing, Listing], Listing]
 
 
 class SourcedListing(BaseModel):
@@ -32,24 +35,18 @@ class ListingNormalizer:
         self._salary = SalaryParser()
 
     def normalize(self, scouted: list[SourcedListing]) -> list[Listing]:
-        """URL dedup first, then the same posting seen on different hosts, oldest kept."""
-        by_url: dict[str, Listing] = {}
-        for item in scouted:
-            listing = self._listing(item)
-            current = by_url.get(listing.key)
-            by_url[listing.key] = _merge(current, listing) if current else listing
-        by_print: dict[tuple[str, str, str], Listing] = {}
-        for listing in by_url.values():
-            key = fingerprint(listing)
-            current = by_print.get(key)
-            by_print[key] = _merge_posting(current, listing) if current else listing
+        """URL dedup first, then the same posting on other hosts or channels, oldest kept."""
+        by_url = _group([self._listing(item) for item in scouted], lambda x: x.key, _merge)
+        by_print = _group(by_url, fingerprint, _merge_posting)
+        # Reposts that link the same vacancy page are one job, whatever their titles say.
+        merged = _group(by_print, lambda x: canonical_url(x.apply_url or x.key), _merge_posting)
         logger.info(
             "normalized %d scouted listings to %d (%d after url dedup)",
             len(scouted),
-            len(by_print),
+            len(merged),
             len(by_url),
         )
-        return list(by_print.values())
+        return merged
 
     def posted_on(self, raw: str | None) -> date | None:
         if not raw:
@@ -104,7 +101,19 @@ def fingerprint(listing: Listing) -> tuple[str, str, str]:
     company = _LEGAL.sub(" ", _plain(listing.company))
     if not company.strip():
         return listing.key, "", ""
-    return " ".join(title.split()), " ".join(company.split()), _place(listing)
+    # A post's place is the parser's reading of free text, which differs between reposts.
+    place = "" if TELEGRAM in listing.sources else _place(listing)
+    return " ".join(title.split()), " ".join(company.split()), place
+
+
+def _group(
+    listings: list[Listing], key: Callable[[Listing], Hashable], merge: Merge
+) -> list[Listing]:
+    groups: dict[Hashable, Listing] = {}
+    for listing in listings:
+        current = groups.get(key(listing))
+        groups[key(listing)] = merge(current, listing) if current else listing
+    return list(groups.values())
 
 
 def _plain(text: str) -> str:

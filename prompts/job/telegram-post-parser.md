@@ -26,7 +26,7 @@ A JSON object:
 - `location` is the city or country the post states, or `null`. `remote` is `remote`, `hybrid` or `onsite` only when the post says so (`удалённо` and `удаленка` mean remote), else `null`.
 - `salary` is the pay as written, with currency and period, or `null`.
 - `apply_url` is the one link from `links` that leads to the vacancy itself: a careers page, a job board entry (hh.ru, career.habr.com, LinkedIn, Greenhouse and the like) or an application form. Copy it exactly from `links`. Use `null` when the only links are Telegram contacts, the channel itself, ads or courses.
-- Put anything doubtful in `concerns` as one plain sentence that names the post `id`.
+- `concerns` holds only doubts that change how a listing should be read, one plain sentence each that names the post `id`: you couldn't tell whether a post offers one job, the employer could be either of two names, or the post contradicts itself on place or pay. Don't report missing fields, a salary without a currency, a LinkedIn or Telegram link, or a repost of another post; the caller handles those. Most batches have no concerns.
 
 ## Output Format
 
