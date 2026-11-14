@@ -1,4 +1,4 @@
-"""Freelance search as phases: plan, strategy gate, sources, scout, screen, judge and score."""
+"""Freelance search as phases: plan, gate, sources, scout, screen, judge, score and identify."""
 
 from collections import Counter
 
@@ -18,6 +18,8 @@ from mozg_outreach.pipelines.freelance.search import (
     to_candidate,
 )
 from mozg_outreach.pipelines.job.models import Excluded, JobSource
+from mozg_outreach.pipelines.leads.enrichment import LeadEnrichment, LeadTask, RunRef
+from mozg_outreach.pipelines.leads.identify import lead_input
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.runs.job import JOB_CANONICAL, MAX_EXCLUDED_KEPT
@@ -40,6 +42,7 @@ class FreelanceSearchState(RunState):
     kept: list[Gig] = Field(default_factory=list)
     excluded: list[Excluded] = Field(default_factory=list)
     judgments: GigJudgments | None = None
+    item_ids: list[int] = Field(default_factory=list)
 
 
 type Ctx = FlowContext[FreelanceSearchState]
@@ -110,13 +113,37 @@ async def score(ctx: Ctx) -> PhaseResult:
     ranked = _search(ctx).rank(ctx.state.kept, judgments, _strategy(ctx), ctx.today)
     with ctx.db.session() as session:
         items = ItemRepository(session)
+        ctx.state.item_ids = []
         for entry in ranked:
             item = items.upsert(ctx.project_id, ctx.run_id, to_candidate(entry.gig))
             items.set_detail(item, GIG, entry.gig)
             items.set_detail(item, GIG_JUDGMENT, entry.judgment)
             items.set_score(item, entry.score)
+            ctx.state.item_ids.append(item.id)
     ctx.emit("scored", {"items": len(ranked)})
     return None
+
+
+async def identify(ctx: Ctx) -> PhaseResult:
+    """Basic enrichment: the client and named people of every scored gig."""
+    catalog = load_catalog(FREELANCE_CATALOG)
+    boards = frozenset(b.name.casefold() for b in [*catalog.scrape, *catalog.guidance])
+    with ctx.db.session() as session:
+        stored = [session.get(Item, i) for i in ctx.state.item_ids]
+        tasks = [_gig_task(item, boards) for item in stored if item is not None]
+    report = await LeadEnrichment(ctx.db, ctx.steps).run(
+        tasks, RunRef(project_id=ctx.project_id, run_id=ctx.run_id)
+    )
+    ctx.state.concerns += report.concerns
+    ctx.emit("identified", {"companies": report.companies, "people": report.people})
+    return None
+
+
+def _gig_task(item: Item, boards: frozenset[str]) -> LeadTask:
+    gig, _ = gig_of(item)
+    hidden = boards | {s.casefold() for s in gig.listing.sources}
+    lead = lead_input(gig.listing, "freelance", gig.terms.scope, hidden)
+    return LeadTask(item_id=item.id, listing=gig.listing, lead=lead)
 
 
 def gig_of(item: Item) -> tuple[Gig, GigJudgment | None]:
@@ -138,5 +165,6 @@ FREELANCE_SEARCH = FlowSpec[FreelanceSearchState](
         Phase("screen", screen),
         Phase("judge", judge),
         Phase("score", score),
+        Phase("identify", identify),
     ),
 )

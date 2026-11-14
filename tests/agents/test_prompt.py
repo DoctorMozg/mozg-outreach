@@ -46,7 +46,7 @@ class TestRepoPrompts:
         counts: dict[str, int] = {}
         for p in prompts:
             counts[p.group] = counts.get(p.group, 0) + 1
-        assert counts == {"biz": 13, "creative": 3, "job": 8, "shared": 3}
+        assert counts == {"biz": 13, "creative": 3, "job": 8, "shared": 4}
 
     def test_models_are_known_aliases(self, prompts: list[AgentPrompt]) -> None:
         assert {p.model for p in prompts} <= {"sonnet", "opus", "haiku"}

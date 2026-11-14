@@ -15,6 +15,8 @@ from mozg_outreach.pipelines.job.models import JobBrief, JobContacts, JobStrateg
 from mozg_outreach.pipelines.job.screening import listing_text
 from mozg_outreach.pipelines.job.search import JobSearch
 from mozg_outreach.pipelines.job.skills import SkillMatcher
+from mozg_outreach.pipelines.leads.ingest import LeadRegistryIngest
+from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.freelance import gig_of
 from mozg_outreach.runs.inputs import ProjectInputs, load_voice, search_state
@@ -87,7 +89,10 @@ async def job_enrich(ctx: Ctx) -> PhaseResult:
     listing, _ = listing_of(item)
     contacts = await JobSearch(ctx.steps, []).contacts(listing)
     with ctx.db.session() as session:
-        ItemRepository(session).set_detail(_row(session, ctx.state.item_id), CONTACTS, contacts)
+        row = _row(session, ctx.state.item_id)
+        ItemRepository(session).set_detail(row, CONTACTS, contacts)
+        context = IngestContext(project_id=row.project_id, run_id=ctx.run_id, item_id=row.id)
+        LeadRegistryIngest(session).contacts(contacts, context)
     ctx.state.concerns += contacts.concerns
     return None
 

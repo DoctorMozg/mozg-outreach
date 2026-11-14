@@ -1,14 +1,18 @@
 from pathlib import Path
 
+from sqlalchemy import select
+
 from mozg_outreach.agents import AgentRunError
 from mozg_outreach.domain import RunStatus
 from mozg_outreach.pipelines.job.models import JobStrategy
+from mozg_outreach.pipelines.leads.enrichment import IDENTITY
 from mozg_outreach.runs.flow import GateAnswer
 from mozg_outreach.runs.job import JUDGMENT, LISTING
 from mozg_outreach.storage.db import Database
-from mozg_outreach.storage.models import Item, Run, SourceConfig
+from mozg_outreach.storage.models import Entity, Item, ItemLink, Run, SourceConfig
 from mozg_outreach.storage.repositories import ItemRepository
 from tests.pipelines.conftest import HangingRunner
+from tests.pipelines.leads.conftest import company, identity, person
 
 from .conftest import FEED_URL, Harness, judged
 
@@ -25,7 +29,13 @@ class TestJobSearch:
         self, harness: Harness, strategy: JobStrategy
     ) -> None:
         project_id = harness.job_project()
-        harness.script({"job-strategist": [strategy, strategy], "job-listing-judge": [judged()]})
+        harness.script(
+            {
+                "job-strategist": [strategy, strategy],
+                "job-listing-judge": [judged()],
+                "lead-identifier": [identity(company(), [person()])],
+            }
+        )
         run_id = harness.manager.start(project_id, "job.search", {})
         await harness.manager.wait(run_id)
         parked = run_row(harness, run_id)
@@ -46,9 +56,15 @@ class TestJobSearch:
         with harness.db.session() as session:
             [item] = ItemRepository(session).report(project_id)
             assert item.dedup_key == FEED_URL
-            assert {LISTING, JUDGMENT} <= set(item.details)
+            assert {LISTING, JUDGMENT, IDENTITY} <= set(item.details)
             assert item.score_total is not None
             cursor = session.query(SourceConfig.cursor).scalar()
+            linked = session.execute(
+                select(ItemLink.role, Entity.name).join(Entity).where(ItemLink.item_id == item.id)
+            ).all()
+        assert set(linked) == {("subject", "Acme GmbH"), ("contact", "Jane Doe")}
+        [lead] = harness.runner.payloads["lead-identifier"]
+        assert lead.model_dump()["organization"] == "Acme"
         assert cursor == "2026-11-13T09:00:00+00:00"
         kinds = [e.kind for e in harness.manager.log.after(run_id, 0)]
         assert kinds.count("gate") == 2
@@ -58,7 +74,13 @@ class TestJobSearch:
         self, harness: Harness, strategy: JobStrategy
     ) -> None:
         project_id = harness.job_project()
-        harness.script({"job-strategist": [strategy], "job-listing-judge": [judged()]})
+        harness.script(
+            {
+                "job-strategist": [strategy],
+                "job-listing-judge": [judged()],
+                "lead-identifier": [identity()],
+            }
+        )
         run_id = harness.manager.start(project_id, "job.search", {})
         await harness.manager.wait(run_id)
         edited = strategy.model_copy(update={"must_have_skills": ["Python", "Go"]})
@@ -66,6 +88,7 @@ class TestJobSearch:
             run_id, GateAnswer(approve=True, revised=edited.model_dump(mode="json"))
         )
         await harness.manager.wait(run_id)
+        assert run_row(harness, run_id).status == RunStatus.COMPLETE
         used = JobStrategy.model_validate(run_row(harness, run_id).state["strategy"])
         assert used.must_have_skills == ["Python", "Go"]
 

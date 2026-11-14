@@ -11,7 +11,8 @@ from mozg_outreach.pipelines.biz.enrichment_models import (
     TechResult,
 )
 from mozg_outreach.pipelines.biz.models import ScoutResult
-from mozg_outreach.pipelines.biz.registry_ingest import BizRegistryIngest, IngestContext
+from mozg_outreach.pipelines.biz.registry_ingest import BizRegistryIngest
+from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.storage.models import (
     Entity,
     EntityIdentifier,

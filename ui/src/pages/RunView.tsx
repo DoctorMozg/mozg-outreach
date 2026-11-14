@@ -23,6 +23,7 @@ const EVENT_KINDS = [
   "drafts",
   "skipped",
   "summary",
+  "identified",
 ];
 
 function useRunEvents(runId: number, onEvent: () => void): RunEvent[] {

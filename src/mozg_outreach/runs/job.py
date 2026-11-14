@@ -1,4 +1,4 @@
-"""Job search as phases: plan, strategy gate, sources, collect, screen, judge and score."""
+"""Job search as phases: plan, strategy gate, sources, collect, screen, judge, score, identify."""
 
 import logging
 from collections import Counter
@@ -18,6 +18,8 @@ from mozg_outreach.pipelines.job.models import (
     ListingJudgment,
 )
 from mozg_outreach.pipelines.job.search import JobSearch, Judgments, load_canonical, to_candidate
+from mozg_outreach.pipelines.leads.enrichment import LeadEnrichment, LeadTask, RunRef
+from mozg_outreach.pipelines.leads.identify import lead_input
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.storage.models import Item, SourceConfig
@@ -45,6 +47,7 @@ class JobSearchState(RunState):
     kept: list[Listing] = Field(default_factory=list)
     excluded: list[Excluded] = Field(default_factory=list)
     judgments: Judgments | None = None
+    item_ids: list[int] = Field(default_factory=list)
 
 
 type Ctx = FlowContext[JobSearchState]
@@ -157,13 +160,35 @@ async def score(ctx: Ctx) -> PhaseResult:
     ranked = _search(ctx).rank(ctx.state.kept, judgments, _strategy(ctx), ctx.today)
     with ctx.db.session() as session:
         items = ItemRepository(session)
+        ctx.state.item_ids = []
         for entry in ranked:
             item = items.upsert(ctx.project_id, ctx.run_id, to_candidate(entry.listing))
             items.set_detail(item, LISTING, entry.listing)
             items.set_detail(item, JUDGMENT, entry.judgment)
             items.set_score(item, entry.score)
+            ctx.state.item_ids.append(item.id)
     ctx.emit("scored", {"items": len(ranked)})
     return None
+
+
+async def identify(ctx: Ctx) -> PhaseResult:
+    """Basic enrichment: the employer and named people of every scored listing."""
+    with ctx.db.session() as session:
+        stored = [session.get(Item, i) for i in ctx.state.item_ids]
+        tasks = [_listing_task(item) for item in stored if item is not None]
+    report = await LeadEnrichment(ctx.db, ctx.steps).run(
+        tasks, RunRef(project_id=ctx.project_id, run_id=ctx.run_id)
+    )
+    ctx.state.concerns += report.concerns
+    ctx.emit("identified", {"companies": report.companies, "people": report.people})
+    return None
+
+
+def _listing_task(item: Item) -> LeadTask:
+    listing, _ = listing_of(item)
+    return LeadTask(
+        item_id=item.id, listing=listing, lead=lead_input(listing, "job", listing.summary)
+    )
 
 
 def listing_of(item: Item) -> tuple[Listing, ListingJudgment | None]:
@@ -183,5 +208,6 @@ JOB_SEARCH = FlowSpec[JobSearchState](
         Phase("screen", screen),
         Phase("judge", judge),
         Phase("score", score),
+        Phase("identify", identify),
     ),
 )

@@ -20,8 +20,9 @@ from mozg_outreach.pipelines.biz.letters import (
     LetterRequest,
 )
 from mozg_outreach.pipelines.biz.models import Strategy
-from mozg_outreach.pipelines.biz.registry_ingest import BizRegistryIngest, IngestContext
+from mozg_outreach.pipelines.biz.registry_ingest import BizRegistryIngest
 from mozg_outreach.pipelines.steps import PipelineSteps
+from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.scoring.biz import BizScoreInput, BizScorer
 from mozg_outreach.storage.models import Item, Project
 from mozg_outreach.storage.repositories import (
