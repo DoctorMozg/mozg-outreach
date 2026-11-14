@@ -181,6 +181,8 @@ Original scope:
 - FastAPI: projects, briefs, field specs, sources, runs (start, cancel, resume), gate answers, items, selection, enrichment, drafts, voice samples, registry (entity profiles with sources, connections, merge suggestions, a graph endpoint scoped to a project or an entity). SSE run events with `Last-Event-ID` replay from RunEvent. One background task per run behind a semaphore.
 - verify: API tests with `httpx.AsyncClient` and a fake AgentRunner covering a full biz run with a gate round trip and cancel.
 
+Done, M9a (run core): `runs/` holds the flows as phase lists. A phase returns nothing, a phase to jump to, or a gate. `RunManager` runs one task per run behind a semaphore, saves `Run.state` after every phase, parks at gates (`AWAITING_GATE`), and resumes failed or cancelled runs from their last phase. Restart marks unfinished runs failed. Strategy approval is one `Approval` gate shared by biz, job and freelance: approve, approve with an edited strategy, or reject with notes that go back to the strategist as `feedback`. Item flows: `biz.enrich`, `biz.letters`, `job.enrich`, `job.letters`, `freelance.letters`. Feed cursors persist on `SourceConfig.cursor`. Job and freelance reports keep fixed columns; field proposals stay biz-only.
+
 **M10 UI** (stack chosen at this point)
 
 - Projects list, brief and field editor, source picker, run view with live progress and gates, report table with per-axis score reasons and source quotes, selection and enrichment, draft editor with naturalization diff, voice samples page, person and company profiles with every source and connection, merge suggestions, and an interactive graph view of people, companies and leads.

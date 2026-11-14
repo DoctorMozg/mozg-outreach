@@ -195,6 +195,7 @@ class StrategyInput(BaseModel):
     )
     brief: BizBrief | None = None
     climate: ClimateReport | None = None
+    feedback: str | None = Field(default=None, description="The user's notes on a rejected draft.")
 
 
 class Strategy(BaseModel):

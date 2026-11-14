@@ -64,6 +64,8 @@ class SourceConfig(Base):
     kind: Mapped[str] = mapped_column(String(40))
     config: Mapped[JsonObject] = mapped_column(default=dict)
     enabled: Mapped[bool] = mapped_column(default=True)
+    # Where the last fetch stopped, so the next run reads only what is new.
+    cursor: Mapped[str | None] = mapped_column(Text)
 
 
 class Run(Base):
@@ -75,6 +77,8 @@ class Run(Base):
     status: Mapped[RunStatus] = mapped_column(default=RunStatus.PENDING)
     phase: Mapped[str | None] = mapped_column(String(60))
     pending_gate: Mapped[JsonObject | None]
+    # The flow's own state, saved after every phase so a run resumes where it stopped.
+    state: Mapped[JsonObject] = mapped_column(default=dict)
     field_spec_version: Mapped[int | None]
     cost_usd: Mapped[float] = mapped_column(default=0.0)
     error: Mapped[str | None] = mapped_column(Text)
