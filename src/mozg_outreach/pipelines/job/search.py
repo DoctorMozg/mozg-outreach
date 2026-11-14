@@ -206,6 +206,9 @@ class JobSearch:
         )
 
 
+COLUMNS = ("company", "role", "location", "salary", "posted_on", "url", "apply_url")
+
+
 def to_candidate(listing: Listing) -> ItemCandidate:
     def field(value: str | None) -> FieldValue:
         return FieldValue(value=value, source_url=listing.url)
@@ -213,7 +216,7 @@ def to_candidate(listing: Listing) -> ItemCandidate:
     return ItemCandidate(
         kind=ItemKind.JOB,
         dedup_key=listing.key,
-        title=f"{listing.title} at {listing.company}"[:300],
+        title=(f"{listing.title} at {listing.company}" if listing.company else listing.title)[:300],
         fields={
             "company": field(listing.company),
             "role": field(listing.title),
@@ -221,6 +224,7 @@ def to_candidate(listing: Listing) -> ItemCandidate:
             "salary": field(listing.salary.raw if listing.salary else None),
             "posted_on": field(listing.posted_on.isoformat() if listing.posted_on else None),
             "url": field(listing.url),
+            "apply_url": field(listing.apply_url),
         },
     )
 

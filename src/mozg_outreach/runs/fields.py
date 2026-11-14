@@ -6,6 +6,8 @@ from mozg_outreach.domain import ProjectMode
 from mozg_outreach.pipelines.biz.discovery import BizDiscovery
 from mozg_outreach.pipelines.biz.models import BizBrief, BriefReview
 from mozg_outreach.pipelines.fields import FieldProposalInput, FieldProposer, SeekerBrief
+from mozg_outreach.pipelines.freelance import search as freelance_search
+from mozg_outreach.pipelines.job import search as job_search
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.storage.repositories import FieldSpecRepository
@@ -27,6 +29,9 @@ async def review(ctx: Ctx) -> PhaseResult:
     return None
 
 
+BUILT_IN = {ProjectMode.JOB: job_search.COLUMNS, ProjectMode.FREELANCE: freelance_search.COLUMNS}
+
+
 async def propose(ctx: Ctx) -> PhaseResult:
     inputs = ProjectInputs.load(ctx.db, ctx.project_id)
     raw = inputs.require_brief()
@@ -37,7 +42,12 @@ async def propose(ctx: Ctx) -> PhaseResult:
         else SeekerBrief.model_validate(raw)
     )
     proposal = await FieldProposer(ctx.steps).propose(
-        FieldProposalInput(mode=inputs.mode, brief=brief, current_spec=inputs.spec)
+        FieldProposalInput(
+            mode=inputs.mode,
+            brief=brief,
+            current_spec=inputs.spec,
+            built_in=list(BUILT_IN.get(inputs.mode, ())),
+        )
     )
     with ctx.db.session() as session:
         ctx.state.version = (

@@ -250,6 +250,9 @@ def gig_rules(strategy: FreelanceStrategy, brief: FreelanceBrief) -> ScreenRules
     )
 
 
+COLUMNS = ("client", "gig", "location", "budget", "duration", "posted_on", "url")
+
+
 def to_candidate(gig: Gig) -> ItemCandidate:
     listing = gig.listing
 

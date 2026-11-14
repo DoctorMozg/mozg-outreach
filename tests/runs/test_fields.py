@@ -1,15 +1,26 @@
+import pytest
 from sqlalchemy import select
 
-from mozg_outreach.domain import FieldDefinition, FieldSpec, FieldType, FieldValue, RunStatus
+from mozg_outreach.domain import (
+    FieldDefinition,
+    FieldSpec,
+    FieldType,
+    FieldValue,
+    ProjectMode,
+    RunStatus,
+)
 from mozg_outreach.pipelines.fields import FieldProposal, FieldResearchResult, ResearchedValue
+from mozg_outreach.pipelines.freelance.models import FreelanceBrief
+from mozg_outreach.pipelines.freelance.search import COLUMNS as GIGS
 from mozg_outreach.pipelines.job.models import JobStrategy, JudgeResult
+from mozg_outreach.pipelines.job.search import COLUMNS as JOBS
 from mozg_outreach.runs.flow import GateAnswer
 from mozg_outreach.runs.job import JobSearchState
 from mozg_outreach.sources.models import SourceItem
-from mozg_outreach.storage.models import FieldSpecVersion, Item, JsonObject, Run
+from mozg_outreach.storage.models import FieldSpecVersion, Item, JsonObject, Project, Run
 from mozg_outreach.storage.repositories import FieldSpecRepository
 from tests.pipelines.conftest import Scripted
-from tests.pipelines.job.conftest import judgment
+from tests.pipelines.job.conftest import CV_TEXT, judgment
 from tests.pipelines.leads.conftest import CAREERS, company, identity
 
 from .conftest import FEED_URL, NOW, Harness
@@ -72,6 +83,64 @@ class TestFieldProposal:
         with harness.db.session() as session:
             draft = session.scalars(select(FieldSpecVersion)).one()
             assert (draft.project_id, draft.accepted_at) == (project_id, None)
+
+    @pytest.mark.parametrize(
+        ("mode", "columns", "repeat"),
+        [
+            (ProjectMode.JOB, JOBS, "apply_url"),
+            (ProjectMode.FREELANCE, GIGS, "budget"),
+        ],
+    )
+    async def test_built_in_columns_are_sent_and_repeats_dropped(
+        self, harness: Harness, mode: ProjectMode, columns: tuple[str, ...], repeat: str
+    ) -> None:
+        project_id = seeker_project(harness, mode)
+        proposed = FieldSpec(fields=[*SPEC.fields, definition(repeat)])
+        harness.script({"field-proposer": [FieldProposal(spec=proposed, rationale="r")]})
+        run_id = harness.manager.start(project_id, f"{mode.value}.fields", {})
+        await harness.manager.wait(run_id)
+
+        [sent] = harness.runner.payloads["field-proposer"]
+        assert sent.model_dump()["built_in"] == list(columns)
+        assert draft_ids(harness) == ["team_size", "visa"]
+
+    async def test_an_accepted_field_keeps_its_place_even_if_built_in(
+        self, harness: Harness
+    ) -> None:
+        project_id = harness.job_project()
+        accepted = FieldSpec(fields=[definition("apply_url")])
+        with harness.db.session() as session:
+            repo = FieldSpecRepository(session)
+            repo.accept(project_id, repo.propose(project_id, accepted).version)
+        proposed = FieldSpec(fields=[definition("apply_url"), *SPEC.fields])
+        harness.script({"field-proposer": [FieldProposal(spec=proposed, rationale="r")]})
+        run_id = harness.manager.start(project_id, "job.fields", {})
+        await harness.manager.wait(run_id)
+
+        assert draft_ids(harness) == ["apply_url", "team_size", "visa"]
+
+
+def definition(field_id: str) -> FieldDefinition:
+    return FieldDefinition(id=field_id, label=field_id, type=FieldType.TEXT, description="d")
+
+
+def seeker_project(harness: Harness, mode: ProjectMode) -> int:
+    if mode == ProjectMode.JOB:
+        return harness.job_project()
+    brief: JsonObject = FreelanceBrief(cv_text=CV_TEXT, preferences="Remote EU").model_dump()
+    with harness.db.session() as session:
+        project = Project(name="Gigs", mode=mode, sender_name="Stan Petrov", brief=brief)
+        session.add(project)
+        session.flush()
+        return project.id
+
+
+def draft_ids(harness: Harness) -> list[str]:
+    with harness.db.session() as session:
+        draft = session.scalars(
+            select(FieldSpecVersion).where(FieldSpecVersion.accepted_at.is_(None))
+        ).one()
+        return [f.id for f in FieldSpec.model_validate(draft.spec).fields]
 
 
 class TestSearchFields:

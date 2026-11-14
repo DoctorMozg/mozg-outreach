@@ -4,6 +4,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
+from mozg_outreach.agents import AgentOutputError
 from mozg_outreach.domain import (
     FieldDefinition,
     FieldScalar,
@@ -28,6 +29,7 @@ class FieldProposalInput(BaseModel):
     mode: ProjectMode
     brief: BizBrief | SeekerBrief
     current_spec: FieldSpec | None = None
+    built_in: list[str] = Field(default_factory=list, description="Columns the report always has.")
 
 
 class FieldProposal(BaseModel):
@@ -80,7 +82,16 @@ class FieldProposer:
         self._steps = steps
 
     async def propose(self, request: FieldProposalInput) -> FieldProposal:
-        return await self._steps.run("shared", "field-proposer", request, FieldProposal)
+        proposal = await self._steps.run("shared", "field-proposer", request, FieldProposal)
+        kept = {f.id for f in request.current_spec.fields} if request.current_spec else set()
+        repeats = {f.id for f in proposal.spec.fields if f.id in request.built_in} - kept
+        if not repeats:
+            return proposal
+        logger.info("dropped proposed fields the report already has: %s", sorted(repeats))
+        fields = [f for f in proposal.spec.fields if f.id not in repeats]
+        if not fields:
+            raise AgentOutputError("field-proposer", "proposed only columns the report has")
+        return proposal.model_copy(update={"spec": FieldSpec(fields=fields)})
 
 
 class FieldResearcher:
