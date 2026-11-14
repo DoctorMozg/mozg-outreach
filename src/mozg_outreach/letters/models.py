@@ -75,6 +75,9 @@ class LetterBrief(BaseModel):
     )
     reader_style: ReaderStyle | None
     sender_voice: str
+    sender_background: str | None = Field(
+        default=None, description="The sender's CV; every claim about the sender comes from it."
+    )
     retry: RetryFeedback | None = None
 
 
@@ -98,3 +101,14 @@ class DraftReview(BaseModel):
     changes: list[str]
     problems: list[str] = Field(description="Format or evidence rules the final text still breaks.")
     review_notes: list[str] = Field(description="Facts to check: unverified names, vague claims.")
+
+
+class Skipped(BaseModel):
+    contact: str
+    reason: str
+
+
+class SenderSettings(BaseModel):
+    name: str = Field(min_length=1, description="From the project settings; signs every letter.")
+    tone: Tone = "neutral"
+    voice: str = Field(default="", description="The strategy's sender voice description.")

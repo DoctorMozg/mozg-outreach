@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from mozg_outreach.domain import FieldValue
-from mozg_outreach.letters.models import Angle, Hook
+from mozg_outreach.letters.models import Angle, Hook, Skipped
 from mozg_outreach.naturalize.models import Channel
 from mozg_outreach.pipelines.biz.enrichment_models import CompanyDossier, EmailContact
 from mozg_outreach.pipelines.biz.models import OutreachAngle
@@ -31,11 +31,6 @@ class Route(BaseModel):
     address: str
     confidence: AddressConfidence
     generic_inbox: bool = False
-
-
-class Skipped(BaseModel):
-    contact: str
-    reason: str
 
 
 class CompanyEvidence(BaseModel):

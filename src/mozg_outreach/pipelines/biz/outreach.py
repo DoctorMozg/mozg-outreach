@@ -6,6 +6,7 @@ from typing import get_args
 from sqlalchemy.orm import Session
 
 from mozg_outreach.domain import FieldSpec, FieldValue, ItemCandidate
+from mozg_outreach.letters.models import SenderSettings
 from mozg_outreach.naturalize.models import Channel
 from mozg_outreach.naturalize.naturalizer import Naturalizer, VoiceContext
 from mozg_outreach.naturalize.voice import VoiceProfile
@@ -17,7 +18,6 @@ from mozg_outreach.pipelines.biz.letters import (
     BizLetterWriter,
     LetterBatch,
     LetterRequest,
-    SenderSettings,
 )
 from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.biz.registry_ingest import BizRegistryIngest, IngestContext

@@ -31,8 +31,8 @@ class LetterFrame(BaseModel):
             return cls(
                 salutation=f"Hi {first},", closing="Thanks,", signature=first_name(party.sender)
             )
-        if tone == "formal":
-            # "Dear Ms. X" needs a guessed honorific; the full name avoids guessing.
+        if tone == "formal" or channel == "cover_letter":
+            # Cover letters open with "Dear" whatever the tone; a full name avoids guessing "Ms.".
             salutation = f"Dear {' '.join(party.recipient.split())},"
         else:
             salutation = SALUTATIONS[tone].format(first=first)

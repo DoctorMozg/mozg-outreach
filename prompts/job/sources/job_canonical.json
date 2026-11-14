@@ -1,21 +1,21 @@
 [
   {
-    "access_notes": "Public listings. Aggressive bot detection on detail pages \u2014 fall back to summary snippet only.",
+    "access_notes": "Public listings. Aggressive bot detection on detail pages \u2014 fall back to summary snippet only. Not scouted: the site's terms forbid scraping.",
     "language_hint": "en",
     "name": "LinkedIn Jobs",
     "relevance_score": 9,
-    "scrape_allowed": true,
+    "scrape_allowed": false,
     "scrape_hints": "URL params: keywords, location, f_WT=2 for remote",
     "tier": "canonical",
     "type": "global",
     "url": "https://www.linkedin.com/jobs/search/"
   },
   {
-    "access_notes": "Public; localized hosts available (de.indeed.com, fr.indeed.com, etc.) for region-fit boosts.",
+    "access_notes": "Public; localized hosts available (de.indeed.com, fr.indeed.com, etc.) for region-fit boosts. Not scouted: the site's terms forbid scraping.",
     "language_hint": "en",
     "name": "Indeed",
     "relevance_score": 8,
-    "scrape_allowed": true,
+    "scrape_allowed": false,
     "scrape_hints": "URL params: q (keywords), l (location), jt (job type), sc (filters)",
     "tier": "canonical",
     "type": "global",

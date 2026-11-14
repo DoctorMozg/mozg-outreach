@@ -1,0 +1,78 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "address": {
+        "postalAddress": {
+          "addressCountry": "European Union",
+          "addressLocality": "",
+          "addressRegion": "",
+          "postalCode": ""
+        }
+      },
+      "applyUrl": "https://jobs.ashbyhq.com/Ashby/7458d4e9-da2e-47bd-98cb-adfda43d42b2/application",
+      "department": "Engineering",
+      "descriptionHtml": "<p style=\"min-height:1.5em\">Hi \ud83d\udc4b I\u2019m <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://uk.linkedin.com/in/colinhoweuk\"><u>Colin</u></a>, Director of Engineering, Europe. How do you feel about software engineers writing product specs, making product decisions, and not breaking down projects into individual tickets? If that sounds exciting (even if a bit scary), read on because I\u2019m looking for an engineering manager to help us build a different type of engineering team and culture at Ashby.</p><p style=\"min-height:1.5em\">To start, why do we need to be different? Time and again,",
+      "descriptionPlain": "Hi \ud83d\udc4b I\u2019m Colin https://uk.linkedin.com/in/colinhoweuk, Director of Engineering, Europe. How do you feel about software engineers writing product specs, making product decisions, and not breaking down projects into individual tickets? If that sounds exciting (even if a bit scary), read on because I\u2019m looking for an engineering manager to help us build a different type of engineering team and culture at Ashby.\n\nTo start, why do we need to be different? Time and again, I have witnessed engineers kn",
+      "employmentType": "FullTime",
+      "id": "7458d4e9-da2e-47bd-98cb-adfda43d42b2",
+      "isListed": true,
+      "isRemote": true,
+      "jobUrl": "https://jobs.ashbyhq.com/Ashby/7458d4e9-da2e-47bd-98cb-adfda43d42b2",
+      "location": "Remote - European Union",
+      "publishedAt": "2024-03-04T14:29:08.532+00:00",
+      "secondaryLocations": [
+        {
+          "address": {
+            "postalAddress": {
+              "addressCountry": "Spain",
+              "addressLocality": "Spain",
+              "addressRegion": "Spain"
+            }
+          },
+          "location": "Spain"
+        }
+      ],
+      "shouldDisplayCompensationOnJobPostings": true,
+      "team": "EMEA Engineering",
+      "title": "Engineering Manager - EU",
+      "workplaceType": "Remote"
+    },
+    {
+      "address": {
+        "postalAddress": {
+          "addressCountry": "France",
+          "addressLocality": "",
+          "addressRegion": ""
+        }
+      },
+      "applyUrl": "https://jobs.ashbyhq.com/Ashby/86a60834-ba64-484d-9658-afa1bc97a957/application",
+      "department": "Sales",
+      "descriptionHtml": "<h2><strong>Why Join Sales at Ashby</strong></h2><p style=\"min-height:1.5em\">Sales at Ashby is a unique opportunity to sell a <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"https://www.ashbyhq.com/customers\"><u>product customers genuinely love</u></a> during an AI-fueled market expansion. Over 5,000 companies rely on Ashby, including OpenAI, Doctolib, Alan, Mistral and <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"http://Monday.com\">Monday.com</a>, and our business is durably growing faster than 100% year-over-year. <a target=\"_blank\" rel=\"noopener noreferrer nofollo",
+      "descriptionPlain": "WHY JOIN SALES AT ASHBY\n\nSales at Ashby is a unique opportunity to sell a product customers genuinely love https://www.ashbyhq.com/customers during an AI-fueled market expansion. Over 5,000 companies rely on Ashby, including OpenAI, Doctolib, Alan, Mistral and Monday.com http://Monday.com, and our business is durably growing faster than 100% year-over-year. We\u2019re well funded https://www.ashbyhq.com/blog/culture/series-d, and on a path to profitability. That's exceptionally rare for a company at ",
+      "employmentType": "FullTime",
+      "id": "86a60834-ba64-484d-9658-afa1bc97a957",
+      "isListed": true,
+      "isRemote": true,
+      "jobUrl": "https://jobs.ashbyhq.com/Ashby/86a60834-ba64-484d-9658-afa1bc97a957",
+      "location": "France",
+      "publishedAt": "2026-09-08T16:27:26.694+00:00",
+      "secondaryLocations": [
+        {
+          "address": {
+            "postalAddress": {
+              "addressCountry": "United Kingdom",
+              "addressLocality": "",
+              "addressRegion": ""
+            }
+          },
+          "location": "United Kingdom"
+        }
+      ],
+      "shouldDisplayCompensationOnJobPostings": true,
+      "team": "Sales",
+      "title": "Mid Market Account Executive - EMEA (French Speaking)",
+      "workplaceType": "Remote"
+    }
+  ]
+}

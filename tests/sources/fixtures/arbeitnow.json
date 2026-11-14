@@ -1,0 +1,68 @@
+{
+  "data": [
+    {
+      "company_name": "Upvest",
+      "created_at": 1794660013,
+      "description": "<p style=\"min-height:1.5em\">At Upvest, we are on a <strong>mission to make investing as easy as spending money</strong>. Upvest empowers businesses to offer a wide range of investment products and the best experience in the field of capital market investment and retirement planning. Upvest\u2019s Investment API is easy to integrate so that fintechs and financial institutions can save resources and fully focus on their core business.</p><p style=\"min-height:1.5em\">We are proud to partner with Europe\u2019s leading Fintechs and financial institutions such as DKB, Revolut, N26 and Raisin. Founded in 2017 b",
+      "job_types": [
+        "Intern"
+      ],
+      "location": "Berlin",
+      "remote": false,
+      "slug": "strategy-intern-berlin-294496",
+      "tags": [
+        "Strategy & Org"
+      ],
+      "title": "Strategy Intern (f/m/d)",
+      "url": "https://www.arbeitnow.com/jobs/companies/upvest/strategy-intern-berlin-294496"
+    },
+    {
+      "company_name": "Buena",
+      "created_at": 1794660012,
+      "description": "<h1>\u00dcber die Rolle</h1><p style=\"min-height:1.5em\">Eine gute Kaufentscheidung beginnt damit, dass jemand genau hinsieht. Bei Buena bist du das: Du verstehst das Unternehmen, hinterfragst Annahmen, erkennst Risiken und begr\u00fcndest, welchen Preis wir zahlen sollten.</p><p style=\"min-height:1.5em\">Du verantwortest die Due Diligence f\u00fcr Hausverwaltungen, die wir \u00fcbernehmen m\u00f6chten: von der ersten Sichtung des Datenraums \u00fcber die Bewertung und die Pr\u00e4sentation im Investment Committee bis zu den finanziellen und operativen Anlagen f\u00fcr den Kaufvertrag. Wenn das Committee ins Detail geht, kennst du das",
+      "job_types": [
+        "Full Time"
+      ],
+      "location": "Berlin",
+      "remote": false,
+      "slug": "ma-associate-berlin-199267",
+      "tags": [
+        "Operations"
+      ],
+      "title": "M&A Associate (m/f/d)",
+      "url": "https://www.arbeitnow.com/jobs/companies/buena/ma-associate-berlin-199267"
+    },
+    {
+      "company_name": "8returns GmbH",
+      "created_at": 1794660012,
+      "description": "<h3>About 8returns</h3><p style=\"min-height:1.5em\">Every online shop has returns. Most treat them as a cost. We help brands turn them into a better customer experience, more exchanges instead of refunds, and less work for their teams.</p><p style=\"min-height:1.5em\">400+ brands run their returns on 8returns, including Tommy Hilfiger, Reebok, Fielmann and OACE. We're a small, Berlin-based, remote-first team where everyone owns their projects end to end, with few meetings, short decision paths and direct feedback.</p><div style=\"min-height:1.2em;margin-top:0px;margin-bottom:0px\">\u00a0</div><h3>The ro",
+      "job_types": [
+        "Full Time"
+      ],
+      "location": "Berlin",
+      "remote": false,
+      "slug": "product-engineer-berlin-271434",
+      "tags": [
+        "Growth"
+      ],
+      "title": "Product Engineer (m/f/d)",
+      "url": "https://www.arbeitnow.com/jobs/companies/8returns-gmbh/product-engineer-berlin-271434"
+    }
+  ],
+  "links": {
+    "first": "https://www.arbeitnow.com/api/job-board-api?page=1",
+    "last": null,
+    "next": "https://www.arbeitnow.com/api/job-board-api?page=2",
+    "prev": null
+  },
+  "meta": {
+    "current_page": 1,
+    "current_page_url": "https://www.arbeitnow.com/api/job-board-api?page=1",
+    "from": 1,
+    "info": "Jobs are updated every hour and order by the `created_at` timestamp. Use `?page=` to paginate. Read more information here: https://www.arbeitnow.com/blog/job-board-api",
+    "path": "https://www.arbeitnow.com/api/job-board-api",
+    "per_page": 300,
+    "terms": "This is a free public API for jobs, please do not abuse. I would appreciate linking back to the site. By using the API, you agree to the terms of service present on Arbeitnow.com",
+    "to": 300
+  }
+}

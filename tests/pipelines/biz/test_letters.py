@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
-from mozg_outreach.letters.models import LetterBrief, LetterDraft
+from mozg_outreach.letters.models import LetterBrief, LetterDraft, SenderSettings
 from mozg_outreach.naturalize.models import NaturalizeResult
 from mozg_outreach.naturalize.naturalizer import Naturalizer
 from mozg_outreach.naturalize.validation import body_word_count
@@ -13,7 +13,6 @@ from mozg_outreach.pipelines.biz.letters import (
     BizLetterWriter,
     LetterBatch,
     LetterRequest,
-    SenderSettings,
 )
 from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.steps import PipelineSteps

@@ -14,7 +14,7 @@ Background: `docs/research/2026-11-14-initial-research.md`.
 
 - Python 3.12, `uv` for env and lockfile, `ruff` lint and format, `pyright` typecheck, `pytest` + `pytest-asyncio`, all run through `pre-commit`.
 - Runtime dependencies, added when their milestone starts: `claude-agent-sdk` (M0), `pydantic` (M2), `sqlalchemy` 2.x on SQLite (M3), `fastapi` + `uvicorn` + `sse-starlette` (M9), `httpx` (M8), `telethon` (M8). No Alembic until the schema stabilizes; `create_all` for the prototype.
-- UI stack is decided at M10; the API is designed UI-agnostic.
+- UI stack (decided 2026-11-14): React + Vite + TypeScript SPA in `ui/`, built by Vite and served by FastAPI, with @tanstack/react-query and cytoscape for the graph. The API stays UI-agnostic.
 - Prompts live as markdown files with frontmatter (`tools`, `model`) under `prompts/`, not inlined in Python, so they stay editable and diffable.
 - Upstream prompt-lint tests and evals are not migrated. They are replaced with schema contract tests, recorded-response fixtures and a small opt-in live suite (`pytest -m live`).
 
@@ -161,6 +161,14 @@ Original scope:
 - Split into M8a job-search (strategy with CV text from the project, sources, scouts, Python normalize/filter/FX, prescore, score, contacts, letters with naturalization), M8b freelance-search, freelance-pitch and recruiter-info, M8c `SourceAdapter` protocol plus Telegram (Telethon, user session stored outside workspaces) and ATS/feed adapters feeding scouts' candidate pools.
 - Fix known contract bugs in the process: `salary_floor` units, a defined `job_slug`, excluded-reason vocabulary unified across job and freelance, consistent score shape.
 - verify: per sub-milestone fixture tests plus `-m live` smoke; adapter tests against recorded HTTP and Telethon responses.
+- Done (M8a job-search):
+  - Python owns every hard gate and every axis: `listings.py` (canonical URL as dedup key, then a title/company/place fingerprint keeping the earliest posting), `salary.py` (range, currency, period, fixed USD table; the floor is a `Money` converted the same way), `eligibility.py` (country and region tables, the location fields before the summary, required-location phrases, work-authorization blockers), `skills.py` (word-boundary matching, short terms case-sensitive), `screening.py` (stale, industry and attribute blocklists, location, must-have gate) and `scoring/job.py` (six axes, weighted mean of assessed axes, a named deal-breaker caps the total at 40).
+  - The must-have gate follows the legacy prescorer: only a listing naming none of the required skills is excluded; a partial match goes on and scores lower. The first live run with an all-must-haves gate excluded every listing.
+  - The new `job-listing-judge` agent returns only the level a listing asks for, an employer signal with evidence, deal-breaker hits and a summary. `job-prescorer`, `job-scorer`, `job-letter-writer` and `job-reporter` are deleted.
+  - Cover letters go through the shared `letters/composer.py` with the copywriter's new `cover_letter` channel and `sender_background` (the CV). Salutation is "Dear <name>," or "Dear Hiring Team,"; the send-to address is a published email or the apply URL, never a guessed one.
+  - `pipelines/job/feeds.py` turns ATS and feed items into listings without a scout agent. LinkedIn and Indeed are kept in the canonical list but marked `scrape_allowed: false`.
+  - Live result on a fictional CV: 34 feed and 3 scouted listings, 4 kept after the gates, judged, ranked, one contact found and one cover letter written with no format problems, $1.05 in total.
+- Done (M8c): `sources/` with Greenhouse, Lever, Ashby, Remotive, RemoteOK, Arbeitnow and HN who-is-hiring adapters (injected `httpx` client, per-adapter cursor, errors reported not raised) and a Telethon reader. The Telegram session lives at `MOZG_TELEGRAM_SESSION` (default `~/.local/share/mozg-outreach/telegram`, 0700 directory, 0600 file), refuses to sit inside the workspaces, and is created once with `python -m mozg_outreach.sources.telegram_login`. Remotive's terms allow about four polls a day; the run scheduler must enforce it.
 
 **M9 API**
 
