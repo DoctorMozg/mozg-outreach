@@ -54,12 +54,14 @@ def lead_input(
     listing: Listing, mode: LeadMode, summary: str, hidden: frozenset[str] = frozenset()
 ) -> LeadInput:
     """`hidden` holds board names: a client shown as the board itself is no client name at all."""
-    organization = None if listing.company.casefold() in hidden else listing.company
+    named = listing.company.strip()
+    organization = None if not named or named.casefold() in hidden else named
     return LeadInput(
         mode=mode,
         title=listing.title,
         organization=organization,
         url=listing.url,
+        apply_url=listing.apply_url,
         location=listing.location_string,
         summary=summary[:SUMMARY_CHARS],
     )

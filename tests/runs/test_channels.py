@@ -3,8 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from mozg_outreach.domain import RunStatus
+from mozg_outreach.domain import RunStatus, SourceKind
 from mozg_outreach.pipelines.job.models import JobStrategy, JudgeResult
+from mozg_outreach.pipelines.job.telegram_posts import ParsedPost, ParserResult
 from mozg_outreach.runs.flow import GateAnswer
 from mozg_outreach.runs.job import ChannelChoice, _discovery_terms
 from mozg_outreach.sources import telegram_discovery
@@ -14,10 +15,10 @@ from mozg_outreach.sources.telegram import (
     TelegramConfig,
     TelegramCredentials,
 )
-from mozg_outreach.storage.models import JsonObject, Run, SourceConfig
+from mozg_outreach.storage.models import Item, ItemLink, JsonObject, Run, Sighting, SourceConfig
 from tests.pipelines.conftest import Scripted
 from tests.pipelines.job.conftest import judgment
-from tests.pipelines.leads.conftest import identity
+from tests.pipelines.leads.conftest import company, identity
 from tests.sources.conftest import SearchSession, channel
 
 from .conftest import FEED_URL, Harness
@@ -144,3 +145,58 @@ def test_discovery_searches_cv_skills_when_the_gate_cleared_must_haves(
 
     assert terms[:4] == ["Python", "Go", "PostgreSQL", "Kubernetes"]
     assert len(terms) <= telegram_discovery.MAX_QUERIES
+
+
+TG_URL = "https://t.me/py_jobs/1"
+VACANCY = "https://career.habr.com/vacancies/1000"
+TG_POST = "Senior Python developer at Acme GmbH, PostgreSQL, remote within the EU"
+
+
+async def test_telegram_post_becomes_a_lead_with_a_telegram_sighting(
+    harness: Harness, strategy: JobStrategy, session: SearchSession
+) -> None:
+    session.history["py_jobs"] = [
+        ChannelMessage(
+            id=1, text=TG_POST, date=datetime.now(UTC) - timedelta(days=1), links=[VACANCY]
+        )
+    ]
+    project_id = harness.job_project()
+    with harness.db.session() as db:
+        config = {"channels": ["py_jobs"]}
+        db.add(SourceConfig(project_id=project_id, kind="telegram", config=config))
+    found = ParsedPost(
+        id="py_jobs/1",
+        is_job=True,
+        title="Senior Python developer",
+        company="Acme GmbH",
+        location="EU",
+        remote="remote",
+        salary=None,
+        apply_url=VACANCY,
+        reason="Concrete role.",
+    )
+    judged = JudgeResult(judgments=[judgment(FEED_URL), judgment(TG_URL)], concerns=[])
+    harness.script(
+        {
+            "job-strategist": [strategy],
+            "telegram-post-parser": [ParserResult(posts=[found], concerns=[])],
+            "job-listing-judge": [judged],
+            "lead-identifier": [identity(company()), identity(company())],
+        }
+    )
+    run_id = harness.manager.start(project_id, "job.search", {})
+    await harness.manager.wait(run_id)
+    done = await answer(harness, run_id, GateAnswer(approve=True))
+
+    assert done.status == RunStatus.COMPLETE, done.error
+    leads = {lead.model_dump()["url"]: lead for lead in harness.runner.payloads["lead-identifier"]}
+    assert leads[TG_URL].model_dump()["apply_url"] == VACANCY
+    with harness.db.session() as db:
+        item = db.query(Item).filter_by(dedup_key=TG_URL).one()
+        kinds = {
+            s.source_kind
+            for s in db.query(Sighting)
+            .join(ItemLink, ItemLink.entity_id == Sighting.entity_id)
+            .filter(ItemLink.item_id == item.id)
+        }
+    assert SourceKind.TELEGRAM in kinds

@@ -79,6 +79,13 @@ class TestLeadInput:
 
         assert lead.organization is None
 
+    def test_a_post_without_a_company_starts_from_its_vacancy_link(self) -> None:
+        post = listing(company="", apply_url="https://career.habr.com/vacancies/1")
+
+        lead = lead_input(post, "job", "Python developer, remote")
+
+        assert (lead.organization, lead.apply_url) == (None, "https://career.habr.com/vacancies/1")
+
 
 async def test_a_failed_identification_is_a_concern(tmp_path: Path) -> None:
     script: dict[str, list[Scripted]] = {

@@ -42,7 +42,9 @@ def field_task(
             sector=company.sector.value if company.sector else None,
             description=company.description.value if company.description else None,
         )
-    context = ListingContext(title=lead.title, url=lead.url, summary=lead.summary)
+    context = ListingContext(
+        title=lead.title, url=lead.url, apply_url=lead.apply_url, summary=lead.summary
+    )
     return FieldTask(
         item_id=item_id,
         request=FieldResearchInput(subject=subject, listing=context, fields=spec.fields),

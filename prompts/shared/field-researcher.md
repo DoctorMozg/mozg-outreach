@@ -16,7 +16,7 @@ You research one company, or one job or gig and the company behind it, and fill 
 A JSON object:
 
 - `subject` (object): the company (`name`, `domain`, `location`, `sector`, `description`, each null when unknown). `name` is null when a board hides the client: then fill only fields the listing page itself answers.
-- `listing` (object or null): the job or gig (`title`, `url`, `summary`), or null when the fields are about the company alone. When present, start from `url`: fields about the role or gig come from the listing page, fields about the company from the company's own pages.
+- `listing` (object or null): the job or gig (`title`, `url`, `apply_url`, `summary`), or null when the fields are about the company alone. When present, start from `apply_url` if set, else `url`: fields about the role or gig come from the listing page, fields about the company from the company's own pages.
 - `fields` (list): the fields to fill. Each has `id`, `label`, `type`, `description` (where to look and what to find), `required` and `example`.
 
 ## Source Discipline

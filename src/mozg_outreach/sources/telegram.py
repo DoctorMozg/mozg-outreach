@@ -59,6 +59,9 @@ class ChannelMessage(BaseModel):
     text: str
     date: datetime
     author: str | None = None
+    links: list[str] = Field(
+        default_factory=list, description="Visible URLs, links behind words and button links."
+    )
 
 
 class ChannelInfo(BaseModel):
@@ -165,6 +168,7 @@ class TelethonSession:
                 text=message.message or "",
                 date=message.date,
                 author=message.post_author,
+                links=message_links(message),
             )
             for message in raw
         ]
@@ -189,6 +193,34 @@ class TelethonSession:
             for chat in found.chats
             if isinstance(chat, Channel) and chat.username
         ]
+
+
+class _LinkedMessage(Protocol):
+    """The part of telethon's untyped Message that carries links."""
+
+    message: str | None
+    entities: list[object] | None
+    reply_markup: object | None
+
+
+def message_links(message: _LinkedMessage) -> list[str]:
+    """Job posts mostly hide the vacancy link behind words, so the plain text alone loses it."""
+    from telethon.tl.types import MessageEntityTextUrl, MessageEntityUrl
+
+    # Entity offsets count UTF-16 code units, and an emoji takes two of them.
+    units = (message.message or "").encode("utf-16-le")
+    links: list[str] = []
+    for entity in message.entities or []:
+        if isinstance(entity, MessageEntityTextUrl):
+            links.append(entity.url)
+        elif isinstance(entity, MessageEntityUrl):
+            start, end = 2 * entity.offset, 2 * (entity.offset + entity.length)
+            links.append(units[start:end].decode("utf-16-le"))
+    for row in getattr(message.reply_markup, "rows", None) or []:
+        # URL buttons keep the link on their type (InlineButtonTypeUrl) in current API layers.
+        urls = [getattr(getattr(button, "type", None), "url", None) for button in row.buttons]
+        links += [url for url in urls if isinstance(url, str)]
+    return list(dict.fromkeys(links))
 
 
 class TelegramConfig(AdapterConfig):
@@ -287,7 +319,7 @@ class TelegramAdapter:
                 kind=kind,
                 title=message.text.strip().split("\n", 1)[0][:200] or None,
                 raw_text=message.text,
-                raw_payload={"channel": channel, "message_id": message.id},
+                raw_payload={"channel": channel, "message_id": message.id, "links": message.links},
                 published_at=message.date,
                 fetched_at=fetched_at,
                 author=message.author,

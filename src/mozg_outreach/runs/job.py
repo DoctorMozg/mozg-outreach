@@ -3,7 +3,7 @@ score, identify and report fields."""
 
 import logging
 from collections import Counter
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -21,6 +21,7 @@ from mozg_outreach.pipelines.job.models import (
     ListingJudgment,
 )
 from mozg_outreach.pipelines.job.search import JobSearch, Judgments, load_canonical, to_candidate
+from mozg_outreach.pipelines.job.telegram_posts import TelegramPosts, TelegramRequest
 from mozg_outreach.pipelines.leads.enrichment import IDENTITY, LeadEnrichment, LeadTask, RunRef
 from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, field_task
 from mozg_outreach.pipelines.leads.identify import lead_input
@@ -165,11 +166,14 @@ async def approve_channels(ctx: Ctx) -> PhaseResult:
     return outcome
 
 
-def _discovery_terms(strategy: JobStrategy) -> list[str]:
+def _skills(strategy: JobStrategy) -> list[str]:
     """Must-haves first, then the CV's skills in its own order, which leads with the core stack."""
     grouped = [s for group in strategy.must_have_or_groups for s in group]
-    terms = [*strategy.must_have_skills, *grouped, *strategy.cv.skills, *strategy.cv.top_titles]
-    return list(dict.fromkeys(terms))[:MAX_QUERIES]
+    return list(dict.fromkeys([*strategy.must_have_skills, *grouped, *strategy.cv.skills]))
+
+
+def _discovery_terms(strategy: JobStrategy) -> list[str]:
+    return list(dict.fromkeys([*_skills(strategy), *strategy.cv.top_titles]))[:MAX_QUERIES]
 
 
 def _discovering(ctx: Ctx) -> list[SourceConfig]:
@@ -203,8 +207,20 @@ def _save_channels(ctx: Ctx, choice: ChannelChoice) -> None:
 
 async def collect(ctx: Ctx) -> PhaseResult:
     strategy, brief = _strategy(ctx), _brief(ctx)
-    rows = [s for s in _sources(ctx) if s.kind != WEB_SEARCH]
+    rows = [s for s in _sources(ctx) if s.kind not in {WEB_SEARCH, TelegramAdapter.name}]
     scouted: list[SourcedListing] = []
+    for row in (s for s in _sources(ctx) if s.kind == TelegramAdapter.name):
+        posts = await TelegramPosts(ctx.steps).collect(
+            ctx.adapters(row.kind, row.config),
+            TelegramRequest(
+                skills=_skills(strategy),
+                oldest=ctx.today - timedelta(days=brief.recency_days),
+                cursor=row.cursor,
+            ),
+        )
+        scouted += posts.listings
+        ctx.state.concerns += posts.concerns
+        _save_cursors(ctx, posts.cursors)
     if rows:
         titles = strategy.cv.top_titles
         keywords = [*titles, *(a for t in titles for a in strategy.title_aliases.get(t, []))]

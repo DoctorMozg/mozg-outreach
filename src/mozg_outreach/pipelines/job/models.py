@@ -137,13 +137,14 @@ class JobScoutInput(BaseModel):
 
 class ScoutedListing(BaseModel):
     title: str = Field(min_length=1)
-    company: str = Field(min_length=1)
+    company: str = Field(description="The employer; empty only when the listing names none.")
     location_string: str | None
     remote_status_raw: str | None
     url: str = Field(min_length=8)
     posted_date: str | None = Field(description="As shown: ISO date, '3 days ago', 'yesterday'.")
     salary_string: str | None
     summary_snippet: str
+    apply_url: str | None = Field(default=None, description="Vacancy page a post links to.")
 
 
 class JobScoutResult(BaseModel):
@@ -179,6 +180,7 @@ class Listing(BaseModel):
     posted_on: date | None
     salary: Salary | None
     summary: str
+    apply_url: str | None = None
     eligibility: Literal["yes", "no", "unknown"] = "unknown"
     eligibility_evidence: str | None = None
 

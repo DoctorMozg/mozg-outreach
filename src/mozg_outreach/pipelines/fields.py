@@ -48,6 +48,7 @@ class FieldSubject(BaseModel):
 class ListingContext(BaseModel):
     title: str
     url: str
+    apply_url: str | None = Field(default=None, description="Vacancy page the listing links to.")
     summary: str
 
 

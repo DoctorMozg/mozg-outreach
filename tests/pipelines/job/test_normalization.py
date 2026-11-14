@@ -96,6 +96,15 @@ class TestListings:
         assert listings[0].merged_urls == ["https://arbeitnow.example/acme-be"]
         assert set(listings[0].sources) == {"Arbeitnow", "Greenhouse"}
 
+    def test_posts_without_a_company_never_merge_by_title(self) -> None:
+        listings = ListingNormalizer(TODAY).normalize(
+            [
+                scouted("telegram", company="", url="https://t.me/py_jobs/1"),
+                scouted("telegram", company="", url="https://t.me/go_jobs/7"),
+            ]
+        )
+        assert len(listings) == 2
+
     def test_different_roles_stay_apart(self) -> None:
         listings = ListingNormalizer(TODAY).normalize(
             [scouted(), scouted(title="Data Engineer", url="https://jobs.acme.example/data")]

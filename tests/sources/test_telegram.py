@@ -2,8 +2,18 @@ import json
 import stat
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from telethon.tl.types import (
+    InlineButtonTypeCallback,
+    InlineButtonTypeUrl,
+    KeyboardInlineButton,
+    KeyboardInlineButtonRow,
+    MessageEntityTextUrl,
+    MessageEntityUrl,
+    ReplyInlineMarkup,
+)
 
 from mozg_outreach.sources.models import SourceQuery
 from mozg_outreach.sources.telegram import (
@@ -16,6 +26,7 @@ from mozg_outreach.sources.telegram import (
     TelegramCredentials,
     TelegramReadError,
     channel_username,
+    message_links,
 )
 
 SECRET_HASH = "0123456789abcdef0123456789abcdef"
@@ -204,6 +215,35 @@ class TestFetch:
         with pytest.raises(RuntimeError, match="bug"):
             await adapter.fetch(SourceQuery(), None)
         assert not sessions[0].connected
+
+
+def test_message_links_collects_hidden_visible_and_button_links() -> None:
+    # The rocket emoji is two UTF-16 units, so the visible URLs start at units 19 and 46.
+    text = "🚀 Apply here, see https://jobs.example/1 and https://jobs.example/1"
+    message = SimpleNamespace(
+        message=text,
+        entities=[
+            MessageEntityTextUrl(offset=3, length=10, url="https://career.habr.com/v/1"),
+            MessageEntityUrl(offset=19, length=22),
+            MessageEntityUrl(offset=46, length=22),
+        ],
+        reply_markup=ReplyInlineMarkup(
+            rows=[
+                KeyboardInlineButtonRow(
+                    buttons=[
+                        KeyboardInlineButton("CV", InlineButtonTypeUrl(url="https://t.me/hr")),
+                        KeyboardInlineButton("Like", InlineButtonTypeCallback(data=b"1")),
+                    ]
+                )
+            ]
+        ),
+    )
+
+    assert message_links(message) == [
+        "https://career.habr.com/v/1",
+        "https://jobs.example/1",
+        "https://t.me/hr",
+    ]
 
 
 class TestCredentialsAndSession:

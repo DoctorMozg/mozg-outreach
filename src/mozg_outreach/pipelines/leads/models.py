@@ -12,8 +12,9 @@ LeadMode = Literal["job", "freelance"]
 class LeadInput(BaseModel):
     mode: LeadMode
     title: str
-    organization: str | None = Field(description="As the listing shows it; null when hidden.")
+    organization: str | None = Field(description="As the listing shows it; null when not named.")
     url: str
+    apply_url: str | None = Field(default=None, description="Vacancy page the listing links to.")
     location: str | None
     summary: str
 

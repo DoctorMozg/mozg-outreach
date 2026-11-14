@@ -83,6 +83,7 @@ class ListingNormalizer:
             posted_on=self.posted_on(raw.posted_date),
             salary=self._salary.parse(raw.salary_string),
             summary=raw.summary_snippet,
+            apply_url=raw.apply_url,
         )
 
 
@@ -98,8 +99,11 @@ def canonical_url(url: str) -> str:
 
 
 def fingerprint(listing: Listing) -> tuple[str, str, str]:
+    """Without a company, two "Python developer, remote" posts say nothing about being one job."""
     title = _ROLE_SUFFIX.sub(" ", _SENIORITY_WORDS.sub(" ", _plain(listing.title)))
     company = _LEGAL.sub(" ", _plain(listing.company))
+    if not company.strip():
+        return listing.key, "", ""
     return " ".join(title.split()), " ".join(company.split()), _place(listing)
 
 

@@ -70,12 +70,14 @@ Changed (user, 2026-11-14: "It should scan all channels related to jobs and find
 
 Done, M16 part 1: `sources/telegram_discovery.py`, `TelegramAdapter.open_session()`, the `discover_channels` and `approve_channels` phases in `runs/job.py`, and the channel picker on the run page. The live test (`-m live -k telegram`) found channels, read `t.me` items, resumed from the cursor and left the session file at 0600. A live job run offered 6 channels (80 to 100% job posts, 1k to 15k subscribers, all active this week) and saved them. Not done: that run produced 0 listings, because of two gaps that predate M16. `collect` filters feed items by the English target titles, which Russian posts never contain, and `to_listing` drops any item without `org_name`, which a Telegram post never has. Turning free-text posts into listings needs a parsing step, proposed below as M17.
 
-**M17 Telegram posts as listings** (proposed, waiting for approval)
+**M17 Telegram posts as listings** (approved by the user, 2026-11-15)
 
 - Collect: Telegram items skip the English title filter; the adapter keeps only posts that name a must-have skill or a CV skill, which works in any language because skills are written in Latin script.
 - A new toolless `job/telegram-post-parser` agent (haiku, batches of about 20 posts) turns each post into a `ScoutedListing` (title, company, location, remote, salary, apply link) or marks it as not a job post. The company stays null when the post doesn't name one, and Python then lists the item without an employer link (M14 rule).
 - `to_listing` stays for structured feeds; Telegram items go through the parser instead.
 - verify: offline tests with recorded parser output (job post, ad, post without a company); a live job run on the discovered channels produces scored items with `t.me` URLs, and named companies get `telegram` sightings. About $1 to $3 a run.
+
+Done, M17: the reader keeps every link of a post (`message_links`: links hidden behind words, visible URLs sliced by UTF-16 offsets, and URL buttons). `pipelines/job/telegram_posts.py` filters posts by skill, caps a run at 40 posts per channel and 120 in total, and sends batches of 20 to the haiku `telegram-post-parser`. Python keeps a company only if the post's text contains it, and an apply link only if it is one of the post's links. A failed batch leaves the cursor where it was. Listings gained `apply_url`, which the lead identifier and field researcher read first. A listing without a company is allowed and never merges with another by title. Live run on the 6 discovered channels ($1.98): 35 listings, 5 kept by screening and scored, and 3 companies confirmed from their vacancy pages (Orion soft, Freedom Holding, SimbirSoft), each with a `telegram` sighting. The other two stayed unlinked: one had only an `lnkd.in` link, the other no link. The parser adds many minor concerns (50 in that run, such as a salary without a currency), which the run page lists in full.
 
 ## Order and size
 
