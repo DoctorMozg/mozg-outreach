@@ -7,9 +7,19 @@ import { href } from "../router";
 
 export function Report({ project }: { project: Project }): ReactElement {
   const client = useQueryClient();
-  const key = ["items", project.id];
-  const items = useQuery({ queryKey: key, queryFn: () => get<Item[]>(`/api/projects/${project.id}/items`) });
-  const graph = useQuery({ queryKey: ["graph", project.id], queryFn: () => get<Graph>(`/api/graph?project_id=${project.id}`) });
+  const [since, setSince] = useState("");
+  const [until, setUntil] = useState("");
+  const [sort, setSort] = useState<"score" | "date">("score");
+  const range = dateWindow(since, until);
+  const key = ["items", project.id, since, until, sort];
+  const items = useQuery({
+    queryKey: key,
+    queryFn: () => get<Item[]>(`/api/projects/${project.id}/items?${new URLSearchParams({ ...range, sort }).toString()}`),
+  });
+  const graph = useQuery({
+    queryKey: ["graph", project.id, since, until],
+    queryFn: () => get<Graph>(`/api/graph?${new URLSearchParams({ project_id: String(project.id), ...range }).toString()}`),
+  });
   const [open, setOpen] = useState<number | null>(null);
   const [onlySelected, setOnlySelected] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -63,6 +73,21 @@ export function Report({ project }: { project: Project }): ReactElement {
         }
       >
         <ErrorBox error={items.error ?? bulk.error ?? select.error} />
+        <div className="inline">
+          <label>
+            from <input type="date" value={since} onChange={(e) => setSince(e.target.value)} />
+          </label>
+          <label>
+            to <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+          </label>
+          <label>
+            sort by{" "}
+            <select value={sort} onChange={(e) => setSort(e.target.value === "date" ? "date" : "score")}>
+              <option value="score">score</option>
+              <option value="date">date, newest first</option>
+            </select>
+          </label>
+        </div>
         <details className="columns">
           <summary>
             Columns ({columns.length} of {allColumns.length})
@@ -78,6 +103,7 @@ export function Report({ project }: { project: Project }): ReactElement {
             <tr>
               <th />
               <th>Score</th>
+              <th title="Posted on, or the day a run found it">Date</th>
               <th>Lead</th>
               {columns.map((c) => (
                 <th key={c}>{c}</th>
@@ -96,6 +122,7 @@ export function Report({ project }: { project: Project }): ReactElement {
                       <Score value={item.score_total} />
                     </button>
                   </td>
+                  <td className="muted">{item.dated}</td>
                   <td>
                     <a href={href.item(item.id)}>{item.title}</a>
                     {item.score?.blockers.map((b) => (
@@ -113,7 +140,7 @@ export function Report({ project }: { project: Project }): ReactElement {
                 {open === item.id && item.score && (
                   <tr className="axes">
                     <td />
-                    <td colSpan={columns.length + 2}>
+                    <td colSpan={columns.length + 3}>
                       <Axes item={item} />
                     </td>
                   </tr>
@@ -126,6 +153,11 @@ export function Report({ project }: { project: Project }): ReactElement {
       <Section title="Connections">{graph.data && <GraphView graph={graph.data} />}</Section>
     </>
   );
+}
+
+/** Only the ends the user set, so an empty input means no bound. */
+function dateWindow(since: string, until: string): Record<string, string> {
+  return { ...(since ? { since } : {}), ...(until ? { until } : {}) };
 }
 
 export function Axes({ item }: { item: Item }): ReactElement | null {

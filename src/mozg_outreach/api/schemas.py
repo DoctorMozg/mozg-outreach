@@ -1,6 +1,6 @@
 """Request and response bodies; rows map onto them with from_attributes."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -107,6 +107,7 @@ class ItemOut(Row):
     score_total: float | None
     score: JsonObject | None
     selected: bool
+    dated: date = Field(description="Posted on, or the day a run first found the lead.")
     updated_at: datetime
 
 

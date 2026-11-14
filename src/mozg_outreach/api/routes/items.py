@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -26,6 +26,7 @@ from mozg_outreach.storage.repositories import (
     InteractionRepository,
     ItemRepository,
     NewDraft,
+    ReportFilter,
 )
 
 router = APIRouter(prefix="/api")
@@ -40,10 +41,13 @@ class UserEdit(BaseModel):
 
 
 @router.get("/projects/{project_id}/items")
-async def report(project_id: int, svc: Svc) -> list[ItemOut]:
+async def report(
+    project_id: int, svc: Svc, view: Annotated[ReportFilter, Query()]
+) -> list[ItemOut]:
     with svc.db.session() as session:
         get_or_404(session, Project, project_id)
-        return [ItemOut.model_validate(i) for i in ItemRepository(session).report(project_id)]
+        items = ItemRepository(session).report(project_id, view)
+        return [ItemOut.model_validate(i) for i in items]
 
 
 @router.get("/items/{item_id}")

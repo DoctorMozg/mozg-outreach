@@ -90,6 +90,8 @@ export interface Item {
   score_total: number | null;
   score: { total: number | null; axes: ScoreAxis[]; blockers: string[] } | null;
   selected: boolean;
+  /** Posted on, or the day a run first found the lead (YYYY-MM-DD). */
+  dated: string;
   updated_at: string;
 }
 

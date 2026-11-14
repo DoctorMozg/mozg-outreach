@@ -1,5 +1,6 @@
 """The global registry: entity profiles with their sources, connections, merges and graph."""
 
+from datetime import date, datetime, time
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -30,6 +31,7 @@ from mozg_outreach.storage.models import (
     Relation,
     Sighting,
 )
+from mozg_outreach.storage.repositories import ItemRepository, ReportFilter
 
 router = APIRouter(prefix="/api")
 Svc = Annotated[Services, Depends(services)]
@@ -38,12 +40,20 @@ MAX_GRAPH_NODES = 500
 
 @router.get("/entities")
 async def list_entities(
-    svc: Svc, kind: EntityKind | None = None, q: str = "", limit: int = Query(100, le=500)
+    svc: Svc,
+    kind: EntityKind | None = None,
+    q: str = "",
+    seen_since: date | None = None,
+    limit: int = Query(100, le=500),
 ) -> list[EntityOut]:
     with svc.db.session() as session:
         query = select(Entity).order_by(Entity.updated_at.desc()).limit(limit)
         if kind is not None:
             query = query.where(Entity.kind == kind)
+        if seen_since is not None:
+            start = datetime.combine(seen_since, time.min)
+            seen = select(Sighting.entity_id).where(Sighting.seen_at >= start)
+            query = query.where(Entity.id.in_(seen))
         if q:
             query = query.where(Entity.name.icontains(q, autoescape=True))
         return [EntityOut.model_validate(e) for e in session.scalars(query)]
@@ -147,9 +157,9 @@ class GraphBuilder:
         return GraphOut(nodes=list(self.nodes.values()), edges=list(self.edges.values()))
 
 
-def _project_graph(session: Session, project_id: int) -> GraphOut:
+def _project_graph(session: Session, project_id: int, window: ReportFilter) -> GraphOut:
     graph = GraphBuilder(session)
-    items = list(session.scalars(select(Item).where(Item.project_id == project_id)))
+    items = ItemRepository(session).report(project_id, window)
     links = list(
         session.scalars(select(ItemLink).where(ItemLink.item_id.in_([i.id for i in items])))
     )
@@ -188,11 +198,14 @@ async def graph(
     project_id: int | None = None,
     entity_id: int | None = None,
     depth: int = Query(1, ge=1, le=3),
+    since: date | None = None,
+    until: date | None = None,
 ) -> GraphOut:
-    """Leads of a project with their people and companies, or an entity's neighbourhood."""
+    """Leads of a project dated in the window, with their people and companies; or an
+    entity's neighbourhood."""
     with svc.db.session() as session:
         if project_id is not None and entity_id is None:
-            return _project_graph(session, project_id)
+            return _project_graph(session, project_id, ReportFilter(since=since, until=until))
         if entity_id is not None and project_id is None:
             return _entity_graph(session, entity_id, depth)
     raise HTTPException(422, "pass exactly one of project_id or entity_id")

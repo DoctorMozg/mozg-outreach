@@ -1,9 +1,10 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from mozg_outreach.api.schemas import EntityDetail, GraphOut
-from mozg_outreach.domain import EntityKind, ItemKind
+from mozg_outreach.api.schemas import EntityDetail, EntityOut, GraphOut, ItemOut
+from mozg_outreach.domain import EntityKind, ItemKind, SourceKind
 from mozg_outreach.naturalize.voice import VoiceNotes
 from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.storage.models import (
@@ -14,6 +15,7 @@ from mozg_outreach.storage.models import (
     MergeSuggestion,
     Relation,
     Run,
+    Sighting,
 )
 from tests.pipelines.conftest import HangingRunner
 from tests.pipelines.job.conftest import CV_TEXT
@@ -168,3 +170,76 @@ class TestRegistry:
         kept = await api.ok("POST", f"/api/merge-suggestions/{suggestion['id']}/accept")
         assert kept["id"] == acme
         assert await api.ok_list("/api/merge-suggestions") == []
+
+
+class TestDates:
+    """A lead's date is its posting date, else the day a run found it; sightings date entities."""
+
+    def seed(self, session: Session, project_id: int) -> dict[str, int]:
+        def lead(key: str, score: float, posted: str | None) -> Item:
+            fields: JsonObject = {"posted_on": {"value": posted}} if posted else {}
+            return Item(
+                project_id=project_id,
+                kind=ItemKind.JOB,
+                dedup_key=key,
+                title=key,
+                fields=fields,
+                score_total=score,
+                created_at=datetime(2026, 11, 14, tzinfo=UTC),
+            )
+
+        items = [
+            lead("old", 90, "2026-10-01"),
+            lead("new", 50, "2026-11-12"),
+            lead("found", 70, None),
+        ]
+        old_co = Entity(kind=EntityKind.COMPANY, name="Old Co")
+        new_co = Entity(kind=EntityKind.COMPANY, name="New Co")
+        session.add_all([*items, old_co, new_co])
+        session.flush()
+        session.add_all(
+            [
+                ItemLink(item_id=items[0].id, entity_id=old_co.id, role="subject"),
+                sighting(old_co.id, datetime(2026, 10, 1, tzinfo=UTC)),
+                sighting(new_co.id, datetime(2026, 11, 13, tzinfo=UTC)),
+            ]
+        )
+        return {i.dedup_key: i.id for i in items} | {"old_co": old_co.id, "new_co": new_co.id}
+
+    async def test_report_window_and_date_sort(self, api: Api) -> None:
+        project_id = await api.project(brief=biz_brief())
+        with api.services.db.session() as session:
+            ids = self.seed(session, project_id)
+        url = f"/api/projects/{project_id}/items"
+
+        by_score = await api.get(url, list[ItemOut])
+        assert [(i.title, i.dated.isoformat()) for i in by_score] == [
+            ("old", "2026-10-01"),
+            ("found", "2026-11-14"),
+            ("new", "2026-11-12"),
+        ]
+        recent = await api.get(f"{url}?since=2026-11-01&sort=date", list[ItemOut])
+        assert [i.title for i in recent] == ["found", "new"]
+        until = await api.get(f"{url}?until=2026-11-12", list[ItemOut])
+        assert [i.title for i in until] == ["old", "new"]
+
+        graph = await api.get(f"/api/graph?project_id={project_id}&since=2026-11-01", GraphOut)
+        assert {n.id for n in graph.nodes} == {f"i{ids['new']}", f"i{ids['found']}"}
+
+    async def test_registry_lists_entities_seen_since_a_date(self, api: Api) -> None:
+        project_id = await api.project(brief=biz_brief())
+        with api.services.db.session() as session:
+            self.seed(session, project_id)
+
+        seen = await api.get("/api/entities?seen_since=2026-11-01", list[EntityOut])
+
+        assert [e.name for e in seen] == ["New Co"]
+
+
+def sighting(entity_id: int, seen_at: datetime) -> Sighting:
+    return Sighting(
+        entity_id=entity_id,
+        source_kind=SourceKind.WEB,
+        source_url="https://a.example",
+        seen_at=seen_at,
+    )

@@ -8,9 +8,13 @@ import { href } from "../router";
 export function Registry(): ReactElement {
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("");
+  const [seenSince, setSeenSince] = useState("");
   const entities = useQuery({
-    queryKey: ["entities", q, kind],
-    queryFn: () => get<Entity[]>(`/api/entities?${new URLSearchParams({ q, ...(kind ? { kind } : {}) }).toString()}`),
+    queryKey: ["entities", q, kind, seenSince],
+    queryFn: () =>
+      get<Entity[]>(
+        `/api/entities?${new URLSearchParams({ q, ...(kind ? { kind } : {}), ...(seenSince ? { seen_since: seenSince } : {}) }).toString()}`,
+      ),
   });
   return (
     <div className="stack">
@@ -24,6 +28,9 @@ export function Registry(): ReactElement {
             <option value="company">companies</option>
             <option value="person">people</option>
           </select>
+          <label>
+            seen since <input type="date" value={seenSince} onChange={(e) => setSeenSince(e.target.value)} />
+          </label>
         </div>
         <ErrorBox error={entities.error} />
         <ul className="list">

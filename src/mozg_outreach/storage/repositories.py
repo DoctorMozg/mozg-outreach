@@ -1,4 +1,6 @@
 import logging
+from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -18,6 +20,14 @@ from mozg_outreach.storage.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class ReportFilter(BaseModel):
+    """A date window over the leads' `Item.dated`, both ends included."""
+
+    since: date | None = None
+    until: date | None = None
+    sort: Literal["score", "date"] = "score"
 
 
 class FieldSpecConflictError(ValueError):
@@ -145,15 +155,22 @@ class ItemRepository:
         item.score = score.model_dump(mode="json")
         self._session.flush()
 
-    def report(self, project_id: int) -> list[Item]:
-        """Items best first; unscored items go last."""
-        return list(
-            self._session.scalars(
+    def report(self, project_id: int, view: ReportFilter | None = None) -> list[Item]:
+        """Items best first, unscored last; or newest first when `view` sorts by date."""
+        view = view or ReportFilter()
+        items = [
+            i
+            for i in self._session.scalars(
                 select(Item)
                 .where(Item.project_id == project_id)
                 .order_by(Item.score_total.desc().nulls_last(), Item.title)
             )
-        )
+            if (view.since is None or i.dated >= view.since)
+            and (view.until is None or i.dated <= view.until)
+        ]
+        if view.sort == "date":
+            items.sort(key=lambda i: i.dated, reverse=True)
+        return items
 
 
 class VoiceRepository:

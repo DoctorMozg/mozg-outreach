@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+import logging
+from datetime import UTC, date, datetime
 
 from sqlalchemy import JSON, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -11,6 +12,8 @@ from mozg_outreach.domain import (
     RunStatus,
     SourceKind,
 )
+
+logger = logging.getLogger(__name__)
 
 type JsonObject = dict[str, object]
 
@@ -121,6 +124,18 @@ class Item(Base):
     selected: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+    @property
+    def dated(self) -> date:
+        """When the lead was posted; without a posting date, the day a run first found it."""
+        posted = self.fields.get("posted_on")
+        value = posted.get("value") if isinstance(posted, dict) else None
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value)
+            except ValueError:
+                logger.warning("item %s has an unreadable posted_on %r", self.id, value)
+        return self.created_at.date()
 
 
 class Draft(Base):
