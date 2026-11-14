@@ -26,7 +26,7 @@ A JSON object:
 - `summary` is two to four short paragraphs: the quality and number of leads, the strongest few by title and why the data puts them there, and what the run could not tell. Be honest: if most leads are weak, stale or thinly described, say so.
 - `patterns` are cross-cutting observations, such as a shared stack, a salary band, a cluster of employers, a common blocker or a field that is mostly unknown. Each cites the `id`s of every item it rests on, from `items` only. Leave out a pattern that rests on a single item.
 - `recommendations` are three to five actionable steps that follow from the patterns, such as which leads to apply to first, which must-have to relax because it keeps leads out, or which field to check before applying. No generic job-search advice.
-- Write all prose in the language of `preferences`.
+- Write all prose in the language `preferences` is written in, never in the language of the listings. Preferences in English get an English summary even when every listing is in Russian or German.
 - Put each gap or conflict in the data, such as many null scores or contradictory fields, in `concerns` as one plain sentence.
 
 ## Output Format
