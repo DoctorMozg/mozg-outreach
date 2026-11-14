@@ -4,7 +4,7 @@ import re
 
 from pydantic import BaseModel, Field
 
-from mozg_outreach.pipelines.job.models import JobStrategy
+from mozg_outreach.pipelines.job.models import SkillRules
 
 
 class SkillHit(BaseModel):
@@ -35,17 +35,17 @@ class SkillMatch(BaseModel):
 
 
 class SkillMatcher:
-    def __init__(self, strategy: JobStrategy) -> None:
-        self._strategy = strategy
+    def __init__(self, rules: SkillRules) -> None:
+        self._rules = rules
         self._patterns: dict[str, list[tuple[str, re.Pattern[str]]]] = {}
 
     def match(self, text: str) -> SkillMatch:
-        must = {s: self._hit(s, text) for s in self._strategy.must_have_skills}
+        must = {s: self._hit(s, text) for s in self._rules.must_have_skills}
         groups = [
             (group, next((h for s in group if (h := self._hit(s, text))), None))
-            for group in self._strategy.must_have_or_groups
+            for group in self._rules.must_have_or_groups
         ]
-        nice = [self._hit(s, text) for s in self._strategy.nice_to_have_skills]
+        nice = [self._hit(s, text) for s in self._rules.nice_to_have_skills]
         return SkillMatch(
             must_haves=[h for h in must.values() if h],
             missing_must_haves=[s for s, h in must.items() if h is None],
@@ -62,7 +62,7 @@ class SkillMatcher:
 
     def _terms(self, skill: str) -> list[tuple[str, re.Pattern[str]]]:
         if skill not in self._patterns:
-            synonyms = self._strategy.synonym_clusters.get(skill, [])
+            synonyms = self._rules.synonym_clusters.get(skill, [])
             self._patterns[skill] = [(t, _pattern(t)) for t in [skill, *synonyms] if t.strip()]
         return self._patterns[skill]
 

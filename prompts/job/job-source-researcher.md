@@ -21,9 +21,9 @@ You add boards to a canonical source list. The canonical sources are already in 
 
 The input is a JSON object with these fields:
 
-- `strategy` (object): the job strategy, with `cv` (`top_titles`, `skills`, `seniority`, `languages_spoken`, `current_location`, `country_code`, `work_authorization`), `preferences`, `search_queries`, `must_have_skills` and the other strategy fields.
+- `strategy` (object): the job strategy, with `cv` (`top_titles`, `skills`, `seniority`, `languages_spoken`, `current_location`, `country_code`, `work_authorization`), `preferences`, `search_queries`, `must_have_skills` and the other strategy fields. In freelance mode it is the freelance strategy: it also has `discipline`, `secondary_disciplines`, and `preferences.engagement_types` and `preferences.vetted_only`.
 - `canonical` (list): the canonical sources already in the plan, each with `name`, `url`, `type`, `tier`, `relevance_score`, `scrape_hints`, `access_notes`, `language_hint` and `scrape_allowed`. Never re-emit these or a board that duplicates them.
-- `mode` (string): `job` or `freelance`.
+- `mode` (string): `job` or `freelance`. In freelance mode the whole input is a gig source-research input and `mode` is `freelance`.
 
 ## Source Discipline
 
@@ -45,7 +45,7 @@ Put each conflict or unverified claim, such as an access note you could not conf
 
 ### Step 1: Read the strategy
 
-Note `cv.current_location`, `cv.country_code`, `cv.languages_spoken`, `cv.skills`, `cv.seniority`, `preferences.regions_allowed` and the top titles. List the `canonical` names so you do not duplicate them.
+Note `cv.current_location`, `cv.country_code`, `cv.languages_spoken`, `cv.skills`, `cv.seniority`, `preferences.regions_allowed` and the top titles. In freelance mode also note `discipline`, `secondary_disciplines`, `preferences.engagement_types` and `preferences.vetted_only`. List the `canonical` names so you do not duplicate them.
 
 ### Step 2: Pick candidates
 
@@ -61,10 +61,10 @@ Job mode:
 
 Freelance mode:
 
-1. Discipline fit: a specialty board for the candidate's field (Codementor for engineering, Contra or Dribbble for design, AI-Jobs.net for ML).
+1. Discipline fit: a specialty board for `discipline`, and for each of `secondary_disciplines` if room remains (Codementor for engineering, Contra or Dribbble for design, AI-Jobs.net for data and ML).
 1. Region fit: Malt, YunoJuno, Worksome, freelance.de or Tecla, matched to location and `regions_allowed`.
-1. Engagement fit: advisory networks for consulting, long-engagement networks (A.Team, Andela) for placements.
-1. Vetting diversity: when every canonical source is gated, add one open but curated board.
+1. Engagement fit: match `preferences.engagement_types`: advisory networks for `consulting_advisory`, long-engagement networks (A.Team, Andela) for `contractor_placement`, project marketplaces for `project_gig`. Skip boards that serve only an engagement type the user excluded.
+1. Vetting diversity: when every canonical source is gated, add one open but curated board, unless `preferences.vetted_only` is true. Then every board must vet its clients or freelancers.
 1. Guidance only: a referral-only or invite-only network that fits the profile (MarketerHire, South Park Commons, On Deck, Reforge). Return at most 3.
 
 In job mode every source has public listings. Do not return guidance entries.

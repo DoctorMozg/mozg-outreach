@@ -4,7 +4,7 @@ from datetime import date
 
 from pydantic import BaseModel
 
-from mozg_outreach.domain import ItemScore, ScoreAxis
+from mozg_outreach.domain import ItemScore
 from mozg_outreach.pipelines.job.models import (
     JobStrategy,
     Listing,
@@ -13,7 +13,7 @@ from mozg_outreach.pipelines.job.models import (
 )
 from mozg_outreach.pipelines.job.salary import annual_usd
 from mozg_outreach.pipelines.job.skills import SkillMatch
-from mozg_outreach.scoring.biz import AxisValue
+from mozg_outreach.scoring.axes import AxisValue, weighted_axes, weighted_total
 
 LADDER: tuple[Seniority, ...] = (
     "intern",
@@ -47,9 +47,6 @@ class JobScoreInput(BaseModel):
 
 class JobScorer:
     def score(self, data: JobScoreInput) -> ItemScore:
-        weights = data.strategy.scoring_weights.model_dump()
-        if sum(weights.values()) <= 0:
-            raise ValueError("job scoring weights sum to 0; at least one must be > 0")
         values = {
             "skill_match": self.skill_match(data.skills),
             "seniority_fit": self.seniority_fit(data.strategy.cv.seniority, data.judgment),
@@ -58,13 +55,8 @@ class JobScorer:
             "recency": self.recency(data.listing, data.today),
             "employer_signals": self.employer(data.judgment),
         }
-        axes = [
-            ScoreAxis(axis=name, value=value, weight=weights[name], reason=reason)
-            for name, (value, reason) in values.items()
-        ]
-        assessed = [(a.value, a.weight) for a in axes if a.value is not None]
-        weight = sum(w for _, w in assessed)
-        total = round(sum(v * w for v, w in assessed) / weight, 1) if weight else None
+        axes = weighted_axes(values, data.strategy.scoring_weights.model_dump())
+        total = weighted_total(axes)
         blockers = list(data.judgment.deal_breaker_hits) if data.judgment else []
         if blockers and total is not None:
             # A deal-breaker the user named outranks any amount of fit.
@@ -118,17 +110,7 @@ class JobScorer:
             return AxisValue(NEUTRAL, "salary not disclosed or currency unknown")
         low, high = salary.annual_min_usd, salary.annual_max_usd
         band = f"band ${low / 1000:.0f}k-${high / 1000:.0f}k vs floor ${floor / 1000:.0f}k"
-        if high < floor * 0.70:
-            return AxisValue(0.0, f"far below floor: {band}")
-        if high < floor:
-            return AxisValue(30.0, f"below floor: {band}")
-        if high >= floor * 1.10 and low >= floor * 0.90:
-            return AxisValue(100.0, band)
-        if low >= floor * 0.90:
-            return AxisValue(85.0, band)
-        if low < floor * 0.75:
-            return AxisValue(50.0, f"bottom of band well below floor: {band}")
-        return AxisValue(70.0, band)
+        return band_fit(low, high, floor, band)
 
     @staticmethod
     def recency(listing: Listing, today: date) -> AxisValue:
@@ -143,3 +125,18 @@ class JobScorer:
         if judgment is None:
             return NOT_JUDGED
         return AxisValue(EMPLOYER_POINTS[judgment.employer_signal], judgment.employer_evidence)
+
+
+def band_fit(low: float, high: float, floor: float, band: str) -> AxisValue:
+    """A pay band against the user's floor: the top must clear it, the bottom decides how well."""
+    if high < floor * 0.70:
+        return AxisValue(0.0, f"far below floor: {band}")
+    if high < floor:
+        return AxisValue(30.0, f"below floor: {band}")
+    if high >= floor * 1.10 and low >= floor * 0.90:
+        return AxisValue(100.0, band)
+    if low >= floor * 0.90:
+        return AxisValue(85.0, band)
+    if low < floor * 0.75:
+        return AxisValue(50.0, f"bottom of band well below floor: {band}")
+    return AxisValue(70.0, band)

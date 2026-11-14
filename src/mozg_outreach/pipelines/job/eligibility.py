@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from mozg_outreach.pipelines.job.models import CvProfile, JobPreferences, Listing
+from mozg_outreach.pipelines.job.models import CvProfile, Listing, PlacePreferences
 
 
 def _codes(text: str) -> frozenset[str]:
@@ -69,7 +69,7 @@ class Eligibility(BaseModel):
 
 
 class EligibilityChecker:
-    def __init__(self, cv: CvProfile, preferences: JobPreferences, blockers: list[str]) -> None:
+    def __init__(self, cv: CvProfile, preferences: PlacePreferences, blockers: list[str]) -> None:
         self._country = cv.country_code.upper()
         self._city = cv.current_location.split(",")[0].strip().lower()
         self._preferences = preferences

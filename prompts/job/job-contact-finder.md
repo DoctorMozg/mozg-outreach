@@ -22,7 +22,7 @@ You find apply-target contacts for one job listing. You walk a fallback chain, d
 
 The input is a JSON object with one field:
 
-- `listing` (object): the listing, with `key`, `title`, `company`, `location_string`, `remote_status_raw`, `url`, `sources`, `merged_urls`, `posted_on`, `salary`, `summary`, `eligibility` and `eligibility_evidence`.
+- `listing` (object): the listing, with `key`, `title`, `company`, `location_string`, `remote_status_raw`, `url`, `sources`, `merged_urls`, `posted_on`, `salary`, `summary`, `eligibility` and `eligibility_evidence`. When the user asks about a company directly, `url`, `title` and `summary` may be empty and `location_string` holds a region hint; then start from the company's own careers page.
 
 ## Source Discipline
 

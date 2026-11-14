@@ -2,7 +2,7 @@ import pytest
 
 from mozg_outreach.pipelines.job.eligibility import EligibilityChecker, places_in
 from mozg_outreach.pipelines.job.models import JobBrief, JobStrategy
-from mozg_outreach.pipelines.job.screening import ListingScreener
+from mozg_outreach.pipelines.job.screening import ListingScreener, ScreenRules
 from mozg_outreach.pipelines.job.skills import SkillMatcher, _pattern
 
 from .conftest import TODAY, listing, scouted
@@ -78,7 +78,7 @@ class TestSkills:
 
 class TestScreener:
     def test_each_gate_names_its_reason(self, strategy: JobStrategy, brief: JobBrief) -> None:
-        screening = ListingScreener(strategy, brief, TODAY).screen(
+        screening = ListingScreener(ScreenRules.for_jobs(strategy, brief), TODAY).screen(
             [
                 scouted(),
                 scouted(url="https://a.example/1", title="Old", posted_date="2026-10-01"),

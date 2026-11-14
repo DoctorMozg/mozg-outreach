@@ -27,7 +27,12 @@ from mozg_outreach.pipelines.job.models import (
     SourcePlan,
     SourceResearchInput,
 )
-from mozg_outreach.pipelines.job.screening import ListingScreener, Screening, listing_text
+from mozg_outreach.pipelines.job.screening import (
+    ListingScreener,
+    Screening,
+    ScreenRules,
+    listing_text,
+)
 from mozg_outreach.pipelines.job.skills import SkillMatcher
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.scoring.job import JobScoreInput, JobScorer
@@ -136,7 +141,7 @@ class JobSearch:
     def screen(
         self, scouted: list[SourcedListing], strategy: JobStrategy, brief: JobBrief, today: date
     ) -> Screening:
-        return ListingScreener(strategy, brief, today).screen(scouted)
+        return ListingScreener(ScreenRules.for_jobs(strategy, brief), today).screen(scouted)
 
     async def judge(self, listings: list[Listing], strategy: JobStrategy) -> Judgments:
         batches = [listings[i : i + JUDGE_BATCH] for i in range(0, len(listings), JUDGE_BATCH)]

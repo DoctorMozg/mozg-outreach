@@ -31,6 +31,13 @@ class LetterFrame(BaseModel):
             return cls(
                 salutation=f"Hi {first},", closing="Thanks,", signature=first_name(party.sender)
             )
+        if channel == "proposal":
+            # Proposals go into a marketplace thread, where "Dear" reads stiff.
+            return cls(
+                salutation=f"Hi {first},",
+                closing=CLOSINGS[tone],
+                signature=first_name(party.sender),
+            )
         if tone == "formal" or channel == "cover_letter":
             # Cover letters open with "Dear" whatever the tone; a full name avoids guessing "Ms.".
             salutation = f"Dear {' '.join(party.recipient.split())},"

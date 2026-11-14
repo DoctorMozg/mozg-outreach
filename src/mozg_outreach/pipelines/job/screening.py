@@ -9,11 +9,14 @@ from pydantic import BaseModel
 from mozg_outreach.pipelines.job.eligibility import EligibilityChecker
 from mozg_outreach.pipelines.job.listings import ListingNormalizer, SourcedListing
 from mozg_outreach.pipelines.job.models import (
+    CvProfile,
     Excluded,
     ExcludedReason,
     JobBrief,
     JobStrategy,
     Listing,
+    PlacePreferences,
+    SkillRules,
 )
 from mozg_outreach.pipelines.job.skills import SkillMatcher
 
@@ -25,18 +28,39 @@ class Screening(BaseModel):
     excluded: list[Excluded]
 
 
-class ListingScreener:
-    def __init__(self, strategy: JobStrategy, brief: JobBrief, today: date) -> None:
-        self._today = today
-        self._oldest = today - timedelta(days=brief.recency_days)
-        self._eligibility = EligibilityChecker(
-            strategy.cv, strategy.preferences, strategy.work_auth_blockers
+class ScreenRules(BaseModel):
+    """The hard gates, shared by job listings and freelance gigs."""
+
+    cv: CvProfile
+    places: PlacePreferences
+    work_auth_blockers: list[str]
+    skills: SkillRules
+    blocklist: dict[ExcludedReason, list[str]]
+    recency_days: int
+
+    @classmethod
+    def for_jobs(cls, strategy: JobStrategy, brief: JobBrief) -> "ScreenRules":
+        prefs = strategy.preferences
+        return cls(
+            cv=strategy.cv,
+            places=prefs,
+            work_auth_blockers=strategy.work_auth_blockers,
+            skills=strategy,
+            blocklist={
+                "industry_blocklist": prefs.excluded_industries,
+                "attribute_blocklist": prefs.excluded_company_attributes,
+            },
+            recency_days=brief.recency_days,
         )
-        self._skills = SkillMatcher(strategy)
-        self._blocklist: dict[ExcludedReason, list[str]] = {
-            "industry_blocklist": strategy.preferences.excluded_industries,
-            "attribute_blocklist": strategy.preferences.excluded_company_attributes,
-        }
+
+
+class ListingScreener:
+    def __init__(self, rules: ScreenRules, today: date) -> None:
+        self._today = today
+        self._oldest = today - timedelta(days=rules.recency_days)
+        self._eligibility = EligibilityChecker(rules.cv, rules.places, rules.work_auth_blockers)
+        self._skills = SkillMatcher(rules.skills)
+        self._blocklist = rules.blocklist
 
     def screen(self, scouted: list[SourcedListing]) -> Screening:
         """Recency, blocklists, location, then must-have skills; the first failure excludes."""

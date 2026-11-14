@@ -4,7 +4,9 @@ import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
 from mozg_outreach.pipelines.job.models import (
+    ContactInput,
     JobBrief,
+    JobContacts,
     JobScoutInput,
     JobScoutResult,
     JobSource,
@@ -13,6 +15,7 @@ from mozg_outreach.pipelines.job.models import (
     JudgeResult,
     SourcePlan,
 )
+from mozg_outreach.pipelines.job.recruiter import RecruiterLookup, RecruiterTarget
 from mozg_outreach.pipelines.job.search import JobSearch, Judgments, load_canonical
 from mozg_outreach.pipelines.steps import PipelineSteps
 
@@ -156,3 +159,22 @@ class TestJudging:
         )
         order = [r.listing.key for r in ranked]
         assert order == ([good.key, weak.key] if not hits else [weak.key, good.key])
+
+
+async def test_recruiter_lookup_without_listing_keys_by_company(tmp_path: Path) -> None:
+    found = JobContacts(
+        named_contact=None,
+        careers_email="jobs@acme.example",
+        careers_email_source="https://acme.example/careers",
+        linkedin_company=None,
+        pattern_guesses=[],
+        apply_url=None,
+        concerns=[],
+    )
+    runner = RecordedRunner({"job-contact-finder": [found]})
+    steps = PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path)
+    contacts = await RecruiterLookup(steps).lookup(RecruiterTarget(company="Acme", region="DACH"))
+    assert contacts.careers_email == "jobs@acme.example"
+    [payload] = [p for p in runner.payloads["job-contact-finder"] if isinstance(p, ContactInput)]
+    assert payload.listing.key == "company:acme"
+    assert payload.listing.location_string == "DACH"

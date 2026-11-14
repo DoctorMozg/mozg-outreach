@@ -1,14 +1,14 @@
 """Deterministic biz lead scoring: six 0-100 axes from agent-extracted features, weighted."""
 
 from collections.abc import Callable
-from typing import NamedTuple
 
 from pydantic import BaseModel, Field
 
-from mozg_outreach.domain import FieldSpec, FieldValue, ItemScore, ScoreAxis
+from mozg_outreach.domain import FieldSpec, FieldValue, ItemScore
 from mozg_outreach.pipelines.biz.assessment_models import FitVerdict, SignalCheck, SignalKind
 from mozg_outreach.pipelines.biz.enrichment_models import CompanyDossier
 from mozg_outreach.pipelines.biz.models import ScoringWeights, SearchSignals
+from mozg_outreach.scoring.axes import AxisValue, weighted_axes, weighted_total
 
 NO_DATA = 20.0
 NOT_JUDGED = 50.0
@@ -22,11 +22,6 @@ TRAJECTORY_POINTS = {
 }
 SECTOR_POINTS = {"exact": 100.0, "adjacent": 60.0, "unrelated": 20.0}
 ENRICHMENT_SECTIONS = ("reputation", "contacts", "news", "growth", "tech")
-
-
-class AxisValue(NamedTuple):
-    value: float | None
-    reason: str
 
 
 NOT_ENRICHED = AxisValue(None, "not enriched yet")
@@ -43,10 +38,6 @@ class BizScoreInput(BaseModel):
 
 class BizScorer:
     def score(self, data: BizScoreInput) -> ItemScore:
-        weights = data.weights.model_dump()
-        weight_sum = sum(weights.values())
-        if weight_sum <= 0:
-            raise ValueError(f"scoring weights sum to {weight_sum}; at least one must be > 0")
         checks = self._checks(data.verdict, data.signals)
         values = {
             "data_completeness": self.data_completeness(data.dossier, data.fields, data.spec),
@@ -56,15 +47,8 @@ class BizScorer:
             "sector_relevance": self.sector_relevance(data.verdict),
             "outreach_feasibility": self.outreach_feasibility(data.verdict, checks),
         }
-        axes = [
-            ScoreAxis(axis=name, value=value, weight=weights[name], reason=reason)
-            for name, (value, reason) in values.items()
-        ]
-        assessed = [(a.value, a.weight) for a in axes if a.value is not None]
-        assessed_weight = sum(w for _, w in assessed)
-        total = (
-            round(sum(v * w for v, w in assessed) / assessed_weight, 1) if assessed_weight else None
-        )
+        axes = weighted_axes(values, data.weights.model_dump())
+        total = weighted_total(axes)
         blockers = [c.signal for c in checks["disqualifying"] if c.present == "yes"]
         return ItemScore(total=total, axes=axes, blockers=blockers)
 

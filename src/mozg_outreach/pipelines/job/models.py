@@ -49,10 +49,13 @@ class CvProfile(BaseModel):
     work_authorization: list[str]
 
 
-class JobPreferences(BaseModel):
-    employment_type: Literal["full-time", "part-time", "contract", "any"] = "any"
+class PlacePreferences(BaseModel):
     remote: RemotePreference
     regions_allowed: list[str] = Field(description="Region codes like EU, EMEA, US or 'anywhere'.")
+
+
+class JobPreferences(PlacePreferences):
+    employment_type: Literal["full-time", "part-time", "contract", "any"] = "any"
     excluded_industries: list[str]
     excluded_company_attributes: list[str]
     salary_floor: Money | None = Field(description="Null unless the user named a minimum.")
@@ -68,6 +71,13 @@ class JobScoringWeights(BaseModel):
     employer_signals: int = Field(default=10, ge=0, le=100)
 
 
+class SkillRules(BaseModel):
+    must_have_skills: list[str]
+    must_have_or_groups: list[list[str]]
+    nice_to_have_skills: list[str]
+    synonym_clusters: dict[str, list[str]] = Field(description="Canonical skill to its synonyms.")
+
+
 class JobStrategyInput(BaseModel):
     cv_text: str
     preferences: str
@@ -75,7 +85,7 @@ class JobStrategyInput(BaseModel):
     feedback: str | None = Field(default=None, description="The user's notes on a rejected draft.")
 
 
-class JobStrategy(BaseModel):
+class JobStrategy(SkillRules):
     cv: CvProfile
     preferences: JobPreferences
     search_queries: dict[str, list[str]] = Field(description="Queries keyed by target title.")
@@ -83,10 +93,6 @@ class JobStrategy(BaseModel):
     bilingual_query_variants: dict[str, list[str]] = Field(
         description="Keyed by language code; empty unless the CV lists a language at B2 or above."
     )
-    must_have_skills: list[str]
-    must_have_or_groups: list[list[str]]
-    nice_to_have_skills: list[str]
-    synonym_clusters: dict[str, list[str]] = Field(description="Canonical skill to its synonyms.")
     work_auth_blockers: list[str] = Field(description="Listing phrases that rule the user out.")
     scoring_weights: JobScoringWeights
     scoring_rationale: str
@@ -99,16 +105,18 @@ class JobSource(BaseModel):
     type: str = Field(description="Free label: global, regional, niche, ATS, guidance...")
     tier: Literal["canonical", "augmented"]
     relevance_score: int = Field(ge=1, le=10)
-    scrape_hints: str
-    access_notes: str
+    scrape_hints: str = ""
+    access_notes: str = ""
     language_hint: str = "en"
     scrape_allowed: bool = True
+    discipline: str | None = Field(default=None, description="Freelance boards: comma list.")
+    guidance_note: str | None = Field(default=None, description="How to get in, for gated sites.")
 
 
 class SourceResearchInput(BaseModel):
     strategy: JobStrategy
     canonical: list[JobSource]
-    mode: Literal["job", "freelance"] = "job"
+    mode: Literal["job"] = "job"
 
 
 class SourcePlan(BaseModel):
