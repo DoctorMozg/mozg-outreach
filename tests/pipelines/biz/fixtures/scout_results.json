@@ -1,0 +1,58 @@
+[
+  {
+    "companies": [
+      {
+        "description": "Cloud ERP and inventory-management software; \u20ac14M Series B extension in Oct 2025 led by Cogito Capital Partners; over \u20ac60M raised in total; 1,500+ SMB customers in 70 countries.",
+        "domain": "katanamrp.com",
+        "evidence": "page",
+        "evidence_quote": "has raised its total funding to more than \u20ac60 million",
+        "founded": null,
+        "location": "Tallinn, Estonia",
+        "name": "Katana",
+        "sector": "B2B SaaS (inventory/ERP for SMB manufacturers and merchants)",
+        "source_url": "https://estonia.ee/defence/news/estonia-born-katana-secures-strategic-investment-to-expand-its-erp-footprint-worldwide"
+      },
+      {
+        "description": "Bot-mitigation, DDoS protection and WAF platform for hosting providers and MSPs. \u20ac45M Series B in March 2025 led by Dawn Capital. A $100M Series C at a $2.2B valuation was reported in Oct 2026.",
+        "domain": "blackwall.com",
+        "evidence": "page",
+        "evidence_quote": "Tallinn-based Blackwall, formerly known as BotGuard, has secured a \u20ac45 million Series B funding round led by Dawn Capital",
+        "founded": null,
+        "location": "Tallinn, Estonia",
+        "name": "Blackwall (formerly BotGuard)",
+        "sector": "Security / bot-protection SaaS",
+        "source_url": "https://bebeez.eu/2025/03/14/estonian-ai-security-startup-raises-e45m-to-bolster-hosting-and-msp-security/"
+      }
+    ],
+    "concerns": [
+      "Directory returned HTTP 403."
+    ]
+  },
+  {
+    "companies": [
+      {
+        "description": "Bot-mitigation, DDoS protection and WAF platform for hosting providers and MSPs. \u20ac45M Series B in March 2025 led by Dawn Capital. A $100M Series C at a $2.2B valuation was reported in Oct 2026.",
+        "domain": "https://www.Blackwall.com/",
+        "evidence": "search_snippet",
+        "evidence_quote": "Tallinn-based Blackwall, formerly known as BotGuard, has secured a \u20ac45 million Series B funding round led by Dawn Capital",
+        "founded": null,
+        "location": "Tallinn, Estonia",
+        "name": "Blackwall (formerly BotGuard)",
+        "sector": "Security / bot-protection SaaS",
+        "source_url": "https://funding.tech.eu/companies/blackwall"
+      },
+      {
+        "description": "legacy notes row",
+        "domain": null,
+        "evidence": "search_snippet",
+        "evidence_quote": null,
+        "founded": null,
+        "location": null,
+        "name": "_scout_notes",
+        "sector": null,
+        "source_url": "https://funding.tech.eu"
+      }
+    ],
+    "concerns": []
+  }
+]

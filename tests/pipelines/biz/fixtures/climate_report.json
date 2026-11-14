@@ -1,0 +1,33 @@
+{
+  "climate_summary": "Estonian SaaS is growing on exports; hiring is the main constraint.",
+  "concerns": [
+    "No regulatory, deal or pain-point signal found inside the window."
+  ],
+  "industry": "B2B SaaS",
+  "overall_climate": "favorable",
+  "recency_months": 12,
+  "region": "Estonia",
+  "signals": {
+    "deals": [],
+    "economic": [
+      {
+        "date": "2026-08",
+        "outreach_implication": "Growing export revenue means budget for scaling infrastructure.",
+        "source_url": "https://www.koda.ee/en/outlook/2026-q3",
+        "summary": "The chamber reports export growth led by software services.",
+        "title": "Estonian ICT exports grow 6% in 2026-Q2"
+      }
+    ],
+    "pain_points": [],
+    "regulatory": []
+  },
+  "top_outreach_angles": [
+    {
+      "angle": "Open with the export growth and offer to carry the infrastructure load.",
+      "based_on": [
+        "Estonian ICT exports grow 6% in 2026-Q2"
+      ],
+      "why_it_lands": "It matches a scaling phase the prospect is already in."
+    }
+  ]
+}

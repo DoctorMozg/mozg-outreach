@@ -1,0 +1,32 @@
+# legacy/ holds verbatim upstream copies kept only as a porting reference.
+exclude: ^legacy/
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: pretty-format-json
+        args: [--autofix, --indent, "2"]
+      - id: check-toml
+      - id: check-yaml
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.21
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-gfm
+          # 2.1+ keeps the quotes around frontmatter values; 2.2 needs mdformat 1.0.
+          - mdformat-frontmatter==2.1.2
+          - mdformat-tables
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.3
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (strict, project env)
+        language: system
+        entry: uv run --frozen mypy
+        pass_filenames: false
+        types: [python]

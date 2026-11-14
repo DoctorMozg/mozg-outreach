@@ -1,0 +1,35 @@
+{
+  "concerns": [
+    "Trustpilot has no profile for katanamrp.com."
+  ],
+  "reviews": {
+    "glassdoor": {
+      "count": 41,
+      "notable": "Reviewers praise remote-friendly culture and fast releases; a few mention unclear career paths.",
+      "rating": 4.3,
+      "sentiment": "positive",
+      "source_url": "https://www.glassdoor.com/Reviews/Katana-Reviews-E2394012.htm"
+    },
+    "google_business": {
+      "count": 18,
+      "notable": null,
+      "rating": 4.7,
+      "sentiment": "positive",
+      "source_url": "https://www.google.com/maps/place/Katana+MRP"
+    },
+    "indeed": {
+      "count": 9,
+      "notable": "Small sample; good benefits, some comments on workload during launches.",
+      "rating": 3.6,
+      "sentiment": "mixed",
+      "source_url": "https://ee.indeed.com/cmp/Katana-Mrp"
+    },
+    "trustpilot": {
+      "count": 0,
+      "notable": null,
+      "rating": null,
+      "sentiment": "no_data",
+      "source_url": null
+    }
+  }
+}

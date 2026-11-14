@@ -1,0 +1,122 @@
+{
+  "concerns": [
+    "I found no Estonian Series B SaaS round announced in 2026; the most recent named ones were Blackwall (\u20ac45M, March 2025) and Katana (\u20ac14M, October 2025), both reported by tech.eu.",
+    "Seedtable, vcbacked.co, Shizune and Ellty are third-party aggregators, so company stage and funding data from them should be checked against company announcements or tech.eu.",
+    "The Startup Estonia database page does not say it has filters for employee count or funding stage, so these will need enriching from LinkedIn or the Business Register.",
+    "Estonia has only about 1,500 startups in total (Startup Estonia), so the pool of Series A-C B2B SaaS companies with 50-300 employees is probably only a few dozen, and the size and stage filters may need loosening."
+  ],
+  "goal_analysis": {
+    "offering": "Fixed-price, 8-week Kubernetes platform engineering and cloud cost reduction engagement. The promise is to cut cloud spend by 20-40% without slowing releases. Proof point: a 35% AWS bill reduction for a logistics SaaS company in Munich.",
+    "target_audience": "CTOs and VPs of Engineering at Series A-C B2B SaaS companies in Estonia with 50-300 employees, which mostly means Tallinn and Tartu. These companies run production workloads on AWS, GCP or Azure, often on Kubernetes (EKS, GKE or AKS), and their cloud bills are big enough to be a board-level line item.",
+    "timing_rationale": "After a new funding round, investors push for efficient growth and a longer runway, so cloud spend gets scrutiny. Fast headcount growth and new markets increase infrastructure sprawl. Hiring for DevOps, SRE or platform roles shows a capacity gap that a fixed-scope engagement can fill. Estonia's software sector stayed the most active funding category in 2025 (tech.eu), so there is a steady pool of recently funded companies."
+  },
+  "outreach_angles": [
+    {
+      "name": "Post-round runway extension",
+      "pain_point": "After a raise, the board wants efficient growth, but cloud bills grow faster than revenue.",
+      "personalization_hook": "Name the round and investor, and connect it to the scaling stage the company is entering.",
+      "timing_trigger": "Series A, B or C announced in the last 12-18 months.",
+      "value_prop": "Cut cloud spend 20-40% in 8 weeks at a fixed price, which extends runway without hiring."
+    },
+    {
+      "name": "Platform capacity gap",
+      "pain_point": "Open DevOps, SRE or platform roles take months to fill in Tallinn's tight talent market, while infrastructure debt and costs keep building.",
+      "personalization_hook": "Reference the specific job ad and the stack it lists, such as EKS or Terraform.",
+      "timing_trigger": "Active DevOps, SRE or platform job ads.",
+      "value_prop": "A fixed-scope 8-week engagement brings senior Kubernetes platform work now and leaves the team with a cleaner, cheaper platform."
+    },
+    {
+      "name": "Cost down without slowing releases",
+      "pain_point": "CTOs avoid cost projects because past attempts froze feature delivery or caused incidents.",
+      "personalization_hook": "Mention their cloud provider and a recent launch or expansion, and use the logistics case for supply-chain SaaS companies.",
+      "timing_trigger": "A recent product launch, a new region, or an AI feature that adds compute load.",
+      "value_prop": "Cost reduction built into the platform (right-sizing, autoscaling, spot instances, cluster consolidation) while the release cadence stays the same; we cut a Munich logistics SaaS company's AWS bill by 35%."
+    }
+  ],
+  "scoring_rationale": "The goal is to book an intro call by email, so the most weight goes to reaching the CTO or VP Engineering directly: contact_availability 25 and outreach_feasibility 20. Growth signals (25) are the best timing proxy for this offer, because recent funding and DevOps/SRE hiring point to rising cloud spend and pressure to be efficient. Sector relevance (20) checks for a B2B SaaS company with a real cloud and Kubernetes footprint, since without one there is no cost to cut. Estonia's market is small (Startup Estonia lists about 1,500 startups in total), so we should not throw out leads with sparse data, and data_completeness gets 5. Review reputation (5) barely matters for a B2B infrastructure sale.",
+  "scoring_weights": {
+    "contact_availability": 25,
+    "data_completeness": 5,
+    "growth_signals": 25,
+    "outreach_feasibility": 20,
+    "review_reputation": 5,
+    "sector_relevance": 20
+  },
+  "search_signals": {
+    "disqualifying": [
+      "Pre-revenue or pre-seed/seed-only companies",
+      "Over about 500 employees with an established in-house platform/FinOps team or a large consultancy contract",
+      "Mostly on-premise or non-cloud infrastructure",
+      "B2C apps, gaming, or companies with no meaningful cloud footprint",
+      "Company closed, acquired and merged into a parent's infrastructure, or in visible distress",
+      "Not headquartered or engineering-led in Estonia"
+    ],
+    "must_have": [
+      "B2B SaaS or software product delivered from the cloud",
+      "Headquartered or with its main engineering team in Estonia",
+      "Roughly 50-300 employees",
+      "Has raised at least a Series A",
+      "Runs production on a public cloud (AWS, GCP or Azure)"
+    ],
+    "strong_positive": [
+      "Raised a Series A, B or C in the last 12-18 months",
+      "Open job ads for DevOps, SRE, platform or cloud engineers",
+      "Uses Kubernetes or EKS/GKE/AKS (from job ads, engineering blog or conference talks)",
+      "Public talk of efficiency, runway or a path to profitability",
+      "Recent expansion into new markets or regions, or launch of an AI/data-heavy product",
+      "A named CTO or VP Engineering with a findable work email or LinkedIn profile"
+    ],
+    "weak_positive": [
+      "Engineering blog or meetup talks on infrastructure",
+      "Exhibitor or speaker at Latitude59 or other Estonian tech events",
+      "Backed by investors active in Estonian SaaS, such as Specialist VC",
+      "Logistics or supply-chain domain (closest match to the proof point)",
+      "Recent change of CTO or VP Engineering"
+    ]
+  },
+  "sender_voice": "Write in the first person (\"I\"), directly and plainly. Use short sentences, one idea each. Leave out buzzwords such as \"synergy\", \"leverage\", \"cutting-edge\" and \"transform\". Lead with one concrete fact about the recipient's company, then the 20-40% / 8-week offer and the 35% AWS proof point. End with one call to action: ask for a 20-minute intro call and offer one or two specific time slots.",
+  "source_hints": [
+    "Startup Estonia startup database (startupestonia.ee, built on Dealroom data); filter for active, non-mature software and SaaS companies",
+    "tech.eu funding tracker for Estonia (funding.tech.eu/geographies/estonia), for dated 2025-2026 rounds",
+    "The Recursive, Estonia tag, for CEE funding-round news with dates",
+    "Seedtable's Estonia SaaS and enterprise-software rankings, used only for discovery; check stage and size on the company's own site",
+    "Exhibitor and speaker lists for Latitude59 (Tallinn) and sTARTUp Day (Tartu)",
+    "Portfolio pages of Estonia-active VCs, such as Specialist VC and Change Ventures",
+    "Estonian Business Register (e-Business Register / ariregister.rik.ee) for headcount and revenue filings",
+    "Job boards (cv.ee, LinkedIn Jobs, company career pages) for DevOps, SRE and Kubernetes ads",
+    "Estonian ICT association ITL member list, for established software companies"
+  ],
+  "target_profile": {
+    "company_stage": [
+      "Series A",
+      "Series B",
+      "Series C"
+    ],
+    "geography": [
+      "Estonia (Tallinn, Tartu; Estonian-registered or Estonian-HQ companies only)"
+    ],
+    "maturity_signals": [
+      "Institutional round of \u20ac5M or more in the last 24 months",
+      "Revenue-generating, with paying B2B customers and logos on the website",
+      "Listed in the Startup Estonia/Dealroom database as an active, non-mature startup",
+      "Dedicated engineering leadership (a named CTO or VP Engineering)"
+    ],
+    "sectors": [
+      "B2B SaaS (primary)",
+      "Fintech and banking-infrastructure SaaS",
+      "Security, bot-protection and infrastructure SaaS",
+      "Supply chain, inventory and logistics SaaS (matches the Munich proof point)",
+      "AI and data-platform SaaS with heavy compute spend",
+      "HR, legal and procurement tech SaaS"
+    ],
+    "size_range": "50-300 employees, ideally with 15+ engineers",
+    "tech_indicators": [
+      "Kubernetes (EKS, GKE, AKS) or a container platform mentioned in job ads or engineering blogs",
+      "AWS, GCP or Azure as primary cloud",
+      "Terraform, Helm or ArgoCD in the stack",
+      "Observability tooling such as Datadog, Prometheus or Grafana (a sign of large cloud and monitoring bills)",
+      "Multi-region or EU data-residency deployments",
+      "Data-heavy workloads such as ML pipelines, analytics or real-time processing"
+    ]
+  }
+}

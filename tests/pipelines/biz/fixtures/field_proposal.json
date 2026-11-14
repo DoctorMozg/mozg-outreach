@@ -1,0 +1,95 @@
+{
+  "rationale": "V\u00e4ljad keskenduvad sellele, kas ettev\u00f5te sobib (pilv, Kubernetes, suurus, etapp), kui kiiresti tal on kulude valu (v\u00e4rbamine, rahastus, kuluindikaatorid) ja kellele ning mida kirjutada (otsustaja, p\u00e4\u00e4stik, tootet\u00fc\u00fcp). K\u00f5ik on avalikest allikatest leitavad: t\u00f6\u00f6pakkumised, inseneriblogi, Crunchbase ja LinkedIn.",
+  "spec": {
+    "fields": [
+      {
+        "description": "Public cloud platforms the company runs on (AWS, GCP, Azure, Hetzner and so on). Check job posts, engineering blog, case studies and the cloud vendor's customer pages.",
+        "example": "AWS, GCP",
+        "id": "cloud_provider",
+        "label": "Cloud provider",
+        "required": true,
+        "type": "list"
+      },
+      {
+        "description": "True if there is public evidence of Kubernetes use, such as job posts, a tech stack page, StackShare, GitHub repos with Helm charts or conference talks.",
+        "example": "true",
+        "id": "uses_kubernetes",
+        "label": "Uses Kubernetes",
+        "required": true,
+        "type": "boolean"
+      },
+      {
+        "description": "Infrastructure and DevOps tools mentioned publicly, such as Terraform, Helm, ArgoCD, Datadog, Prometheus, EKS or GKE. Use job posts, the engineering blog and GitHub.",
+        "example": "Terraform, EKS, ArgoCD, Datadog",
+        "id": "tech_stack",
+        "label": "Infra and tooling stack",
+        "required": false,
+        "type": "list"
+      },
+      {
+        "description": "Approximate headcount from LinkedIn or the company site. It is used to check the 50-300 fit.",
+        "example": "120",
+        "id": "employee_count",
+        "label": "Employee count",
+        "required": true,
+        "type": "number"
+      },
+      {
+        "description": "Latest funding round and stage (Series A, B or C) with the amount and date. Use Crunchbase, Estonian news such as Startup Estonia or \u00c4rileht, or press releases.",
+        "example": "Series B, \u20ac18M, March 2026",
+        "id": "funding_stage",
+        "label": "Funding stage",
+        "required": false,
+        "type": "text"
+      },
+      {
+        "description": "Date of the most recent announced funding round. Fresh funding and growing cloud bills raise urgency.",
+        "example": "2026-03-12",
+        "id": "last_funding_date",
+        "label": "Last funding date",
+        "required": false,
+        "type": "date"
+      },
+      {
+        "description": "Open roles in DevOps, SRE, platform or cloud engineering, found on the careers page or job boards. A hiring push can signal infrastructure pain.",
+        "example": "Senior DevOps Engineer, SRE",
+        "id": "infra_hiring",
+        "label": "Hiring for DevOps/SRE/platform",
+        "required": false,
+        "type": "list"
+      },
+      {
+        "description": "Name and title of the CTO, VP Engineering or equivalent, from the team page or LinkedIn. The pipeline's contacts section holds the details. This field records who is the right buyer.",
+        "example": "Mart Tamm, CTO",
+        "id": "decision_maker_role",
+        "label": "Likely decision-maker",
+        "required": true,
+        "type": "text"
+      },
+      {
+        "description": "Any public hint of cloud cost pressure or scale, such as talks about FinOps, cost-cutting posts, rapid user growth, layoffs or a cloud marketplace listing.",
+        "example": "CTO talk on rising AWS costs at DevOpsDays Tallinn 2026",
+        "id": "cost_signal",
+        "label": "Cloud cost signal",
+        "required": false,
+        "type": "text"
+      },
+      {
+        "description": "One line on what the B2B SaaS sells and to whom. Use it to tailor the opening line of the email.",
+        "example": "Fleet management SaaS for logistics firms",
+        "id": "product_type",
+        "label": "Product type",
+        "required": false,
+        "type": "text"
+      },
+      {
+        "description": "Latest news from the last 6 months worth mentioning in outreach: a product launch, expansion, new CTO, migration or an incident. Cite where it was found.",
+        "example": "Announced migration to a multi-region setup in September 2026",
+        "id": "recent_trigger",
+        "label": "Recent trigger event",
+        "required": false,
+        "type": "text"
+      }
+    ]
+  }
+}

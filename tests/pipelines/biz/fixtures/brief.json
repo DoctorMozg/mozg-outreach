@@ -1,0 +1,37 @@
+{
+  "competitors": [],
+  "geography": {
+    "notes": "",
+    "target_regions": [
+      "Estonia"
+    ]
+  },
+  "goal": {
+    "channels": "email",
+    "exclusions": [],
+    "goal": "Book a 20-minute intro call",
+    "voice": "Direct, short sentences, first person, no buzzwords"
+  },
+  "icp": {
+    "buyer_roles": [
+      "CTO",
+      "VP Engineering"
+    ],
+    "company_size": "50-300 employees",
+    "company_stage": "Series A to C",
+    "industries": [
+      "B2B SaaS"
+    ]
+  },
+  "notes": "",
+  "offering": {
+    "differentiators": [
+      "Fixed-price 8-week engagement"
+    ],
+    "proof_points": [
+      "Reduced AWS bill 35% for a Munich logistics SaaS"
+    ],
+    "value_prop": "Cut cloud spend 20-40% in 8 weeks without slowing releases",
+    "what": "Kubernetes platform engineering and cloud cost reduction consulting"
+  }
+}

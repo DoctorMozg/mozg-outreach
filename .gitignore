@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+dist/
+
+# Claude Code project memory and run artifacts
+.mz/
+
+# Local service data: per-project agent workspaces, SQLite DB, secrets
+/data/
+.env
+*.session
+*.session-journal

@@ -1,0 +1,45 @@
+{
+  "concerns": [
+    "Kubernetes usage is not confirmed by any public source."
+  ],
+  "conference_presence": null,
+  "github_org": null,
+  "maturity": "mid",
+  "maturity_notes": "Modern managed-cloud stack; no public engineering blog or open-source activity found.",
+  "open_source": null,
+  "stack": {
+    "cloud": [
+      "AWS"
+    ],
+    "databases": [
+      "PostgreSQL"
+    ],
+    "devops": [
+      "Docker",
+      "Terraform"
+    ],
+    "frameworks": [
+      "React",
+      "Node.js"
+    ],
+    "languages": [
+      "TypeScript",
+      "Python"
+    ],
+    "monitoring": [],
+    "other": []
+  },
+  "stack_confidence": "medium",
+  "stack_sources": [
+    "https://katanamrp.com/careers/"
+  ],
+  "tech_blog": null,
+  "tech_decision_makers": [
+    {
+      "likely_priorities": "Platform reliability while scaling the team",
+      "name": "Jane Example",
+      "source_url": "https://katanamrp.com/about/",
+      "title": "CTO"
+    }
+  ]
+}

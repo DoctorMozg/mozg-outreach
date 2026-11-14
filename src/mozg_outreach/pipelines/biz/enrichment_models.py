@@ -1,0 +1,167 @@
+"""Contracts between the biz enrichment pipeline and its five per-company agents."""
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION, OutreachAngle, TargetProfile
+
+Sentiment = Literal["positive", "mixed", "negative", "no_data"]
+Confidence = Literal["low", "medium", "high"]
+
+
+class CompanyBrief(BaseModel):
+    """Shared input of all enrichment agents; the strategy fields matter mostly to contacts."""
+
+    name: str = Field(min_length=1)
+    domain: str | None = None
+    location: str | None = None
+    sector: str | None = None
+    description: str | None = None
+    target_profile: TargetProfile | None = None
+    outreach_angles: list[OutreachAngle] = Field(default_factory=list)
+
+
+class PlatformReview(BaseModel):
+    rating: float | None = Field(ge=0, le=5)
+    count: int = Field(ge=0)
+    sentiment: Sentiment
+    notable: str | None
+    source_url: str | None
+
+
+class PlatformReviews(BaseModel):
+    glassdoor: PlatformReview
+    trustpilot: PlatformReview
+    indeed: PlatformReview
+    google_business: PlatformReview
+
+
+class ReputationResult(BaseModel):
+    reviews: PlatformReviews
+    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
+
+
+class EmailContact(BaseModel):
+    address: str = Field(min_length=3)
+    kind: Literal["published", "pattern_guess"]
+    source_url: str = Field(description="Page the address, or the pattern behind it, was seen on.")
+
+
+class PhoneContact(BaseModel):
+    number: str = Field(min_length=3)
+    source_url: str
+
+
+class SocialLinks(BaseModel):
+    linkedin_company: str | None
+    twitter: str | None
+
+
+class KeyPerson(BaseModel):
+    name: str = Field(min_length=1)
+    title: str
+    linkedin: str | None
+    email: EmailContact | None
+    relevance: str
+    source_url: str = Field(description="Page where this person was seen.")
+
+
+class ContactsResult(BaseModel):
+    emails: list[EmailContact]
+    phones: list[PhoneContact]
+    whatsapp: str | None
+    booking_link: str | None
+    address: str | None
+    social: SocialLinks
+    key_people: list[KeyPerson]
+    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
+
+
+class NewsItem(BaseModel):
+    title: str
+    date: str = Field(description="Publication date, YYYY-MM-DD or YYYY-MM.")
+    url: str
+    summary: str
+    category: Literal["funding", "partnership", "product", "expansion", "people", "award", "other"]
+    timing_relevance: Literal["high", "medium", "low"]
+    outreach_implication: str
+
+
+class NewsResult(BaseModel):
+    items: list[NewsItem]
+    funding_status: str | None
+    latest_activity: str | None
+    overall_momentum: Literal["strong", "steady", "quiet", "concerning"]
+    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
+
+
+class JobPostings(BaseModel):
+    total_open: int = Field(ge=0)
+    departments: dict[str, int]
+    seniority_mix: str
+    notable_roles: list[str]
+
+
+class CompanySize(BaseModel):
+    estimate: Literal["1-10", "10-50", "50-200", "200-500", "500-1000", "1000+"]
+    confidence: Confidence
+    signals: str
+
+
+class FundingSignals(BaseModel):
+    last_round: str | None
+    total_raised: str | None
+    key_investors: list[str]
+    date: str | None
+
+
+class GrowthResult(BaseModel):
+    job_postings: JobPostings
+    company_size: CompanySize
+    funding: FundingSignals | None
+    trajectory: Literal["rapid_growth", "steady_growth", "stable", "declining", "pivoting"]
+    trajectory_evidence: str
+    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
+
+
+class TechStack(BaseModel):
+    languages: list[str]
+    frameworks: list[str]
+    cloud: list[str]
+    databases: list[str]
+    devops: list[str]
+    monitoring: list[str]
+    other: list[str]
+
+
+class TechDecisionMaker(BaseModel):
+    name: str = Field(min_length=1)
+    title: str
+    likely_priorities: str
+    source_url: str = Field(description="Page where this person was seen.")
+
+
+class TechResult(BaseModel):
+    stack: TechStack
+    stack_confidence: Confidence
+    stack_sources: list[str]
+    github_org: str | None
+    tech_blog: str | None
+    open_source: str | None
+    conference_presence: str | None
+    maturity: Literal["early", "mid", "mature", "enterprise"]
+    maturity_notes: str
+    tech_decision_makers: list[TechDecisionMaker]
+    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
+
+
+class CompanyDossier(BaseModel):
+    """Enrichment outcome for one company; a section is None when its agent failed."""
+
+    reputation: ReputationResult | None = None
+    contacts: ContactsResult | None = None
+    news: NewsResult | None = None
+    growth: GrowthResult | None = None
+    tech: TechResult | None = None
+    concerns: list[str] = Field(default_factory=list)

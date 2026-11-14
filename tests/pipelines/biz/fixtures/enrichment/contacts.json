@@ -1,0 +1,35 @@
+{
+  "address": "Tallinn, Estonia",
+  "booking_link": null,
+  "concerns": [
+    "No phone number is published on the contact page."
+  ],
+  "emails": [
+    {
+      "address": "hello@katanamrp.com",
+      "kind": "published",
+      "source_url": "https://katanamrp.com/contact/"
+    },
+    {
+      "address": "partnerships@katanamrp.com",
+      "kind": "pattern_guess",
+      "source_url": "https://katanamrp.com/contact/"
+    }
+  ],
+  "key_people": [
+    {
+      "email": null,
+      "linkedin": null,
+      "name": "Jane Example",
+      "relevance": "Owns infrastructure and cloud spend, matching the cost-reduction angle.",
+      "source_url": "https://katanamrp.com/about/",
+      "title": "CTO"
+    }
+  ],
+  "phones": [],
+  "social": {
+    "linkedin_company": "https://www.linkedin.com/company/katanamrp",
+    "twitter": null
+  },
+  "whatsapp": null
+}

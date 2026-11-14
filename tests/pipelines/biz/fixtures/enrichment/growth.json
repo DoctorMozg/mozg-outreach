@@ -1,0 +1,31 @@
+{
+  "company_size": {
+    "confidence": "medium",
+    "estimate": "50-200",
+    "signals": "LinkedIn lists about 140 employees; careers page shows 9 open roles."
+  },
+  "concerns": [],
+  "funding": {
+    "date": "2025-10",
+    "key_investors": [
+      "Cogito Capital Partners"
+    ],
+    "last_round": "Series B extension",
+    "total_raised": "EUR 60M+"
+  },
+  "job_postings": {
+    "departments": {
+      "customer_success": 2,
+      "engineering": 4,
+      "sales": 3
+    },
+    "notable_roles": [
+      "Senior Platform Engineer",
+      "Head of Sales DACH"
+    ],
+    "seniority_mix": "Mostly mid-senior, one team lead role",
+    "total_open": 9
+  },
+  "trajectory": "rapid_growth",
+  "trajectory_evidence": "Nine open roles across three departments and a recent funding extension; a DACH sales lead suggests expansion."
+}

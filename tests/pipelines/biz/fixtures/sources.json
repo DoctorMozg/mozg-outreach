@@ -1,0 +1,104 @@
+{
+  "concerns": [
+    "The startupestonia.ee/startups and change.vc/portfolio URLs returned 404, so the working startup-database and changeventures.com pages were used instead.",
+    "Seedtable's Estonia SaaS and enterprise-software pages returned 403 to fetch, so they are excluded; search snippets say they rank 115 funded SaaS companies, mostly Seed or Pre-Seed, so they likely contain few Series A-C companies.",
+    "Crunchbase's Estonia hub returned 403 to fetch and is excluded; PitchBook and CB Insights pages were not checked.",
+    "sTARTUp Day exhibitor or speaker lists were not found or verified.",
+    "Job boards (cv.ee, LinkedIn Jobs) were not verified; they are better suited to per-company checks than to discovery.",
+    "Startup Estonia's database counts differ by source: 1,500+ startups on the live page, versus 989 and 400+ in older articles.",
+    "The Recursive tag page shows no explicit dates; the 2025-2026 dates were inferred from image paths, so confirm dates on each article.",
+    "The tech.eu public page shows only top-10 deals dated up to Aug 2024; 2025-2026 rounds would need the full deal list, which was not checked.",
+    "Estonia's Series A-C SaaS universe with 50-300 employees is small; none of these sources filter by headcount or engineer count, so those criteria need per-company verification.",
+    "Specialist VC and Change Ventures portfolios are mostly early-stage and include non-SaaS companies."
+  ],
+  "sources": [
+    {
+      "access_notes": "Public page linking to ecosystem.startupestonia.ee. The default view is pre-filtered to Estonia-located companies that are not closed, not government or nonprofit, have verified data, are not 'mature', carry the 'startup estonia' tag and exclude 'outside tech'. Sorted by ranking rating. Series B/C scale-ups may be filtered out as 'mature', so remove that filter. Login and export terms were not stated and need checking on the subdomain. Stage, headcount and sector must be filtered or checked per company.",
+      "estimated_count": 1500,
+      "name": "Startup Estonia Startup Database (Dealroom-powered)",
+      "relevance": 9,
+      "search_queries_used": [
+        "Startup Estonia startup database Dealroom Estonian startups list"
+      ],
+      "type": "startup_directory",
+      "url": "https://startupestonia.ee/startup-database"
+    },
+    {
+      "access_notes": "Beta. Public page shows only the top 10 rounds, sorted by amount (Nov 2017\u2013Aug 2024). A link leads to the full list of 637 Estonia deals. Data is CC BY 4.0 and needs the attribution 'Tech.eu Funding Explorer'. An API/MCP section exists, but its terms were not stated. Use the full list to find Series A\u2013C rounds in 2025\u20132026.",
+      "estimated_count": 637,
+      "name": "Tech.eu Funding Explorer \u2013 Estonia",
+      "relevance": 8,
+      "search_queries_used": [
+        "Change Ventures portfolio companies Estonia"
+      ],
+      "type": "aggregator",
+      "url": "https://funding.tech.eu/geographies/estonia"
+    },
+    {
+      "access_notes": "Public logo grid with 56 named funded companies plus about 14 exits or closed projects. The firm says it has invested in 'over 80' companies, so the list may be incomplete. Fund and stage are not shown. Includes Veriff, Cybexer and Starship. Check each company's size and stage separately.",
+      "estimated_count": 56,
+      "name": "Specialist VC portfolio",
+      "relevance": 7,
+      "search_queries_used": [
+        "Change Ventures portfolio companies Estonia"
+      ],
+      "type": "vc_portfolio",
+      "url": "https://www.specialist.vc/portfolio"
+    },
+    {
+      "access_notes": "Public news tag page mixing funding stories with features. Listing shows no explicit dates, so check the date on each article. Useful for recent rounds, such as the H1 2026 biggest-rounds roundup. Many results are seed-stage or non-SaaS.",
+      "estimated_count": null,
+      "name": "The Recursive \u2013 Estonia tag",
+      "relevance": 6,
+      "search_queries_used": [
+        "Startup Estonia startup database Dealroom Estonian startups list"
+      ],
+      "type": "other",
+      "url": "https://therecursive.com/tag/estonia/"
+    },
+    {
+      "access_notes": "Public homepage shows 19 portfolio logos with a link to a fuller portfolio page that was not checked. Seed-focused, so most companies are probably below Series A. Includes Veriff and Nordigen. Funding databases list 37-101 investments depending on the source.",
+      "estimated_count": 19,
+      "name": "Change Ventures homepage portfolio",
+      "relevance": 6,
+      "search_queries_used": [
+        "Change Ventures portfolio companies Estonia"
+      ],
+      "type": "vc_portfolio",
+      "url": "https://www.changeventures.com/"
+    },
+    {
+      "access_notes": "Public numbered list of 131 members with website links. No sector, size or contact data. Includes law firms and non-software members, so filter manually. Good for established software companies.",
+      "estimated_count": 131,
+      "name": "Estonian ITL member list",
+      "relevance": 6,
+      "search_queries_used": [
+        "Estonian ICT association ITL member list"
+      ],
+      "type": "industry_association",
+      "url": "https://www.itl.ee/en/members"
+    },
+    {
+      "access_notes": "Public quick and detailed company search plus an Open Data download link. Bulk query and the dashboard require login (Estonian ID, Smart-ID or mobile ID). Whether the open data includes headcount or turnover was not confirmed. Use it to verify candidates, not to discover them.",
+      "estimated_count": null,
+      "name": "Estonian e-Business Register (ariregister.rik.ee)",
+      "relevance": 6,
+      "search_queries_used": [
+        "Estonian Business Register open data"
+      ],
+      "type": "government_registry",
+      "url": "https://ariregister.rik.ee/eng"
+    },
+    {
+      "access_notes": "Public site cites 180+ speakers, 900+ startup reps and 60+ partners. Separate Speakers, Startups and Partners pages were not fetched, so company-level lists are unconfirmed. Tallinn 2026 was held May 20-22, 2026. Next Tallinn is May 19-21, 2027. Skews to early-stage startups.",
+      "estimated_count": 900,
+      "name": "Latitude59 (Tallinn)",
+      "relevance": 5,
+      "search_queries_used": [
+        "Latitude59 Tallinn startups speakers"
+      ],
+      "type": "event_list",
+      "url": "https://latitude59.ee"
+    }
+  ]
+}

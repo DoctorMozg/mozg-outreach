@@ -1,0 +1,22 @@
+{
+  "concerns": [
+    "Only one source reached the relevance bar."
+  ],
+  "sources": [
+    {
+      "access_notes": "Open web, PDF download.",
+      "name": "Estonian Chamber of Commerce and Industry, Economic Outlook",
+      "recency": "quarterly outlook, latest 2026-Q3",
+      "relevance": 9,
+      "search_queries_used": [
+        "Estonia B2B SaaS economic outlook"
+      ],
+      "signal_types_covered": [
+        "economic",
+        "regulatory"
+      ],
+      "type": "chamber_of_commerce",
+      "url": "https://www.koda.ee/en/outlook"
+    }
+  ]
+}

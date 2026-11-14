@@ -1,0 +1,45 @@
+{
+  "concerns": [
+    "cloud_provider, uses_kubernetes, tech_stack: no Katana job post, engineering blog or GitHub page naming cloud or infrastructure tools was found. The careers page lists no stack, and the search queries returned only other companies' jobs.",
+    "infra_hiring: the careers page fetched shows no open DevOps, SRE or platform roles.",
+    "employee_count: Katana's careers page says 100+, Dealroom and PitchBook show about 104, and Northzone said 140 in 2022. These are not fully consistent, and the 100+ figure sits at the lower edge of the 50-300 fit range."
+  ],
+  "values": [
+    {
+      "field_id": "employee_count",
+      "quote": "We\u2019re a remote-first company of 100+ Katanauts across 20+ nationalities.",
+      "source_url": "https://katanamrp.com/careers/",
+      "value": 100
+    },
+    {
+      "field_id": "funding_stage",
+      "quote": "We have led their $35m Series B round with the participation of Lightrock and existing investors Atomico and 42CAP.",
+      "source_url": "https://northzone.com/insights/the-key-to-manufacturing-our-investment-in-katana",
+      "value": "Series B, $35M, October 2022 (led by Northzone). A further Series B-labelled round of ~$16.4M / \u20ac14M in Oct 2025 is reported by third parties but unconfirmed."
+    },
+    {
+      "field_id": "last_funding_date",
+      "quote": "Katana Closes $35M Series B to Scale an Industry-Leading Manufacturing Ecosystem for SMBs",
+      "source_url": "https://www.businesswire.com/news/home/20221012005045/en/Katana-Closes-%2435M-Series-B-to-Scale-an-Industry-Leading-Manufacturing-Ecosystem-for-SMBs",
+      "value": "2022-10"
+    },
+    {
+      "field_id": "decision_maker_role",
+      "quote": "Priit Kaasik (CTO)",
+      "source_url": "https://northzone.com/insights/the-key-to-manufacturing-our-investment-in-katana",
+      "value": "Priit Kaasik, CTO (co-founder; per Northzone 2022 \u2013 current status unverified)"
+    },
+    {
+      "field_id": "product_type",
+      "quote": "Katana Closes $35M Series B to Scale an Industry-Leading Manufacturing Ecosystem for SMBs",
+      "source_url": "https://www.businesswire.com/news/home/20221012005045/en/Katana-Closes-%2435M-Series-B-to-Scale-an-Industry-Leading-Manufacturing-Ecosystem-for-SMBs",
+      "value": "Cloud manufacturing ERP/inventory software for small and mid-size makers"
+    },
+    {
+      "field_id": "uses_kubernetes",
+      "quote": null,
+      "source_url": null,
+      "value": null
+    }
+  ]
+}

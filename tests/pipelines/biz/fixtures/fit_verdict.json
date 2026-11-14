@@ -1,0 +1,170 @@
+{
+  "concerns": [
+    "No cloud provider, Kubernetes, IaC or observability tooling was found, so the public-cloud must-have and the Kubernetes signal are unverified.",
+    "The careers page showed no listings, and the job counts come from aggregators and the Northzone board, so some roles may be closed.",
+    "Headcount sources conflict (about 92 vs 150) and the engineer count was not verified.",
+    "No named CTO or VP Engineering is on the official leadership grid, and Priit Kaasik's current role is unclear.",
+    "Funding totals and the Oct 2025 round size and valuation differ between Dealroom and the company's announcement.",
+    "The July 2026 BusinessWire release could not be opened, so its details come from search snippets.",
+    "The Estonian HQ rests on a secondary registry listing, and another data site gives a different address.",
+    "Trustpilot is negative (2.0 from 13 reviews), and Glassdoor data could not be confirmed."
+  ],
+  "sector_match": "exact",
+  "sector_reason": "Katana is a cloud B2B SaaS manufacturing ERP with inventory management, which falls in both the B2B SaaS and the supply chain/inventory SaaS target sectors.",
+  "signals": [
+    {
+      "evidence": "Company brief: cloud manufacturing ERP for small and mid-size makers; serves 1,500+ customers.",
+      "kind": "must_have",
+      "present": "yes",
+      "signal": "B2B SaaS or software product delivered from the cloud",
+      "source_url": "https://katanamrp.com/?p=12693"
+    },
+    {
+      "evidence": "Registered as Katana Technologies O\u00dc at Peetri tn 7, Tallinn per a registry listing; senior engineering roles are Tallinn-based.",
+      "kind": "must_have",
+      "present": "yes",
+      "signal": "Headquartered or with its main engineering team in Estonia",
+      "source_url": null
+    },
+    {
+      "evidence": "Headcount estimate is 50-200 (medium confidence): Revelio about 92, Latka 150.",
+      "kind": "must_have",
+      "present": "yes",
+      "signal": "Roughly 50-300 employees",
+      "source_url": null
+    },
+    {
+      "evidence": "Series B extension of about \u20ac14M in Oct 2025 led by Cogito Capital Partners; original Series B in Oct 2022.",
+      "kind": "must_have",
+      "present": "yes",
+      "signal": "Has raised at least a Series A",
+      "source_url": "https://katanamrp.com/newsroom/katana-series-b-extension/"
+    },
+    {
+      "evidence": null,
+      "kind": "must_have",
+      "present": "unknown",
+      "signal": "Runs production on a public cloud (AWS, GCP or Azure)",
+      "source_url": null
+    },
+    {
+      "evidence": "\u20ac14M Series B extension announced 2025-10-02, about 13 months before today.",
+      "kind": "strong_positive",
+      "present": "yes",
+      "signal": "Raised a Series A, B or C in the last 12-18 months",
+      "source_url": "https://katanamrp.com/newsroom/katana-series-b-extension/"
+    },
+    {
+      "evidence": "Open roles found are senior software, security, product, marketing and GTM roles. No DevOps, SRE or platform role was found.",
+      "kind": "strong_positive",
+      "present": "no",
+      "signal": "Open job ads for DevOps, SRE, platform or cloud engineers",
+      "source_url": null
+    },
+    {
+      "evidence": null,
+      "kind": "strong_positive",
+      "present": "unknown",
+      "signal": "Uses Kubernetes or EKS/GKE/AKS (from job ads, engineering blog or conference talks)",
+      "source_url": null
+    },
+    {
+      "evidence": null,
+      "kind": "strong_positive",
+      "present": "unknown",
+      "signal": "Public talk of efficiency, runway or a path to profitability",
+      "source_url": null
+    },
+    {
+      "evidence": "July 2026 launch of Katana MCP (AI assistant integration) and an enterprise tier; April 2026 multi-channel platform launch; ConverSight AI forecasting partnership.",
+      "kind": "strong_positive",
+      "present": "yes",
+      "signal": "Recent expansion into new markets or regions, or launch of an AI/data-heavy product",
+      "source_url": "https://secure.businesswire.com/news/home/20260715514917/en/Katana-enters-a-new-era-The-inventory-platform-that-tells-you-what-to-do-next"
+    },
+    {
+      "evidence": "No named CTO or VP Engineering on the leadership grid. Ants Konga (VP of Product / Head of Product Engineering) is the closest, with no LinkedIn or email found.",
+      "kind": "strong_positive",
+      "present": "no",
+      "signal": "A named CTO or VP Engineering with a findable work email or LinkedIn profile",
+      "source_url": "https://katanamrp.com/about-us/"
+    },
+    {
+      "evidence": "No GitHub org, engineering blog or conference talks were found.",
+      "kind": "weak_positive",
+      "present": "no",
+      "signal": "Engineering blog or meetup talks on infrastructure",
+      "source_url": null
+    },
+    {
+      "evidence": null,
+      "kind": "weak_positive",
+      "present": "unknown",
+      "signal": "Exhibitor or speaker at Latitude59 or other Estonian tech events",
+      "source_url": null
+    },
+    {
+      "evidence": "Investors are Northzone, Atomico, 42CAP, Lightrock and Cogito Capital. Specialist VC is not listed, and the dossier does not say whether these investors are active in Estonian SaaS.",
+      "kind": "weak_positive",
+      "present": "unknown",
+      "signal": "Backed by investors active in Estonian SaaS, such as Specialist VC",
+      "source_url": null
+    },
+    {
+      "evidence": "Product is inventory and manufacturing ERP software (supply chain, inventory, planning and forecasting).",
+      "kind": "weak_positive",
+      "present": "yes",
+      "signal": "Logistics or supply-chain domain (closest match to the proof point)",
+      "source_url": null
+    },
+    {
+      "evidence": null,
+      "kind": "weak_positive",
+      "present": "unknown",
+      "signal": "Recent change of CTO or VP Engineering",
+      "source_url": null
+    },
+    {
+      "evidence": "Revenue-generating with 1,500+ customers; revenue has tripled since the 2022 Series B, and it is at Series B.",
+      "kind": "disqualifying",
+      "present": "no",
+      "signal": "Pre-revenue or pre-seed/seed-only companies",
+      "source_url": null
+    },
+    {
+      "evidence": "Headcount estimate is 50-200, well below 500.",
+      "kind": "disqualifying",
+      "present": "no",
+      "signal": "Over about 500 employees with an established in-house platform/FinOps team or a large consultancy contract",
+      "source_url": null
+    },
+    {
+      "evidence": null,
+      "kind": "disqualifying",
+      "present": "unknown",
+      "signal": "Mostly on-premise or non-cloud infrastructure",
+      "source_url": null
+    },
+    {
+      "evidence": "It is a B2B cloud SaaS product with a microservices and Kafka stack.",
+      "kind": "disqualifying",
+      "present": "no",
+      "signal": "B2C apps, gaming, or companies with no meaningful cloud footprint",
+      "source_url": "https://katanamrp.com/?p=12693"
+    },
+    {
+      "evidence": "Momentum is strong and the company raised in Oct 2025. No layoff reports were found.",
+      "kind": "disqualifying",
+      "present": "no",
+      "signal": "Company closed, acquired and merged into a parent's infrastructure, or in visible distress",
+      "source_url": null
+    },
+    {
+      "evidence": "Tallinn-based Estonian O\u00dc with Tallinn senior engineering roles.",
+      "kind": "disqualifying",
+      "present": "no",
+      "signal": "Not headquartered or engineering-led in Estonia",
+      "source_url": null
+    }
+  ]
+}
