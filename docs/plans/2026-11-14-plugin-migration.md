@@ -31,7 +31,6 @@ src/mozg_outreach/
   api/           # FastAPI routes, SSE, gate endpoints
 prompts/
   biz/  job/  creative/   # migrated agent prompts (adapted)
-legacy/                    # verbatim skill files, porting reference only; deleted in M11
 tests/
 ```
 
@@ -55,7 +54,7 @@ Each milestone stays within about 10 files and 400 changed lines, except the mec
 **M1 Scaffold and import** (mechanical)
 
 - `pyproject.toml`, `uv.lock`, `.pre-commit-config.yaml`, `.gitignore` (`.mz/`, workspaces, `.env`, `*.session`), package skeleton.
-- Copy agents to `prompts/{biz,job,creative}/`, skill files to `legacy/`, canonical source JSON to `prompts/job/sources/`; `PROVENANCE.md` with source repo, commit, version and MIT notice.
+- Copy agents to `prompts/{biz,job,creative}/`, skill files to a verbatim porting-reference folder (removed in M11), canonical source JSON to `prompts/job/sources/`; `PROVENANCE.md` with source repo, commit, version and MIT notice.
 - verify: `pre-commit run --all-files` passes; file count matches upstream (26 agents + 2 creative agents + 2 source lists); `pytest` runs an empty suite.
 
 **M2 Agent runner**
@@ -194,9 +193,11 @@ Done, M10 (UI): `ui/` is React + Vite + TypeScript with react-query and cytoscap
 
 **M11 Cutover**
 
-- Delete `legacy/`; update CLAUDE.md and README.
+- Delete the porting-reference folder; update CLAUDE.md and README.
 - Separately, in `claude-pipelines`, remove `mz-biz-outreach` and `mz-job-outreach` and the matching tests and evals, keeping `mz-creative` intact. Pushing and publishing there needs explicit approval.
-- verify: `grep -r legacy/` finds nothing; full test suite green; the marketplace manifest in `claude-pipelines` no longer lists the two plugins.
+- verify: no path references the removed folder; full test suite green; the marketplace manifest in `claude-pipelines` no longer lists the two plugins.
+
+Done, M11 (cutover): the porting-reference folder is gone and README.md describes setup and the biz workflow. Upstream, DoctorMozg/claude-pipelines#9 removed both plugins with their evals and tests and maps them to `null` under the marketplace `renames`, so users with them enabled see "Removed from the marketplace"; it was merged on 2026-11-14 with CI green.
 
 ## Out of scope for now
 

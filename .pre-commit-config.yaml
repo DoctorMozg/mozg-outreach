@@ -1,5 +1,3 @@
-# legacy/ holds verbatim upstream copies kept only as a porting reference.
-exclude: ^legacy/
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

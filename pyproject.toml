@@ -43,7 +43,6 @@ markers = ["live: calls the real Claude Code CLI and the web; run with `-m live`
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["legacy"]
 
 [tool.ruff.lint]
 select = ["ANN", "B", "E", "F", "I", "PT", "RUF", "SIM", "UP"]

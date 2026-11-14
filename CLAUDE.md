@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Migration in progress. `prompts/` holds the migrated agent prompts (adapted milestone by milestone), `legacy/` holds verbatim upstream skills as a porting reference (see `PROVENANCE.md`), and `src/mozg_outreach/` holds the Python service.
+Migration done (M0 to M11). `prompts/` holds the adapted agent prompts (origin in `PROVENANCE.md`), `src/mozg_outreach/` the Python service and `ui/` the React UI.
 
 - Plan: `docs/plans/2026-11-14-plugin-migration.md`. Follow its milestones and assumptions.
 - Research behind it: `docs/research/2026-11-14-initial-research.md`.
@@ -14,15 +14,13 @@ Migration in progress. `prompts/` holds the migrated agent prompts (adapted mile
 ```bash
 uv sync                                   # create .venv with dev deps (Python 3.12)
 uv run pytest                             # offline tests (live tests are deselected by default)
-uv run pytest tests/test_prompts.py::test_prompt_frontmatter_names_match_files   # one test
+uv run pytest tests/agents/test_prompt.py::TestParse::test_name_must_match_file   # one test
 uv run pytest -m live                     # real Claude Code + web calls; costs subscription usage
-pre-commit run --files <changed files>    # ruff, ruff-format, mdformat, json format, mypy --strict
+pre-commit run --files <changed files>    # ruff, ruff-format, mdformat, json format, mypy --strict, tsc
 uv run mozg-outreach                      # API on 127.0.0.1:8742; data in ~/.local/share/mozg-outreach (MOZG_OUTREACH_HOME)
 cd ui && npm ci --ignore-scripts && npm run build   # build the UI into ui/dist, which the API serves at /
 cd ui && npm run dev                      # Vite on :5173, proxying /api to the running service
 ```
-
-`legacy/` is excluded from every hook and from ruff and mypy. Don't edit it; port from it.
 
 ## What this project is
 
@@ -40,6 +38,12 @@ A local web service with a UI for business and job/freelance outreach. Scope for
 ## Origin of the pipelines
 
 The pipelines come from the `mz-biz-outreach` and `mz-job-outreach` plugins in https://github.com/DoctorMozg/claude-pipelines (commit `695e580`, v0.57.0). The `expert-naturalizer` and `expert-copywriter` agents are forked from `mz-creative`. After migration this repo is the only home for the outreach pipelines and they are removed from `claude-pipelines`. The forked creative agents diverge from `mz-creative` on purpose. Don't sync them back.
+
+## Layout
+
+- `runs/`: flows as phase lists (`FlowSpec`), `RunManager` (one task per run, state saved after every phase, gates, resume), and the run event log behind SSE.
+- `api/`: FastAPI app and routes; `ui/` mirrors its response types in `ui/src/api.ts`, so change both together.
+- `pipelines/{biz,job,freelance}/`: agent steps and their pydantic contracts; `scoring/`, `letters/`, `naturalize/`, `registry/`, `sources/` and `storage/` hold the shared parts.
 
 ## Architecture decisions
 
