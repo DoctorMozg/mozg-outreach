@@ -7,6 +7,7 @@ import pytest
 from mozg_outreach.agents import PromptLibrary
 from mozg_outreach.domain import ProjectMode
 from mozg_outreach.pipelines.job.models import JobBrief, JudgeResult
+from mozg_outreach.pipelines.summary import RunSummary
 from mozg_outreach.runs.catalog import FLOWS
 from mozg_outreach.runs.manager import RunEnvironment, RunManager
 from mozg_outreach.sources.base import SourceAdapter
@@ -18,6 +19,8 @@ from tests.pipelines.job.conftest import CV_TEXT, judgment
 from tests.pipelines.job.conftest import strategy as strategy  # fixture re-export
 
 NOW = datetime(2026, 11, 13, 9, tzinfo=UTC)
+SUMMARIZER = "seeker-run-summarizer"
+QUIET_SUMMARY = RunSummary(summary="Quiet run.", patterns=[], recommendations=[], concerns=[])
 FEED_URL = "https://boards.greenhouse.io/acme/jobs/1"
 
 
@@ -69,6 +72,10 @@ class Harness:
         )
 
     def script(self, script: dict[str, list[Scripted]]) -> None:
+        """Each scripted search also gets a run summary unless the script brings its own."""
+        if "job-strategist" in script or "freelance-strategist" in script:
+            quiet: dict[str, list[Scripted]] = {SUMMARIZER: [QUIET_SUMMARY]}
+            script = quiet | script
         for name, results in script.items():
             self.runner._script.setdefault(name, []).extend(results)
 

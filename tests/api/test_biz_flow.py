@@ -9,8 +9,8 @@ from mozg_outreach.pipelines.biz.models import (
     SourceList,
     Strategy,
 )
-from mozg_outreach.pipelines.biz.summary import Pattern, RunSummary
 from mozg_outreach.pipelines.fields import FieldProposal, FieldResearchResult
+from mozg_outreach.pipelines.summary import Pattern, RunSummary
 from mozg_outreach.storage.models import JsonObject
 from tests.pipelines.biz.conftest import load_fixture
 from tests.pipelines.conftest import Scripted

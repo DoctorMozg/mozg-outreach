@@ -11,6 +11,8 @@ The agent prompts and reference material here come from [claude-pipelines](https
 
 `prompts/biz/run-summarizer.md` is adapted from upstream `outreach-reporter`. Upstream `outreach-enrichment-orchestrator` and `outreach-card-writer` were dropped: Python fans out enrichment and builds the report from the database.
 
+`prompts/shared/seeker-run-summarizer.md` adapts `run-summarizer` to job and freelance leads. `prompts/job/telegram-post-parser.md` has no upstream: it was written here.
+
 The forked `expert-copywriter` is cut down to short outreach letters; the general marketing formats (landing pages, changelogs) were dropped.
 
 Verbatim copies of the plugins' skills and READMEs served as a porting reference during the migration. Python replaced them, and they were removed in milestone M11; git history before that commit still has them.

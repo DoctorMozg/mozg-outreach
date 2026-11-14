@@ -18,12 +18,8 @@ from mozg_outreach.pipelines.biz.models import (
 )
 from mozg_outreach.pipelines.biz.outreach import ASSESSMENT, stored_candidate
 from mozg_outreach.pipelines.biz.registry_ingest import BizRegistryIngest
-from mozg_outreach.pipelines.biz.summary import (
-    BizRunSummarizer,
-    RunSummary,
-    SummaryRequest,
-    summary_item,
-)
+from mozg_outreach.pipelines.biz.summary import BizRunSummarizer, SummaryRequest, summary_item
+from mozg_outreach.pipelines.summary import RunSummary, best_first
 from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
@@ -166,7 +162,7 @@ async def summarize(ctx: Ctx) -> PhaseResult:
         items = [summary_item(item) for item in found if item is not None]
     if not items:
         return None
-    items.sort(key=lambda i: -1 if i.score is None else i.score, reverse=True)
+    items = best_first(items)
     try:
         summary = await BizRunSummarizer(ctx.steps).summarize(
             SummaryRequest(strategy=_strategy(ctx), items=items)

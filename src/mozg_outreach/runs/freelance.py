@@ -23,6 +23,12 @@ from mozg_outreach.pipelines.leads.enrichment import IDENTITY, LeadEnrichment, L
 from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, field_task
 from mozg_outreach.pipelines.leads.identify import lead_input
 from mozg_outreach.pipelines.leads.models import LeadIdentity
+from mozg_outreach.pipelines.summary import (
+    RunSummary,
+    SeekerRunSummarizer,
+    SeekerSummaryInput,
+    stored_items,
+)
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.runs.job import JOB_CANONICAL, MAX_EXCLUDED_KEPT
@@ -38,6 +44,7 @@ class FreelanceOptions(BaseModel):
     research_fields_top: int = Field(
         default=10, ge=0, le=30, description="Best leads whose report fields are researched."
     )
+    summary: bool = Field(default=True, description="Summarize patterns across the scored leads.")
 
 
 class FreelanceSearchState(RunState):
@@ -49,6 +56,7 @@ class FreelanceSearchState(RunState):
     excluded: list[Excluded] = Field(default_factory=list)
     judgments: GigJudgments | None = None
     item_ids: list[int] = Field(default_factory=list)
+    summary: RunSummary | None = None
 
 
 type Ctx = FlowContext[FreelanceSearchState]
@@ -159,6 +167,22 @@ async def fields(ctx: Ctx) -> PhaseResult:
     return None
 
 
+async def summarize(ctx: Ctx) -> PhaseResult:
+    """Patterns and next steps across the scored leads, cited by item id."""
+    if not ctx.state.options.summary:
+        return None
+    items = stored_items(ctx.db, ctx.state.item_ids)
+    if not items:
+        return None
+    payload = SeekerSummaryInput.build("freelance", _brief(ctx).preferences, _strategy(ctx), items)
+    outcome = await SeekerRunSummarizer(ctx.steps).summarize(payload)
+    ctx.state.summary = outcome.summary
+    ctx.state.concerns += outcome.concerns
+    patterns = len(outcome.summary.patterns) if outcome.summary else 0
+    ctx.emit("summary", {"patterns": patterns})
+    return None
+
+
 def _field_task(item: Item, spec: FieldSpec, boards: frozenset[str]) -> FieldTask:
     found = item.details.get(IDENTITY)
     identity = LeadIdentity.model_validate(found) if found else None
@@ -198,5 +222,6 @@ FREELANCE_SEARCH = FlowSpec[FreelanceSearchState](
         Phase("score", score),
         Phase("identify", identify),
         Phase("fields", fields),
+        Phase("summarize", summarize),
     ),
 )

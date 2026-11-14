@@ -9,14 +9,12 @@ from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.biz.outreach import ASSESSMENT
 from mozg_outreach.pipelines.biz.summary import (
     BizRunSummarizer,
-    Pattern,
-    RunSummary,
     SummaryInput,
     SummaryRequest,
-    cited_only,
     summary_item,
 )
 from mozg_outreach.pipelines.steps import PipelineSteps
+from mozg_outreach.pipelines.summary import Pattern, RunSummary, cited_only
 from mozg_outreach.storage.models import Item, Project
 from tests.pipelines.biz.conftest import load_fixture
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner

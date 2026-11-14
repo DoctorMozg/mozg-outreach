@@ -1,14 +1,11 @@
-"""Summarize a finished biz search: patterns across the scored companies, cited by item id."""
+"""Summarize a finished biz search over its scored companies and the strategy behind them."""
 
-import logging
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from mozg_outreach.domain import FieldScalar, FieldValue, ItemScore, ScoreAxis
 from mozg_outreach.pipelines.biz.assessment_models import CompanyAssessment
 from mozg_outreach.pipelines.biz.models import (
-    CONCERNS_DESCRIPTION,
     GoalAnalysis,
     OutreachAngle,
     Strategy,
@@ -16,19 +13,12 @@ from mozg_outreach.pipelines.biz.models import (
 )
 from mozg_outreach.pipelines.biz.outreach import ASSESSMENT
 from mozg_outreach.pipelines.steps import PipelineSteps
+from mozg_outreach.pipelines.summary import RunSummary, ScoredItem, cited_only, scored_item
 from mozg_outreach.storage.models import Item
 
-logger = logging.getLogger(__name__)
 
-
-class SummaryItem(BaseModel):
-    id: int
-    title: str
-    score: float | None
-    axes: list[ScoreAxis]
-    blockers: list[str]
+class SummaryItem(ScoredItem):
     sector_match: Literal["exact", "adjacent", "unrelated"] | None
-    fields: dict[str, FieldScalar]
 
 
 class SummaryInput(BaseModel):
@@ -38,36 +28,17 @@ class SummaryInput(BaseModel):
     items: list[SummaryItem] = Field(min_length=1)
 
 
-class Pattern(BaseModel):
-    pattern: str
-    item_ids: list[int] = Field(min_length=1, description="Ids from `items` the pattern rests on.")
-
-
-class RunSummary(BaseModel):
-    summary: str
-    patterns: list[Pattern]
-    recommendations: list[str]
-    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
-
-
 class SummaryRequest(BaseModel):
     strategy: Strategy
     items: list[SummaryItem] = Field(min_length=1)
 
 
 def summary_item(item: Item) -> SummaryItem:
-    """What the summarizer sees of one stored company: scores, verdict and field values."""
-    score = ItemScore.model_validate(item.score) if item.score else None
+    """A scored company plus the fit verdict's sector match."""
     stored = item.details.get(ASSESSMENT)
     verdict = CompanyAssessment.model_validate(stored).verdict if stored else None
     return SummaryItem(
-        id=item.id,
-        title=item.title,
-        score=score.total if score else None,
-        axes=score.axes if score else [],
-        blockers=score.blockers if score else [],
-        sector_match=verdict.sector_match if verdict else None,
-        fields={k: FieldValue.model_validate(v).value for k, v in item.fields.items()},
+        **scored_item(item).model_dump(), sector_match=verdict.sector_match if verdict else None
     )
 
 
@@ -84,18 +55,3 @@ class BizRunSummarizer:
         )
         result = await self._steps.run("biz", "run-summarizer", payload, RunSummary)
         return cited_only(result, {item.id for item in request.items})
-
-
-def cited_only(summary: RunSummary, known: set[int]) -> RunSummary:
-    """Strip citations of items the run doesn't have; a pattern left without any is dropped."""
-    patterns: list[Pattern] = []
-    concerns = list(summary.concerns)
-    for pattern in summary.patterns:
-        unknown = [i for i in pattern.item_ids if i not in known]
-        kept = [i for i in pattern.item_ids if i in known]
-        if unknown:
-            logger.warning("summary cited unknown items %s", unknown)
-            concerns.append(f"The summary cited items this run doesn't have: {unknown}.")
-        if kept:
-            patterns.append(Pattern(pattern=pattern.pattern, item_ids=kept))
-    return summary.model_copy(update={"patterns": patterns, "concerns": concerns})
