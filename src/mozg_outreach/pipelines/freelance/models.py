@@ -7,15 +7,14 @@ from pydantic import BaseModel, Field
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
 from mozg_outreach.pipelines.seeker.models import (
     CvProfile,
+    Discipline,
+    EngagementType,
     JobSource,
-    Listing,
     Money,
     PlacePreferences,
+    ScoringWeights,
     SkillRules,
 )
-
-Discipline = Literal["engineering", "design", "marketing", "product", "data", "ops", "founder"]
-EngagementType = Literal["project_gig", "contractor_placement", "consulting_advisory"]
 
 
 class FreelanceBrief(BaseModel):
@@ -33,16 +32,6 @@ class FreelancePreferences(PlacePreferences):
     excluded_industries: list[str]
     rate_floor: Money | None = Field(description="Null unless the user named a minimum rate.")
     deal_breakers: list[str]
-
-
-class FreelanceScoringWeights(BaseModel):
-    skill_match: int = Field(default=40, ge=0, le=100)
-    location_eligibility: int = Field(default=15, ge=0, le=100)
-    scope_clarity: int = Field(default=10, ge=0, le=100)
-    budget_fit: int = Field(default=10, ge=0, le=100)
-    client_vetting: int = Field(default=10, ge=0, le=100)
-    recency: int = Field(default=10, ge=0, le=100)
-    discipline_fit: int = Field(default=5, ge=0, le=100)
 
 
 class FreelanceStrategyInput(BaseModel):
@@ -64,7 +53,7 @@ class FreelanceStrategy(SkillRules):
         description="Keyed by language code; empty unless the CV lists a language at B2 or above."
     )
     work_auth_blockers: list[str] = Field(description="Gig phrases that rule the user out.")
-    scoring_weights: FreelanceScoringWeights
+    scoring_weights: ScoringWeights
     scoring_rationale: str
     concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
 
@@ -101,34 +90,6 @@ class GigScoutResult(BaseModel):
     zero_results_verified: bool = Field(
         description="True only when an unfiltered smoke query also found nothing."
     )
-    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
-
-
-ScopeClarity = Literal["clear", "partial", "vague"]
-ClientVetting = Literal["vetted_platform", "verified_client", "unverified", "red_flags"]
-
-
-class GigJudgment(BaseModel):
-    key: str = Field(description="Copy of the gig listing's `key`.")
-    scope_clarity: ScopeClarity
-    scope_evidence: str
-    client_vetting: ClientVetting
-    vetting_evidence: str
-    discipline: Discipline | None = Field(description="The gig's discipline; null if unclear.")
-    engagement_type: EngagementType | Literal["fractional_retainer"] | None
-    deal_breaker_hits: list[str] = Field(description="User deal-breakers the gig mentions.")
-    summary: str = Field(description="One sentence on why this gig does or doesn't fit.")
-
-
-class GigJudgeInput(BaseModel):
-    cv: CvProfile
-    discipline: Discipline
-    deal_breakers: list[str]
-    gigs: list[Listing] = Field(min_length=1, max_length=10)
-
-
-class GigJudgeResult(BaseModel):
-    judgments: list[GigJudgment]
     concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
 
 

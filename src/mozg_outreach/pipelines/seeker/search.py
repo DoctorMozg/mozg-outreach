@@ -9,7 +9,8 @@ from pathlib import Path
 from pydantic import BaseModel, Field, TypeAdapter
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
-from mozg_outreach.domain import FieldValue, ItemCandidate, ItemKind, ItemScore
+from mozg_outreach.domain import FieldValue, ItemCandidate, ItemKind
+from mozg_outreach.pipelines.seeker.judge import JudgeContext, Judgments, ListingJudge
 from mozg_outreach.pipelines.seeker.listings import SourcedListing
 from mozg_outreach.pipelines.seeker.models import (
     ContactInput,
@@ -20,43 +21,24 @@ from mozg_outreach.pipelines.seeker.models import (
     JobSource,
     JobStrategy,
     JobStrategyInput,
-    JudgeInput,
-    JudgeResult,
     Listing,
-    ListingJudgment,
     SourcePlan,
     SourceResearchInput,
 )
-from mozg_outreach.pipelines.seeker.screening import (
-    ListingScreener,
-    Screening,
-    ScreenRules,
-    listing_text,
-)
+from mozg_outreach.pipelines.seeker.ranking import RankedListing, Ranker
+from mozg_outreach.pipelines.seeker.screening import ListingScreener, Screening, ScreenRules
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.steps import PipelineSteps
-from mozg_outreach.scoring.seeker import JobScoreInput, JobScorer
+from mozg_outreach.scoring.seeker import ScoreProfile
 
 logger = logging.getLogger(__name__)
 
-JUDGE_BATCH = 10
 MIN_PER_SOURCE, MAX_PER_SOURCE = 15, 50
 
 
 class ScoutOutcome(BaseModel):
     listings: list[SourcedListing]
     empty_sources: list[str] = Field(description="Sources whose smoke query also found nothing.")
-    concerns: list[str]
-
-
-class RankedListing(BaseModel):
-    listing: Listing
-    score: ItemScore
-    judgment: ListingJudgment | None
-
-
-class Judgments(BaseModel):
-    by_key: dict[str, ListingJudgment]
     concerns: list[str]
 
 
@@ -145,61 +127,23 @@ class JobSearch:
         return ListingScreener(ScreenRules.for_jobs(strategy, brief), today).screen(scouted)
 
     async def judge(self, listings: list[Listing], strategy: JobStrategy) -> Judgments:
-        batches = [listings[i : i + JUDGE_BATCH] for i in range(0, len(listings), JUDGE_BATCH)]
-        terms = [*strategy.skills(), *strategy.nice_to_have_skills]
-        results = await asyncio.gather(
-            *(
-                self._steps.run(
-                    "seeker",
-                    "job-listing-judge",
-                    JudgeInput(
-                        cv=strategy.cv,
-                        deal_breakers=strategy.preferences.deal_breakers,
-                        listings=[listing.for_agents(terms) for listing in batch],
-                    ),
-                    JudgeResult,
-                )
-                for batch in batches
-            ),
-            return_exceptions=True,
+        context = JudgeContext(
+            cv=strategy.cv,
+            discipline=None,
+            deal_breakers=strategy.preferences.deal_breakers,
+            terms=[*strategy.skills(), *strategy.nice_to_have_skills],
         )
-        judgments = Judgments(by_key={}, concerns=[])
-        for batch, result in zip(batches, results, strict=True):
-            if isinstance(result, AgentRunError | AgentOutputError):
-                logger.warning("listing judge failed for a batch of %d: %s", len(batch), result)
-                judgments.concerns.append(f"Judge failed for {len(batch)} listings: {result}")
-                continue
-            if isinstance(result, BaseException):
-                raise result
-            wanted = {listing.key for listing in batch}
-            judgments.by_key |= {j.key: j for j in result.judgments if j.key in wanted}
-            judgments.concerns += result.concerns
-        missing = [listing.title for listing in listings if listing.key not in judgments.by_key]
-        if missing:
-            judgments.concerns.append(f"No judgment for: {', '.join(missing)}")
-        return judgments
+        return await ListingJudge(self._steps).judge(listings, context)
 
     def rank(
         self, listings: list[Listing], judgments: Judgments, strategy: JobStrategy, today: date
     ) -> list[RankedListing]:
-        scorer, skills = JobScorer(), SkillMatcher(strategy)
-        ranked = [
-            RankedListing(
-                listing=listing,
-                judgment=judgments.by_key.get(listing.key),
-                score=scorer.score(
-                    JobScoreInput(
-                        listing=listing,
-                        skills=skills.match(listing_text(listing)),
-                        judgment=judgments.by_key.get(listing.key),
-                        strategy=strategy,
-                        today=today,
-                    )
-                ),
-            )
-            for listing in listings
-        ]
-        return sorted(ranked, key=lambda r: r.score.total or 0.0, reverse=True)
+        profile = ScoreProfile(
+            seniority=strategy.cv.seniority,
+            weights=strategy.scoring_weights,
+            pay_floor=strategy.preferences.salary_floor,
+        )
+        return Ranker(SkillMatcher(strategy), profile, today).rank(listings, judgments)
 
     async def contacts(self, listing: Listing) -> JobContacts:
         return await self._steps.run(

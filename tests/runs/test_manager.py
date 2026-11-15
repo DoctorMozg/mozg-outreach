@@ -32,7 +32,7 @@ class TestJobSearch:
         harness.script(
             {
                 "job-strategist": [strategy, strategy],
-                "job-listing-judge": [judged()],
+                "seeker-judge": [judged()],
                 "lead-identifier": [identity(company(), [person()])],
             }
         )
@@ -77,7 +77,7 @@ class TestJobSearch:
         harness.script(
             {
                 "job-strategist": [strategy],
-                "job-listing-judge": [judged()],
+                "seeker-judge": [judged()],
                 "lead-identifier": [identity()],
             }
         )
@@ -136,7 +136,7 @@ class TestLifecycle:
 
 async def test_item_flow_needs_a_selected_item(harness: Harness, strategy: JobStrategy) -> None:
     project_id = harness.job_project()
-    harness.script({"job-strategist": [strategy], "job-listing-judge": [judged()]})
+    harness.script({"job-strategist": [strategy], "seeker-judge": [judged()]})
     search = harness.manager.start(project_id, "job.search", {})
     await harness.manager.wait(search)
     harness.manager.answer_gate(search, GateAnswer(approve=True))

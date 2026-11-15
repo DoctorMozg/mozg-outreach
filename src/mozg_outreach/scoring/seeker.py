@@ -1,4 +1,4 @@
-"""Deterministic job scoring: six 0-100 axes from Python checks and the judge's reads."""
+"""Deterministic job and gig scoring: 0-100 axes from Python checks and the judge's reads."""
 
 from datetime import date
 
@@ -6,12 +6,15 @@ from pydantic import BaseModel
 
 from mozg_outreach.domain import ItemScore
 from mozg_outreach.pipelines.seeker.models import (
-    JobStrategy,
+    Discipline,
+    EngagementType,
     Listing,
     ListingJudgment,
+    Money,
+    ScoringWeights,
     Seniority,
 )
-from mozg_outreach.pipelines.seeker.pay import HOURS_PER, hourly_usd
+from mozg_outreach.pipelines.seeker.pay import hourly_usd
 from mozg_outreach.pipelines.seeker.skills import SkillMatch
 from mozg_outreach.scoring.axes import AxisValue, weighted_axes, weighted_total
 
@@ -24,44 +27,69 @@ LADDER: tuple[Seniority, ...] = (
     "principal",
     "executive",
 )
-EMPLOYER_POINTS = {
+COUNTERPARTY_POINTS = {
     "strong": 95.0,
     "established": 80.0,
     "small_or_unknown": 60.0,
     "thin": 40.0,
     "red_flags": 10.0,
 }
+SCOPE_POINTS = {"clear": 100.0, "partial": 60.0, "vague": 20.0}
 NEUTRAL = 70.0
 UNKNOWN = 50.0
 DEAL_BREAKER_CAP = 40.0
 NOT_JUDGED = AxisValue(None, "not judged yet")
 
 
-class JobScoreInput(BaseModel):
+class ScoreProfile(BaseModel):
+    """What scoring needs from a strategy, for one listing kind."""
+
+    seniority: Seniority
+    weights: ScoringWeights
+    pay_floor: Money | None
+    engagement_types: list[EngagementType] | None = None
+    discipline: Discipline | None = None
+    secondary_disciplines: list[Discipline] = []
+
+
+class ScoreInput(BaseModel):
     listing: Listing
     skills: SkillMatch
     judgment: ListingJudgment | None
-    strategy: JobStrategy
+    profile: ScoreProfile
     today: date
 
 
-class JobScorer:
-    def score(self, data: JobScoreInput) -> ItemScore:
+class SeekerScorer:
+    def score(self, data: ScoreInput) -> ItemScore:
+        judgment, profile = data.judgment, data.profile
         values = {
             "skill_match": self.skill_match(data.skills),
-            "seniority_fit": self.seniority_fit(data.strategy.cv.seniority, data.judgment),
+            "seniority_fit": self.seniority_fit(profile.seniority, judgment),
             "location_eligibility": self.location(data.listing),
-            "salary_fit": self.salary_fit(data.listing, data.strategy),
+            "pay_fit": self.pay_fit(data.listing, profile.pay_floor),
             "recency": self.recency(data.listing, data.today),
-            "employer_signals": self.employer(data.judgment),
+            "counterparty": self.counterparty(judgment),
+            "scope_clarity": self.scope_clarity(judgment),
+            "discipline_fit": self.discipline_fit(judgment, profile),
         }
-        axes = weighted_axes(values, data.strategy.scoring_weights.model_dump())
+        axes = weighted_axes(values, profile.weights.model_dump())
         total = weighted_total(axes)
-        blockers = list(data.judgment.deal_breaker_hits) if data.judgment else []
+        blockers = self.blockers(judgment, profile)
         if blockers and total is not None:
             # A deal-breaker the user named outranks any amount of fit.
             total = min(total, DEAL_BREAKER_CAP)
         return ItemScore(total=total, axes=axes, blockers=blockers)
+
+    @staticmethod
+    def blockers(judgment: ListingJudgment | None, profile: ScoreProfile) -> list[str]:
+        if judgment is None:
+            return []
+        blockers = list(judgment.deal_breaker_hits)
+        kind, wanted = judgment.engagement_type, profile.engagement_types
+        if kind and wanted is not None and kind not in wanted:
+            blockers.append(f"engagement type {kind} is not one the user wants")
+        return blockers
 
     @staticmethod
     def skill_match(skills: SkillMatch) -> AxisValue:
@@ -87,12 +115,12 @@ class JobScorer:
     def seniority_fit(cv_level: Seniority, judgment: ListingJudgment | None) -> AxisValue:
         if judgment is None:
             return NOT_JUDGED
-        asked = judgment.listing_seniority
+        asked = judgment.seniority
         if asked is None:
             return AxisValue(NEUTRAL, "level not stated")
         gap = LADDER.index(asked) - LADDER.index(cv_level)
         points = {0: 100.0, -1: 80.0, 1: 70.0}.get(gap, 50.0 if abs(gap) == 2 else 0.0)
-        return AxisValue(points, f"role asks {asked}, CV is {cv_level}")
+        return AxisValue(points, f"asks {asked}, CV is {cv_level}")
 
     @staticmethod
     def location(listing: Listing) -> AxisValue:
@@ -100,17 +128,16 @@ class JobScorer:
         return AxisValue(points, listing.eligibility_evidence or listing.eligibility)
 
     @staticmethod
-    def salary_fit(listing: Listing, strategy: JobStrategy) -> AxisValue:
-        floor_money = strategy.preferences.salary_floor
+    def pay_fit(listing: Listing, floor_money: Money | None) -> AxisValue:
         floor = hourly_usd(floor_money) if floor_money else None
-        pay = listing.pay
         if floor is None:
-            return AxisValue(NEUTRAL, "no salary floor set")
-        if pay is None or pay.hourly_max_usd is None or pay.hourly_min_usd is None:
-            return AxisValue(NEUTRAL, "salary not disclosed or currency unknown")
+            # Without a floor the axis is left out, and its weight spreads over the rest.
+            return AxisValue(None, "no pay floor set")
+        pay = listing.pay
+        if pay is None or pay.hourly_min_usd is None or pay.hourly_max_usd is None:
+            return AxisValue(UNKNOWN, "pay not stated or currency unknown")
         low, high = pay.hourly_min_usd, pay.hourly_max_usd
-        year = HOURS_PER["year"] / 1000
-        band = f"band ${low * year:.0f}k-${high * year:.0f}k vs floor ${floor * year:.0f}k"
+        band = f"${low:.0f}-${high:.0f}/h ({pay.basis} basis) vs floor ${floor:.0f}/h"
         return band_fit(low, high, floor, band)
 
     @staticmethod
@@ -122,10 +149,32 @@ class JobScorer:
         return AxisValue(points, f"posted {days} days ago")
 
     @staticmethod
-    def employer(judgment: ListingJudgment | None) -> AxisValue:
+    def counterparty(judgment: ListingJudgment | None) -> AxisValue:
         if judgment is None:
             return NOT_JUDGED
-        return AxisValue(EMPLOYER_POINTS[judgment.employer_signal], judgment.employer_evidence)
+        points = COUNTERPARTY_POINTS[judgment.counterparty]
+        return AxisValue(points, judgment.counterparty_evidence)
+
+    @staticmethod
+    def scope_clarity(judgment: ListingJudgment | None) -> AxisValue:
+        if judgment is None:
+            return NOT_JUDGED
+        return AxisValue(SCOPE_POINTS[judgment.scope_clarity], judgment.scope_evidence)
+
+    @staticmethod
+    def discipline_fit(judgment: ListingJudgment | None, profile: ScoreProfile) -> AxisValue:
+        if judgment is None:
+            return NOT_JUDGED
+        if profile.discipline is None:
+            return AxisValue(None, "no discipline in the strategy")
+        found = judgment.discipline
+        if found is None:
+            return AxisValue(UNKNOWN, "discipline unclear")
+        if found == profile.discipline:
+            return AxisValue(100.0, f"{found}, the CV's main discipline")
+        if found in profile.secondary_disciplines:
+            return AxisValue(70.0, f"{found}, a secondary discipline")
+        return AxisValue(20.0, f"{found}, outside the CV's disciplines")
 
 
 def band_fit(low: float, high: float, floor: float, band: str) -> AxisValue:

@@ -95,12 +95,11 @@ A skill the user names in the preferences but the CV lacks is a mismatch to ment
 
 ### Step 6: Scoring weights
 
-Default `scoring_weights`: `skill_match` 40, `location_eligibility` 15, `scope_clarity` 10, `budget_fit` 10, `client_vetting` 10, `recency` 10, `discipline_fit` 5. They must sum to 100. Shift weight only for a reason in the input:
+Default `scoring_weights`: `skill_match` 40, `seniority_fit` 0, `location_eligibility` 15, `scope_clarity` 10, `pay_fit` 10, `counterparty` 10, `recency` 10, `discipline_fit` 5. They must sum to 100. Without a `rate_floor`, Python leaves `pay_fit` out and spreads its weight, so keep it. Shift weight only for a reason in the input:
 
-- `rate_floor` is `null`: move the 10 of `budget_fit` to `skill_match` (+5) and `scope_clarity` (+5).
 - The user accepts any region: move 5 from `location_eligibility` to `skill_match`.
-- `recency_days` is 3 or less: move 5 from `client_vetting` to `recency`.
-- `vetted_only` is true: the boards are already vetted, so move 5 from `client_vetting` to `scope_clarity`.
+- `recency_days` is 3 or less: move 5 from `counterparty` to `recency`.
+- `vetted_only` is true: the boards are already vetted, so move 5 from `counterparty` to `scope_clarity`.
 
 State what you shifted and why in `scoring_rationale`, or say defaults were kept.
 
@@ -157,14 +156,15 @@ Return the result as the structured output, not as a file. Its JSON shape:
   "work_auth_blockers": ["US citizens only", "must be authorized to work in the US"],
   "scoring_weights": {
     "skill_match": 40,
+    "seniority_fit": 0,
     "location_eligibility": 15,
     "scope_clarity": 15,
-    "budget_fit": 10,
-    "client_vetting": 5,
+    "pay_fit": 10,
+    "counterparty": 5,
     "recency": 10,
     "discipline_fit": 5
   },
-  "scoring_rationale": "Moved 5 from client_vetting to scope_clarity because only vetted networks are scouted.",
+  "scoring_rationale": "Moved 5 from counterparty to scope_clarity because only vetted networks are scouted.",
   "concerns": ["The CV gives a Tech Lead title, mapped to senior by years."]
 }
 ```

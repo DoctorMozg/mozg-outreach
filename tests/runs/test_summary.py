@@ -18,7 +18,7 @@ async def job_run(
     harness.script(
         {
             "job-strategist": [strategy],
-            "job-listing-judge": [judged()],
+            "seeker-judge": [judged()],
             "lead-identifier": [identity()],
             SUMMARIZER: [summary],
         }

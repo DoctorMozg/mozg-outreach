@@ -3,13 +3,18 @@ import pytest
 from mozg_outreach.pipelines.freelance.models import (
     FreelanceBrief,
     FreelancePreferences,
-    FreelanceScoringWeights,
     FreelanceStrategy,
-    GigJudgment,
     ScoutedGig,
 )
 from mozg_outreach.pipelines.freelance.search import SourcedGig
-from mozg_outreach.pipelines.seeker.models import CvProfile, GigTerms, Listing, Money, Pay
+from mozg_outreach.pipelines.seeker.models import (
+    GIG_WEIGHTS,
+    CvProfile,
+    GigTerms,
+    Listing,
+    Money,
+    Pay,
+)
 from tests.pipelines.seeker.conftest import CV_TEXT, listing
 
 GIG_URL = "https://www.malt.com/projects/acme-payments"
@@ -48,21 +53,6 @@ def gig(budget: Pay | None = None, company: str = "AcmeCo") -> Listing:
         pay=budget,
         terms=terms,
     )
-
-
-def gig_judgment(**fields: object) -> GigJudgment:
-    values: dict[str, object] = {
-        "key": GIG_URL,
-        "scope_clarity": "clear",
-        "scope_evidence": "Pilot in week 6, cutover in week 8.",
-        "client_vetting": "vetted_platform",
-        "vetting_evidence": "Malt vets clients.",
-        "discipline": "engineering",
-        "engagement_type": "project_gig",
-        "deal_breaker_hits": [],
-        "summary": "Backend redesign in the CV's stack.",
-    }
-    return GigJudgment.model_validate(values | fields)
 
 
 @pytest.fixture
@@ -104,7 +94,7 @@ def strategy() -> FreelanceStrategy:
         nice_to_have_skills=["Kafka", "Go"],
         synonym_clusters={"PostgreSQL": ["Postgres"]},
         work_auth_blockers=[],
-        scoring_weights=FreelanceScoringWeights(),
+        scoring_weights=GIG_WEIGHTS,
         scoring_rationale="Defaults.",
         concerns=[],
     )

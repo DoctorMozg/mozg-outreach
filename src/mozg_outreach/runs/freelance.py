@@ -8,11 +8,9 @@ from mozg_outreach.domain import FieldSpec
 from mozg_outreach.pipelines.freelance.models import (
     FreelanceBrief,
     FreelanceStrategy,
-    GigJudgment,
 )
 from mozg_outreach.pipelines.freelance.search import (
     FreelanceSearch,
-    GigJudgments,
     SourcedGig,
     load_catalog,
     to_candidate,
@@ -21,7 +19,8 @@ from mozg_outreach.pipelines.leads.enrichment import IDENTITY, LeadEnrichment, L
 from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, field_task
 from mozg_outreach.pipelines.leads.identify import lead_input
 from mozg_outreach.pipelines.leads.models import LeadIdentity
-from mozg_outreach.pipelines.seeker.models import Excluded, JobSource, Listing
+from mozg_outreach.pipelines.seeker.judge import Judgments
+from mozg_outreach.pipelines.seeker.models import Excluded, JobSource, Listing, ListingJudgment
 from mozg_outreach.pipelines.summary import (
     RunSummary,
     SeekerRunSummarizer,
@@ -53,7 +52,7 @@ class FreelanceSearchState(RunState):
     scouted: list[SourcedGig] = Field(default_factory=list)
     kept: list[Listing] = Field(default_factory=list)
     excluded: list[Excluded] = Field(default_factory=list)
-    judgments: GigJudgments | None = None
+    judgments: Judgments | None = None
     item_ids: list[int] = Field(default_factory=list)
     summary: RunSummary | None = None
 
@@ -125,14 +124,14 @@ async def judge(ctx: Ctx) -> PhaseResult:
 
 
 async def score(ctx: Ctx) -> PhaseResult:
-    judgments = ctx.state.judgments or GigJudgments(by_key={}, concerns=[])
+    judgments = ctx.state.judgments or Judgments(by_key={}, concerns=[])
     ranked = _search(ctx).rank(ctx.state.kept, judgments, _strategy(ctx), ctx.today)
     with ctx.db.session() as session:
         items = ItemRepository(session)
         ctx.state.item_ids = []
         for entry in ranked:
-            item = items.upsert(ctx.project_id, ctx.run_id, to_candidate(entry.gig))
-            items.set_detail(item, GIG, entry.gig)
+            item = items.upsert(ctx.project_id, ctx.run_id, to_candidate(entry.listing))
+            items.set_detail(item, GIG, entry.listing)
             items.set_detail(item, GIG_JUDGMENT, entry.judgment)
             items.set_score(item, entry.score)
             ctx.state.item_ids.append(item.id)
@@ -203,11 +202,11 @@ def _gig_task(item: Item, boards: frozenset[str]) -> LeadTask:
     return LeadTask(item_id=item.id, listing=gig, lead=lead)
 
 
-def gig_of(item: Item) -> tuple[Listing, GigJudgment | None]:
+def gig_of(item: Item) -> tuple[Listing, ListingJudgment | None]:
     judged = item.details.get(GIG_JUDGMENT)
     return (
         Listing.model_validate(item.details[GIG]),
-        GigJudgment.model_validate(judged) if judged else None,
+        ListingJudgment.model_validate(judged) if judged else None,
     )
 
 

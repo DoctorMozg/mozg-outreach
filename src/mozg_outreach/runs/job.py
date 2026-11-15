@@ -15,6 +15,7 @@ from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, f
 from mozg_outreach.pipelines.leads.identify import lead_input
 from mozg_outreach.pipelines.leads.models import LeadIdentity
 from mozg_outreach.pipelines.seeker.feeds import FeedRequest, JobFeeds
+from mozg_outreach.pipelines.seeker.judge import Judgments
 from mozg_outreach.pipelines.seeker.listings import SourcedListing
 from mozg_outreach.pipelines.seeker.models import (
     Excluded,
@@ -24,7 +25,7 @@ from mozg_outreach.pipelines.seeker.models import (
     Listing,
     ListingJudgment,
 )
-from mozg_outreach.pipelines.seeker.search import JobSearch, Judgments, load_canonical, to_candidate
+from mozg_outreach.pipelines.seeker.search import JobSearch, load_canonical, to_candidate
 from mozg_outreach.pipelines.seeker.telegram_posts import TelegramPosts, TelegramRequest
 from mozg_outreach.pipelines.summary import (
     RunSummary,

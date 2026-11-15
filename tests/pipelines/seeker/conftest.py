@@ -4,10 +4,10 @@ import pytest
 
 from mozg_outreach.pipelines.seeker.listings import SourcedListing
 from mozg_outreach.pipelines.seeker.models import (
+    JOB_WEIGHTS,
     CvProfile,
     JobBrief,
     JobPreferences,
-    JobScoringWeights,
     JobStrategy,
     Listing,
     ListingJudgment,
@@ -62,9 +62,13 @@ def listing(**fields: object) -> Listing:
 def judgment(key: str = "https://jobs.acme.example/backend", **fields: object) -> ListingJudgment:
     values: dict[str, object] = {
         "key": key,
-        "listing_seniority": "senior",
-        "employer_signal": "established",
-        "employer_evidence": "Series C, 300 staff",
+        "seniority": "senior",
+        "counterparty": "established",
+        "counterparty_evidence": "Series C, 300 staff",
+        "scope_clarity": "partial",
+        "scope_evidence": "Responsibilities listed, no start date.",
+        "discipline": "engineering",
+        "engagement_type": "full_time",
         "deal_breaker_hits": [],
         "summary": "Backend role matching the CV's stack.",
     }
@@ -105,7 +109,7 @@ def strategy() -> JobStrategy:
         nice_to_have_skills=["Go", "Kubernetes", "Kafka"],
         synonym_clusters={"PostgreSQL": ["Postgres"], "Kubernetes": ["K8s"]},
         work_auth_blockers=["US citizens only"],
-        scoring_weights=JobScoringWeights(),
+        scoring_weights=JOB_WEIGHTS,
         scoring_rationale="Defaults.",
         concerns=[],
     )

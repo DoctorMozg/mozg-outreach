@@ -13,6 +13,19 @@ RemotePreference = Literal["required", "preferred", "no"]
 Period = Literal["year", "month", "day", "hour"]
 PayBasis = Literal["year", "month", "day", "hour", "project"]
 ListingKind = Literal["job", "gig"]
+Discipline = Literal["engineering", "design", "marketing", "product", "data", "ops", "founder"]
+# Salaried and freelance work on one scale, so one preference list covers both kinds.
+EngagementType = Literal[
+    "full_time",
+    "part_time",
+    "contract",
+    "project_gig",
+    "contractor_placement",
+    "consulting_advisory",
+    "fractional_retainer",
+]
+Counterparty = Literal["strong", "established", "small_or_unknown", "thin", "red_flags"]
+ScopeClarity = Literal["clear", "partial", "vague"]
 # One vocabulary for every excluded job or gig, so the report can explain each exclusion.
 ExcludedReason = Literal[
     "stale",
@@ -69,13 +82,39 @@ class JobPreferences(PlacePreferences):
     deal_breakers: list[str]
 
 
-class JobScoringWeights(BaseModel):
-    skill_match: int = Field(default=40, ge=0, le=100)
-    seniority_fit: int = Field(default=15, ge=0, le=100)
-    location_eligibility: int = Field(default=15, ge=0, le=100)
-    salary_fit: int = Field(default=10, ge=0, le=100)
-    recency: int = Field(default=10, ge=0, le=100)
-    employer_signals: int = Field(default=10, ge=0, le=100)
+class ScoringWeights(BaseModel):
+    """One weight per score axis; a zero weight leaves the axis out of the total."""
+
+    skill_match: int = Field(ge=0, le=100)
+    seniority_fit: int = Field(ge=0, le=100)
+    location_eligibility: int = Field(ge=0, le=100)
+    pay_fit: int = Field(ge=0, le=100)
+    recency: int = Field(ge=0, le=100)
+    counterparty: int = Field(ge=0, le=100)
+    scope_clarity: int = Field(ge=0, le=100)
+    discipline_fit: int = Field(ge=0, le=100)
+
+
+JOB_WEIGHTS = ScoringWeights(
+    skill_match=40,
+    seniority_fit=15,
+    location_eligibility=15,
+    pay_fit=10,
+    recency=10,
+    counterparty=10,
+    scope_clarity=0,
+    discipline_fit=0,
+)
+GIG_WEIGHTS = ScoringWeights(
+    skill_match=40,
+    seniority_fit=0,
+    location_eligibility=15,
+    pay_fit=10,
+    recency=10,
+    counterparty=10,
+    scope_clarity=10,
+    discipline_fit=5,
+)
 
 
 class SkillRules(BaseModel):
@@ -101,7 +140,7 @@ class JobStrategy(SkillRules):
         description="Keyed by language code; empty unless the CV lists a language at B2 or above."
     )
     work_auth_blockers: list[str] = Field(description="Listing phrases that rule the user out.")
-    scoring_weights: JobScoringWeights
+    scoring_weights: ScoringWeights
     scoring_rationale: str
     concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
 
@@ -247,22 +286,24 @@ class Excluded(BaseModel):
     detail: str
 
 
-EmployerSignal = Literal["strong", "established", "small_or_unknown", "thin", "red_flags"]
-
-
 class ListingJudgment(BaseModel):
+    """What the judge reads from a job or gig text; Python turns it into score axes."""
+
     key: str = Field(description="Copy of the listing's `key`.")
-    listing_seniority: Seniority | None = Field(
-        description="Level the role asks for; null if unclear."
-    )
-    employer_signal: EmployerSignal
-    employer_evidence: str = Field(description="What in the listing supports the signal.")
-    deal_breaker_hits: list[str] = Field(description="User deal-breakers the listing mentions.")
-    summary: str = Field(description="One sentence on why this role does or doesn't fit.")
+    seniority: Seniority | None = Field(description="Level the work asks for; null if unclear.")
+    counterparty: Counterparty = Field(description="The employer or client, from the text.")
+    counterparty_evidence: str = Field(description="What in the text supports it.")
+    scope_clarity: ScopeClarity
+    scope_evidence: str
+    discipline: Discipline | None = Field(description="The work's own discipline; null if unclear.")
+    engagement_type: EngagementType | None
+    deal_breaker_hits: list[str] = Field(description="User deal-breakers the text mentions.")
+    summary: str = Field(description="One sentence on why this does or doesn't fit.")
 
 
 class JudgeInput(BaseModel):
     cv: CvProfile
+    discipline: Discipline | None = Field(description="The candidate's discipline, if known.")
     deal_breakers: list[str]
     listings: list[Listing] = Field(min_length=1, max_length=10)
 

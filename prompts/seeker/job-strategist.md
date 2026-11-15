@@ -103,11 +103,11 @@ A skill the user names in the preferences but the CV lacks is a mismatch to ment
 
 ### Step 6: Scoring weights
 
-Default `scoring_weights`: `skill_match` 40, `seniority_fit` 15, `location_eligibility` 15, `salary_fit` 10, `recency` 10, `employer_signals` 10. They must sum to 100. Shift weight only for a reason in the input:
+Default `scoring_weights`: `skill_match` 40, `seniority_fit` 15, `location_eligibility` 15, `pay_fit` 10, `recency` 10, `counterparty` 10, `scope_clarity` 0, `discipline_fit` 0. They must sum to 100. Shift weight only for a reason in the input:
 
-- The user says money is not a concern: move 5 from `salary_fit` to `skill_match`.
+- The user says money is not a concern: move 5 from `pay_fit` to `skill_match`.
 - The user accepts any region: move 5 from `location_eligibility` to `skill_match`.
-- `recency_days` is 3 or less: move 5 from `employer_signals` to `recency`.
+- `recency_days` is 3 or less: move 5 from `counterparty` to `recency`.
 
 State what you shifted and why in `scoring_rationale`, or say defaults were kept.
 
@@ -164,9 +164,11 @@ Return the result as the structured output, not as a file. Its JSON shape:
     "skill_match": 40,
     "seniority_fit": 15,
     "location_eligibility": 15,
-    "salary_fit": 10,
+    "pay_fit": 10,
     "recency": 10,
-    "employer_signals": 10
+    "counterparty": 10,
+    "scope_clarity": 0,
+    "discipline_fit": 0
   },
   "scoring_rationale": "Defaults kept; the user gave a salary floor and a region limit.",
   "concerns": ["The CV gives no dates for the first role, so years_experience is approximate."]

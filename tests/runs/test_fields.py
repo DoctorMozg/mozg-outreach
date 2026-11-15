@@ -168,7 +168,7 @@ class TestSearchFields:
         harness.script(
             {
                 "job-strategist": [strategy],
-                "job-listing-judge": [judged],
+                "seeker-judge": [judged],
                 "lead-identifier": [identity(company()), identity(company())],
                 "field-researcher": [research(12, "yes")],
             }
@@ -197,7 +197,7 @@ class TestSearchFields:
         project_id = harness.job_project()
         script: dict[str, list[Scripted]] = {
             "job-strategist": [strategy],
-            "job-listing-judge": [JudgeResult(judgments=[judgment(FEED_URL)], concerns=[])],
+            "seeker-judge": [JudgeResult(judgments=[judgment(FEED_URL)], concerns=[])],
             "lead-identifier": [identity()],
         }
         harness.script(script)

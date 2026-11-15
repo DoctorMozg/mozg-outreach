@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
+from mozg_outreach.pipelines.seeker.judge import Judgments
 from mozg_outreach.pipelines.seeker.models import (
     AGENT_CHARS,
     OPENING_CHARS,
@@ -18,7 +19,7 @@ from mozg_outreach.pipelines.seeker.models import (
     SourcePlan,
 )
 from mozg_outreach.pipelines.seeker.recruiter import RecruiterLookup, RecruiterTarget
-from mozg_outreach.pipelines.seeker.search import JobSearch, Judgments, load_canonical
+from mozg_outreach.pipelines.seeker.search import JobSearch, load_canonical
 from mozg_outreach.pipelines.steps import PipelineSteps
 
 from ..conftest import REPO_PROMPTS, RecordedRunner
@@ -144,12 +145,12 @@ class TestJudging:
     ) -> None:
         posting = listing(summary=LONG_POSTING * 3)
         runner = RecordedRunner(
-            {"job-listing-judge": [JudgeResult(judgments=[judgment(posting.key)], concerns=[])]}
+            {"seeker-judge": [JudgeResult(judgments=[judgment(posting.key)], concerns=[])]}
         )
 
         await search(runner, tmp_path, []).judge([posting], strategy)
 
-        [payload] = runner.payloads["job-listing-judge"]
+        [payload] = runner.payloads["seeker-judge"]
         assert isinstance(payload, JudgeInput)
         [sent] = payload.listings
         assert len(sent.summary) <= AGENT_CHARS
@@ -165,12 +166,10 @@ class TestJudging:
             concerns=[],
         )
         second = JudgeResult(judgments=[judgment("https://a.example/10")], concerns=[])
-        runner = RecordedRunner({"job-listing-judge": [first, second]})
+        runner = RecordedRunner({"seeker-judge": [first, second]})
         judged = await search(runner, tmp_path, []).judge(listings, strategy)
         sizes = [
-            len(p.listings)
-            for p in runner.payloads["job-listing-judge"]
-            if isinstance(p, JudgeInput)
+            len(p.listings) for p in runner.payloads["seeker-judge"] if isinstance(p, JudgeInput)
         ]
         assert sizes == [10, 2]
         assert len(judged.by_key) == 11

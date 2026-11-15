@@ -93,9 +93,11 @@ class JobLetterWriter:
         hooks = [
             Hook(signal=listing.excerpt([], LETTER_CHARS), source="listing", source_url=listing.url)
         ]
-        if judgment and judgment.employer_evidence:
+        if judgment and judgment.counterparty_evidence:
             hooks.append(
-                Hook(signal=judgment.employer_evidence, source="listing", source_url=listing.url)
+                Hook(
+                    signal=judgment.counterparty_evidence, source="listing", source_url=listing.url
+                )
             )
         return hooks
 

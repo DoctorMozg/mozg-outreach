@@ -9,34 +9,27 @@ from pathlib import Path
 from pydantic import BaseModel, Field, TypeAdapter
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
-from mozg_outreach.domain import FieldValue, ItemCandidate, ItemKind, ItemScore
+from mozg_outreach.domain import FieldValue, ItemCandidate, ItemKind
 from mozg_outreach.pipelines.freelance.models import (
     FreelanceBrief,
     FreelanceStrategy,
     FreelanceStrategyInput,
-    GigJudgeInput,
-    GigJudgeResult,
-    GigJudgment,
     GigScoutInput,
     GigScoutResult,
     GigSourceResearchInput,
     ScoutedGig,
 )
+from mozg_outreach.pipelines.seeker.judge import JudgeContext, Judgments, ListingJudge
 from mozg_outreach.pipelines.seeker.listings import SourcedListing
 from mozg_outreach.pipelines.seeker.models import JobSource, Listing, ScoutedListing, SourcePlan
-from mozg_outreach.pipelines.seeker.screening import (
-    ListingScreener,
-    Screening,
-    ScreenRules,
-    listing_text,
-)
+from mozg_outreach.pipelines.seeker.ranking import RankedListing, Ranker
+from mozg_outreach.pipelines.seeker.screening import ListingScreener, Screening, ScreenRules
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.steps import PipelineSteps
-from mozg_outreach.scoring.freelance import FreelanceScorer, GigScoreInput
+from mozg_outreach.scoring.seeker import ScoreProfile
 
 logger = logging.getLogger(__name__)
 
-JUDGE_BATCH = 10
 MIN_PER_SOURCE, MAX_PER_SOURCE = 10, 40
 
 
@@ -54,17 +47,6 @@ class GigScoutOutcome(BaseModel):
     gigs: list[SourcedGig]
     empty_sources: list[str]
     concerns: list[str]
-
-
-class GigJudgments(BaseModel):
-    by_key: dict[str, GigJudgment]
-    concerns: list[str]
-
-
-class RankedGig(BaseModel):
-    gig: Listing
-    score: ItemScore
-    judgment: GigJudgment | None
 
 
 class FreelanceSearch:
@@ -163,66 +145,28 @@ class FreelanceSearch:
             ]
         )
 
-    async def judge(self, gigs: list[Listing], strategy: FreelanceStrategy) -> GigJudgments:
-        batches = [gigs[i : i + JUDGE_BATCH] for i in range(0, len(gigs), JUDGE_BATCH)]
-        results = await asyncio.gather(
-            *(
-                self._steps.run(
-                    "seeker",
-                    "freelance-gig-judge",
-                    GigJudgeInput(
-                        cv=strategy.cv,
-                        discipline=strategy.discipline,
-                        deal_breakers=strategy.preferences.deal_breakers,
-                        gigs=batch,
-                    ),
-                    GigJudgeResult,
-                )
-                for batch in batches
-            ),
-            return_exceptions=True,
+    async def judge(self, gigs: list[Listing], strategy: FreelanceStrategy) -> Judgments:
+        context = JudgeContext(
+            cv=strategy.cv,
+            discipline=strategy.discipline,
+            deal_breakers=strategy.preferences.deal_breakers,
+            terms=[*strategy.must_have_skills, *strategy.nice_to_have_skills],
         )
-        judgments = GigJudgments(by_key={}, concerns=[])
-        for batch, result in zip(batches, results, strict=True):
-            if isinstance(result, AgentRunError | AgentOutputError):
-                logger.warning("gig judge failed for a batch of %d: %s", len(batch), result)
-                judgments.concerns.append(f"Judge failed for {len(batch)} gigs: {result}")
-                continue
-            if isinstance(result, BaseException):
-                raise result
-            wanted = {gig.key for gig in batch}
-            judgments.by_key |= {j.key: j for j in result.judgments if j.key in wanted}
-            judgments.concerns += result.concerns
-        missing = [g.title for g in gigs if g.key not in judgments.by_key]
-        if missing:
-            judgments.concerns.append(f"No judgment for: {', '.join(missing)}")
-        return judgments
+        return await ListingJudge(self._steps).judge(gigs, context)
 
     def rank(
-        self,
-        gigs: list[Listing],
-        judgments: GigJudgments,
-        strategy: FreelanceStrategy,
-        today: date,
-    ) -> list[RankedGig]:
-        scorer, skills = FreelanceScorer(), SkillMatcher(strategy)
-        ranked = [
-            RankedGig(
-                gig=gig,
-                judgment=judgments.by_key.get(gig.key),
-                score=scorer.score(
-                    GigScoreInput(
-                        gig=gig,
-                        skills=skills.match(listing_text(gig)),
-                        judgment=judgments.by_key.get(gig.key),
-                        strategy=strategy,
-                        today=today,
-                    )
-                ),
-            )
-            for gig in gigs
-        ]
-        return sorted(ranked, key=lambda r: r.score.total or 0.0, reverse=True)
+        self, gigs: list[Listing], judgments: Judgments, strategy: FreelanceStrategy, today: date
+    ) -> list[RankedListing]:
+        prefs = strategy.preferences
+        profile = ScoreProfile(
+            seniority=strategy.cv.seniority,
+            weights=strategy.scoring_weights,
+            pay_floor=prefs.rate_floor,
+            engagement_types=prefs.engagement_types,
+            discipline=strategy.discipline,
+            secondary_disciplines=strategy.secondary_disciplines,
+        )
+        return Ranker(SkillMatcher(strategy), profile, today).rank(gigs, judgments)
 
 
 def gig_rules(strategy: FreelanceStrategy, brief: FreelanceBrief) -> ScreenRules:

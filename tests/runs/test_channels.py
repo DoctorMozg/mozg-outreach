@@ -80,7 +80,7 @@ def telegram_config(harness: Harness) -> TelegramConfig:
 def script(harness: Harness, strategy: JobStrategy) -> None:
     runs: dict[str, list[Scripted]] = {
         "job-strategist": [strategy],
-        "job-listing-judge": [JudgeResult(judgments=[judgment(FEED_URL)], concerns=[])],
+        "seeker-judge": [JudgeResult(judgments=[judgment(FEED_URL)], concerns=[])],
         "lead-identifier": [identity()],
     }
     harness.script(runs)
@@ -191,7 +191,7 @@ async def test_telegram_post_becomes_a_lead_with_a_telegram_sighting(
         {
             "job-strategist": [strategy],
             "telegram-post-parser": [ParserResult(posts=[found], concerns=[])],
-            "job-listing-judge": [judged],
+            "seeker-judge": [judged],
             "lead-identifier": [identity(company()), identity(company())],
         }
     )
