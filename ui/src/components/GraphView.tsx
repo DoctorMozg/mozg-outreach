@@ -8,7 +8,8 @@ import { Empty } from "./common";
 
 const COLORS = { person: "#2f7d6d", company: "#3a5fa8", lead: "#b8742a" };
 
-export function GraphView({ graph }: { graph: Graph }): ReactElement {
+// `fill` stretches the graph over the rest of a flex column instead of a fixed-height box.
+export function GraphView({ graph, fill = false }: { graph: Graph; fill?: boolean }): ReactElement {
   const box = useRef<HTMLDivElement>(null);
   // Cytoscape paints on a canvas, so the label color can't come from CSS variables.
   const labelColor = useComputedColorScheme("light") === "dark" ? "#c9c9c9" : "#444";
@@ -55,5 +56,12 @@ export function GraphView({ graph }: { graph: Graph }): ReactElement {
       </Empty>
     );
   }
-  return <Box ref={box} h={520} bd="1px solid var(--mantine-color-default-border)" style={{ borderRadius: "var(--mantine-radius-md)" }} />;
+  return (
+    <Box
+      ref={box}
+      h={fill ? undefined : 520}
+      bd="1px solid var(--mantine-color-default-border)"
+      style={{ borderRadius: "var(--mantine-radius-md)", ...(fill && { flex: 1, minHeight: 400 }) }}
+    />
+  );
 }

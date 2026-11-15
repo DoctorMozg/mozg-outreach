@@ -17,13 +17,17 @@ function KindBadge({ kind }: { kind: Entity["kind"] }): ReactElement {
 
 export function Registry(): ReactElement {
   const [view, setView] = useState<"list" | "graph">("list");
+  const graph = view === "graph";
   return (
-    <Stack maw={1200} mx="auto">
+    // The graph takes the whole main panel: the viewport minus the header and the shell padding.
+    <Stack maw={graph ? undefined : 1200} mx="auto" h={graph ? "calc(100dvh - var(--app-shell-header-offset, 0rem) - 2 * var(--app-shell-padding))" : undefined}>
       <Group justify="space-between" align="flex-end">
         <div>
           <Title order={2}>People and companies</Title>
           <Text size="sm" c="dimmed">
-            One registry for every project. Each profile lists every place it was seen.
+            {graph
+              ? "Every person and company with the leads they belong to, the most recently updated first when there are too many to draw. Click a node to open it."
+              : "One registry for every project. Each profile lists every place it was seen."}
           </Text>
         </div>
         <SegmentedControl
@@ -35,8 +39,14 @@ export function Registry(): ReactElement {
           ]}
         />
       </Group>
-      <Merges />
-      {view === "list" ? <EntityList /> : <RegistryGraph />}
+      {graph ? (
+        <RegistryGraph />
+      ) : (
+        <>
+          <Merges />
+          <EntityList />
+        </>
+      )}
     </Stack>
   );
 }
@@ -44,13 +54,10 @@ export function Registry(): ReactElement {
 function RegistryGraph(): ReactElement {
   const graph = useQuery({ queryKey: ["graph", "registry"], queryFn: () => get<Graph>("/api/graph") });
   return (
-    <Card>
-      <Text size="sm" c="dimmed" mb="sm">
-        Every person and company with the leads they belong to, the most recently updated first when there are too many to draw.
-      </Text>
+    <>
       <ErrorBox error={graph.error} />
-      {graph.data && <GraphView graph={graph.data} />}
-    </Card>
+      {graph.data && <GraphView graph={graph.data} fill />}
+    </>
   );
 }
 
