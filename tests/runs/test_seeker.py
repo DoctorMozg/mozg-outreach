@@ -12,6 +12,7 @@ from mozg_outreach.pipelines.seeker.models import (
 )
 from mozg_outreach.runs.flow import GateAnswer
 from mozg_outreach.runs.seeker import WEB_SEARCH
+from mozg_outreach.sources.models import SourceItem
 from mozg_outreach.storage.models import Draft, Item, Run, SourceConfig
 from tests.pipelines.conftest import Scripted
 from tests.pipelines.leads.conftest import company, identity
@@ -23,6 +24,7 @@ from .conftest import FEED_URL, NOW, Harness
 OPTIONS = {"max_boards": 1, "research_fields_top": 0, "summary": False}
 # Proposals get a longer word budget than cover letters.
 PROPOSAL_BODY = " ".join(["word"] * 300)
+OTHER_URL = "https://boards.greenhouse.io/acme/jobs/2"
 NOTICE = BriefFact(label="Notice period", value="One month")
 
 
@@ -62,6 +64,45 @@ async def finish(harness: Harness, run_id: int) -> Run:
         assert run is not None
         session.expunge(run)
     return run
+
+
+async def test_leads_a_deal_breaker_ruled_out_are_not_identified(
+    harness: Harness, strategy: SeekerStrategy
+) -> None:
+    project_id = harness.seeker_project()
+    harness.feed.extra.append(
+        SourceItem(
+            source="greenhouse",
+            source_item_id="acme/2",
+            url=OTHER_URL,
+            kind="job",
+            title="Backend Engineer, on-call",
+            raw_text="Python and PostgreSQL services with a weekly on-call. Remote within the EU.",
+            raw_payload={},
+            published_at=NOW,
+            fetched_at=NOW,
+            org_name="Acme",
+            location="Remote - EU",
+        )
+    )
+    blocked = judgment(OTHER_URL, deal_breaker_hits=["on-call"])
+    harness.script(
+        {
+            "seeker-strategist": [strategy],
+            "seeker-judge": [JudgeResult(judgments=[judgment(FEED_URL), blocked], concerns=[])],
+            "lead-identifier": [identity(company())],
+        }
+    )
+    search = harness.manager.start(project_id, "seeker.search", {"options": OPTIONS})
+    await harness.manager.wait(search)
+    harness.manager.answer_gate(search, GateAnswer(approve=True))
+    done = await finish(harness, search)
+
+    assert done.status == RunStatus.COMPLETE, done.error
+    [sent] = harness.runner.payloads["lead-identifier"]
+    assert sent.model_dump()["url"] == FEED_URL
+    with harness.db.session() as session:
+        assert len(session.scalars(select(Item)).all()) == 2, "the blocked lead is still reported"
 
 
 async def test_one_search_reports_jobs_and_gigs_and_drafts_a_letter_for_each(

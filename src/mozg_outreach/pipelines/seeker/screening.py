@@ -21,6 +21,9 @@ from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 
 logger = logging.getLogger(__name__)
 
+# Scouts often return only a line or two, too short to name a stack, so the judge sees those.
+SNIPPET_CHARS = 400
+
 
 class Screening(BaseModel):
     kept: list[Listing]
@@ -102,7 +105,7 @@ class ListingScreener:
                 listing=listing, reason="location_mismatch", detail=eligibility.evidence
             )
         match = self._skills.match(text)
-        if not match.gate_passed:
+        if not match.gate_passed and len(listing.summary) >= SNIPPET_CHARS:
             missing = [
                 *match.missing_must_haves,
                 *(" or ".join(g) for g in match.missing_or_groups),

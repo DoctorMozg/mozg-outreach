@@ -76,6 +76,10 @@ class TestSkills:
         assert not SkillMatcher(strategy).match("Java and Oracle").gate_passed
 
 
+# Long enough to be a full posting, so naming no required skill excludes it.
+JAVA_POSTING = "We build our services in Java and Oracle. " * 12
+
+
 class TestScreener:
     def test_kept_listings_come_newest_first(self, strategy: SeekerStrategy) -> None:
         screening = ListingScreener(ScreenRules.for_seeker(strategy, 7), TODAY).screen(
@@ -87,6 +91,15 @@ class TestScreener:
         )
         assert [item.title for item in screening.kept] == ["New", "Old", "Undated"]
 
+    def test_a_snippet_too_short_to_name_a_stack_goes_on(self, strategy: SeekerStrategy) -> None:
+        snippet = scouted(
+            url="https://a.example/5", title="Backend", summary_snippet="Remote role."
+        )
+
+        screening = ListingScreener(ScreenRules.for_seeker(strategy, 7), TODAY).screen([snippet])
+
+        assert [item.key for item in screening.kept] == ["https://a.example/5"]
+
     def test_each_gate_names_its_reason(self, strategy: SeekerStrategy) -> None:
         screening = ListingScreener(ScreenRules.for_seeker(strategy, 7), TODAY).screen(
             [
@@ -94,7 +107,7 @@ class TestScreener:
                 scouted(url="https://a.example/1", title="Old", posted_date="2026-10-01"),
                 scouted(url="https://a.example/2", company="BetCo", summary_snippet="gambling"),
                 scouted(url="https://a.example/3", title="QA", location_string="Remote - US"),
-                scouted(url="https://a.example/4", title="Java", summary_snippet="Java, Oracle"),
+                scouted(url="https://a.example/4", title="Java", summary_snippet=JAVA_POSTING),
             ]
         )
         assert [item.key for item in screening.kept] == ["https://jobs.acme.example/backend"]

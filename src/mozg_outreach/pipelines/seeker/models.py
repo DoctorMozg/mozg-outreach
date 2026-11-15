@@ -212,6 +212,13 @@ class Board(BaseModel):
     kinds: list[ListingKind] = Field(min_length=1)
     disciplines: list[Discipline] = Field(description="Empty when the board serves every one.")
     guidance_note: str | None = Field(default=None, description="How to get in, for gated sites.")
+    client_labels: list[str] = Field(
+        default_factory=list, description="Names the board shows in place of a hidden client."
+    )
+
+    def hides_client(self, company: str) -> bool:
+        names = {self.name, *self.client_labels}
+        return company.strip().casefold() in {n.casefold() for n in names}
 
 
 class BoardResearchInput(BaseModel):

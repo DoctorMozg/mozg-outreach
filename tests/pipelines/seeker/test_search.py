@@ -155,6 +155,22 @@ class TestScout:
             "rate limited"
         ]
 
+    async def test_a_board_label_in_the_company_slot_names_no_client(
+        self, tmp_path: Path, brief: SeekerBrief, strategy: SeekerStrategy
+    ) -> None:
+        arc = board("Arc.dev", "gig", client_labels=["Arc Exclusive"])
+        listings = [
+            scouted(company=name).listing for name in ("arc exclusive", "Arc.dev", "AcmeCo")
+        ]
+        found = ScoutResult(
+            listings=listings, queries_used=["q"], zero_results_verified=False, concerns=[]
+        )
+        runner = RecordedRunner({"seeker-scout": [found]})
+
+        outcome = await search(runner, tmp_path).scout(strategy, [arc], brief)
+
+        assert [s.listing.company for s in outcome.listings] == ["", "", "AcmeCo"]
+
 
 class TestScreen:
     def test_each_kind_keeps_its_own_recency_and_limit(

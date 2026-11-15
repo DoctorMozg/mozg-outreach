@@ -52,7 +52,7 @@ Return exactly one judgment per listing, in input order. Copy `key` unchanged.
   - `consulting_advisory`: an audit, advisory, workshop, diagnostic or interim engagement with a discrete outcome.
   - `fractional_retainer`: an ongoing part-time leadership retainer (a fractional CTO, CMO or head of design for a recurring monthly fee). A discrete consulting engagement is `consulting_advisory`, not this.
   - `null` when the text does not make it clear.
-- `deal_breaker_hits`: the deal-breaker strings, copied verbatim from the input list, that the text matches. A deal-breaker matches when the text states or clearly implies it. Use an empty list when none match, and never add a string that is not in `deal_breakers`.
+- `deal_breaker_hits`: the deal-breaker strings, copied verbatim from the input list, that the text matches. A deal-breaker matches only when the text states it or clearly implies it. Missing information never matches: a gig that gives no duration does not hit a duration deal-breaker, and a listing that says nothing about location or remote work does not hit a remote one. Use an empty list when none match, and never add a string that is not in `deal_breakers`.
 - `summary`: one factual sentence on what the work asks for and how it relates to this candidate's stack, seniority and discipline. State facts, not a verdict.
 - `concerns` (top level): one plain sentence for each listing too thin to judge or with conflicting details. Empty when none.
 

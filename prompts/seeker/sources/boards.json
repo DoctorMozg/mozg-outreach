@@ -151,6 +151,9 @@
   },
   {
     "access_notes": "Public listing surface; vetted network with application process for talent side, but client postings are browsable without auth.",
+    "client_labels": [
+      "Arc Exclusive"
+    ],
     "disciplines": [
       "engineering",
       "design",

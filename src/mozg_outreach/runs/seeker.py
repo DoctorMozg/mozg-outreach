@@ -8,8 +8,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from mozg_outreach.domain import FieldSpec
+from mozg_outreach.domain import FieldSpec, ItemScore
 from mozg_outreach.pipelines.leads.enrichment import IDENTITY, LeadEnrichment, LeadTask, RunRef
 from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, field_task
 from mozg_outreach.pipelines.leads.identify import lead_input
@@ -323,8 +324,7 @@ async def identify(ctx: Ctx) -> PhaseResult:
     """Basic enrichment: the employer or client and named people of every scored listing."""
     hidden = _board_names()
     with ctx.db.session() as session:
-        stored = [session.get(Item, i) for i in ctx.state.item_ids]
-        tasks = [_listing_task(item, hidden) for item in stored if item is not None]
+        tasks = [_listing_task(item, hidden) for item in _open(session, ctx.state.item_ids)]
     report = await LeadEnrichment(ctx.db, ctx.steps).run(
         tasks, RunRef(project_id=ctx.project_id, run_id=ctx.run_id)
     )
@@ -341,8 +341,8 @@ async def fields(ctx: Ctx) -> PhaseResult:
         return None
     hidden = _board_names()
     with ctx.db.session() as session:
-        stored = [session.get(Item, i) for i in ctx.state.item_ids[:top]]
-        tasks = [_field_task(item, spec, hidden) for item in stored if item is not None]
+        open_items = _open(session, ctx.state.item_ids)[:top]
+        tasks = [_field_task(item, spec, hidden) for item in open_items]
     ctx.state.concerns += await LeadFieldResearch(ctx.db, ctx.steps).run(tasks)
     ctx.emit("fields_researched", {"items": len(tasks)})
     return None
@@ -362,6 +362,16 @@ async def summarize(ctx: Ctx) -> PhaseResult:
     patterns = len(outcome.summary.patterns) if outcome.summary else 0
     ctx.emit("summary", {"patterns": patterns})
     return None
+
+
+def _open(session: Session, item_ids: list[int]) -> list[Item]:
+    """Scored items no deal-breaker ruled out; researching the others is paid work nobody uses."""
+    stored = [session.get(Item, i) for i in item_ids]
+    found = [item for item in stored if item is not None]
+    open_items = [i for i in found if not (i.score and ItemScore.model_validate(i.score).blockers)]
+    if len(open_items) < len(found):
+        logger.info("skipping %d items a deal-breaker ruled out", len(found) - len(open_items))
+    return open_items
 
 
 def _field_task(item: Item, spec: FieldSpec, hidden: frozenset[str]) -> FieldTask:

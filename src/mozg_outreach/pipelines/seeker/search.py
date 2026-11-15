@@ -25,6 +25,7 @@ from mozg_outreach.pipelines.seeker.models import (
     KindPlan,
     Listing,
     ListingKind,
+    ScoutedListing,
     ScoutInput,
     ScoutResult,
     SeekerBrief,
@@ -132,7 +133,7 @@ class SeekerSearch:
                 raise result
             else:
                 outcome.listings += [
-                    SourcedListing(source=board.name, kind=kind, listing=item)
+                    SourcedListing(source=board.name, kind=kind, listing=_unmasked(item, board))
                     for item in result.listings
                 ]
                 if not result.listings and result.zero_results_verified:
@@ -231,6 +232,13 @@ def _scout_inputs(
             for board in of_kind
         ]
     return payloads
+
+
+def _unmasked(listing: ScoutedListing, board: Board) -> ScoutedListing:
+    """A board's own name or label in the company slot names no client, so it is left empty."""
+    if listing.company and board.hides_client(listing.company):
+        return listing.model_copy(update={"company": ""})
+    return listing
 
 
 def _fit_to_brief(strategy: SeekerStrategy, brief: SeekerBrief) -> SeekerStrategy:
