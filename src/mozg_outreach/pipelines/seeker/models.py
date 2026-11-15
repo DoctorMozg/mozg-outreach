@@ -35,7 +35,6 @@ ExcludedReason = Literal[
     "attribute_blocklist",
     "location_mismatch",
     "missing_must_have",
-    "salary_below_floor",
 ]
 
 

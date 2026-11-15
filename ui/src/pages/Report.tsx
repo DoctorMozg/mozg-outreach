@@ -36,9 +36,7 @@ export function Report({ project }: { project: Project }): ReactElement {
     onSuccess: () => client.invalidateQueries({ queryKey: key }),
   });
   const bulk = useMutation({
-    mutationFn: async (action: "enrich" | "letters") => {
-      // Gigs are answered on their own board, so there is nothing to enrich.
-      const chosen = (items.data ?? []).filter((i) => i.selected && (action === "letters" || i.kind !== "gig"));
+    mutationFn: async ({ action, chosen }: { action: "enrich" | "letters"; chosen: Item[] }) => {
       // One run per item; the server queues them behind its run limit.
       const results = await Promise.allSettled(chosen.map((i) => call("POST", `/api/items/${i.id}/${action}`)));
       const failed = results.filter((r) => r.status === "rejected").map((r) => String((r as PromiseRejectedResult).reason));
@@ -51,9 +49,11 @@ export function Report({ project }: { project: Project }): ReactElement {
   const seeker = project.mode === "seeker";
   const allColumns = [...new Set(rows.flatMap((i) => Object.keys(i.fields)))];
   const columns = allColumns.filter((c) => !hidden.has(c));
-  const selectedCount = items.data?.filter((i) => i.selected).length ?? 0;
-  const enrichable = items.data?.filter((i) => i.selected && i.kind !== "gig").length ?? 0;
-  const letterLabel = lettersFor(new Set(items.data?.filter((i) => i.selected).map((i) => i.kind)));
+  // Bulk actions take only the selected rows on screen, so a filter never hides what they touch.
+  const chosen = rows.filter((i) => i.selected);
+  // Gigs are answered on their own board, so there is nothing to enrich.
+  const enrichable = chosen.filter((i) => i.kind !== "gig");
+  const letterLabel = lettersFor(new Set(chosen.map((i) => i.kind)));
 
   return (
     <>
@@ -64,13 +64,13 @@ export function Report({ project }: { project: Project }): ReactElement {
             <label>
               <input type="checkbox" checked={onlySelected} onChange={(e) => setOnlySelected(e.target.checked)} /> selected only
             </label>
-            {(project.mode === "biz" || enrichable > 0) && (
-              <button className="secondary" disabled={!enrichable || bulk.isPending} onClick={() => bulk.mutate("enrich")}>
-                Enrich {enrichable}
+            {(project.mode === "biz" || enrichable.length > 0) && (
+              <button className="secondary" disabled={!enrichable.length || bulk.isPending} onClick={() => bulk.mutate({ action: "enrich", chosen: enrichable })}>
+                Enrich {enrichable.length}
               </button>
             )}
-            <button disabled={!selectedCount || bulk.isPending} onClick={() => bulk.mutate("letters")}>
-              {letterLabel} for {selectedCount}
+            <button disabled={!chosen.length || bulk.isPending} onClick={() => bulk.mutate({ action: "letters", chosen })}>
+              {letterLabel} for {chosen.length}
             </button>
           </span>
         }
