@@ -175,7 +175,7 @@ async def test_telegram_post_becomes_a_lead_with_a_telegram_sighting(
         db.add(SourceConfig(project_id=project_id, kind="telegram", config=config))
     found = ParsedPost(
         id="py_jobs/1",
-        is_job=True,
+        kind="job",
         title="Senior Python developer",
         company="Acme GmbH",
         location="EU",

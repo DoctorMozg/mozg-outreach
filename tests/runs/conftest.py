@@ -16,7 +16,8 @@ from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import JsonObject, Project, SourceConfig
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner, Scripted
 from tests.pipelines.seeker.conftest import CV_TEXT, judgment
-from tests.pipelines.seeker.conftest import strategy as strategy  # fixture re-export
+from tests.pipelines.seeker.conftest import cv as cv  # fixture re-exports
+from tests.pipelines.seeker.conftest import strategy as strategy
 
 NOW = datetime(2026, 11, 13, 9, tzinfo=UTC)
 SUMMARIZER = "seeker-run-summarizer"

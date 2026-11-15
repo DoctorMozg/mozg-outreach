@@ -4,7 +4,7 @@ import re
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
 
@@ -24,6 +24,7 @@ EngagementType = Literal[
     "consulting_advisory",
     "fractional_retainer",
 ]
+JOB_ENGAGEMENTS: frozenset[EngagementType] = frozenset({"full_time", "part_time", "contract"})
 Counterparty = Literal["strong", "established", "small_or_unknown", "thin", "red_flags"]
 ScopeClarity = Literal["clear", "partial", "vague"]
 # One vocabulary for every excluded job or gig, so the report can explain each exclusion.
@@ -150,6 +151,121 @@ class JobStrategy(SkillRules):
         return list(dict.fromkeys([*self.must_have_skills, *grouped, *self.cv.skills]))
 
 
+class SearchScope(BaseModel):
+    """One kind of work the user searches, with its own freshness window and size."""
+
+    recency_days: int = Field(ge=1, le=90)
+    limit: int = Field(default=50, ge=1, le=200)
+
+
+class SeekerBrief(BaseModel):
+    """One person's search: their CV, what they want, and which kinds of work to look for."""
+
+    cv_text: str = Field(min_length=200, description="The CV as plain text or markdown.")
+    preferences: str = Field(min_length=1)
+    jobs: SearchScope | None = SearchScope(recency_days=7)
+    gigs: SearchScope | None = SearchScope(recency_days=30)
+
+    @model_validator(mode="after")
+    def _some_kind(self) -> "SeekerBrief":
+        if self.jobs is None and self.gigs is None:
+            raise ValueError("search salaried jobs, freelance gigs or both")
+        return self
+
+    def scope(self, kind: ListingKind) -> SearchScope | None:
+        return self.jobs if kind == "job" else self.gigs
+
+
+class SeekerPreferences(PlacePreferences):
+    engagement_types: list[EngagementType] = Field(min_length=1)
+    vetted_only: bool
+    excluded_industries: list[str]
+    excluded_company_attributes: list[str]
+    excluded_companies: list[str]
+    salary_floor: Money | None = Field(description="Null unless the user named a minimum salary.")
+    rate_floor: Money | None = Field(description="Null unless the user named a minimum rate.")
+    deal_breakers: list[str]
+
+
+class KindPlan(BaseModel):
+    titles: list[str] = Field(min_length=1, max_length=3)
+    search_queries: dict[str, list[str]] = Field(description="Queries keyed by title.")
+    bilingual_query_variants: dict[str, list[str]] = Field(
+        description="Keyed by language code; empty unless the CV lists a language at B2 or above."
+    )
+    scoring_weights: ScoringWeights
+
+
+class SeekerStrategyInput(BaseModel):
+    cv_text: str
+    preferences: str
+    jobs: SearchScope | None
+    gigs: SearchScope | None
+    feedback: str | None = Field(default=None, description="The user's notes on a rejected draft.")
+
+
+class SeekerStrategy(SkillRules):
+    cv: CvProfile
+    discipline: Discipline
+    secondary_disciplines: list[Discipline] = Field(max_length=2)
+    preferences: SeekerPreferences
+    work_auth_blockers: list[str] = Field(description="Listing phrases that rule the user out.")
+    jobs: KindPlan | None = Field(description="Null unless salaried jobs were requested.")
+    gigs: KindPlan | None = Field(description="Null unless freelance gigs were requested.")
+    title_aliases: dict[str, list[str]] = Field(description="Recall forms keyed by plan title.")
+    scoring_rationale: str
+    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
+
+    def plan_for(self, kind: ListingKind) -> KindPlan | None:
+        return self.jobs if kind == "job" else self.gigs
+
+    def skills(self) -> list[str]:
+        """Must-haves first, then the CV's skills in its order, which leads with the core stack."""
+        grouped = [s for group in self.must_have_or_groups for s in group]
+        return list(dict.fromkeys([*self.must_have_skills, *grouped, *self.cv.skills]))
+
+
+class Board(BaseModel):
+    """A board or network in the catalog, or one the source researcher added."""
+
+    name: str
+    url: str
+    type: str = Field(description="Free label: global, regional, niche, ats, community, guidance.")
+    tier: Literal["canonical", "augmented"]
+    relevance_score: int = Field(ge=1, le=10)
+    scrape_hints: str
+    access_notes: str
+    language_hint: str = Field(description="ISO 639-1 code of the main listing language.")
+    scrape_allowed: bool = Field(description="False for guidance-only and ToS-blocked sites.")
+    kinds: list[ListingKind] = Field(min_length=1)
+    disciplines: list[Discipline] = Field(description="Empty when the board serves every one.")
+    guidance_note: str | None = Field(default=None, description="How to get in, for gated sites.")
+
+
+class BoardResearchInput(BaseModel):
+    strategy: SeekerStrategy
+    canonical: list[Board]
+
+
+class BoardPlan(BaseModel):
+    augmented: list[Board]
+    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
+
+
+class ScoutInput(BaseModel):
+    kind: ListingKind
+    source: Board
+    target_titles: list[str]
+    queries: list[str]
+    title_aliases: list[str]
+    skills: list[str]
+    discipline: Discipline
+    engagement_types: list[EngagementType] = Field(description="Only those of this kind.")
+    region_hint: str
+    recency_days: int
+    max_results: int = Field(ge=1, le=50)
+
+
 class JobSource(BaseModel):
     name: str
     url: str
@@ -198,7 +314,7 @@ class TelegramContact(BaseModel):
 
 class ScoutedListing(BaseModel):
     title: str = Field(min_length=1)
-    company: str = Field(description="The employer; empty only when the listing names none.")
+    company: str = Field(description="The employer or client; empty when the listing hides it.")
     location_string: str | None
     remote_status_raw: str | None
     url: str = Field(min_length=8)

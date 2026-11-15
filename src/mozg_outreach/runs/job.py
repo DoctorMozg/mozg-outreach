@@ -217,6 +217,7 @@ async def collect(ctx: Ctx) -> PhaseResult:
             ctx.adapters(row.kind, row.config),
             TelegramRequest(
                 skills=strategy.skills(),
+                kinds=["job"],
                 oldest=ctx.today - timedelta(days=brief.recency_days),
                 cursor=row.cursor,
             ),

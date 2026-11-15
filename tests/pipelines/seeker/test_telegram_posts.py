@@ -5,7 +5,7 @@ import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
 from mozg_outreach.pipelines.seeker import telegram_posts
-from mozg_outreach.pipelines.seeker.models import TelegramContact
+from mozg_outreach.pipelines.seeker.models import ListingKind, TelegramContact
 from mozg_outreach.pipelines.seeker.telegram_posts import (
     ParsedPost,
     ParserResult,
@@ -41,7 +41,7 @@ def post(n: int, text: str = POST, links: list[str] | None = None, **fields: obj
 def parsed(n: int, **fields: object) -> ParsedPost:
     values: dict[str, object] = {
         "id": f"py_jobs/{n}",
-        "is_job": True,
+        "kind": "job",
         "title": "Senior Python-разработчик",
         "company": "Альфа-Банк",
         "location": None,
@@ -68,7 +68,7 @@ class FakeChannel:
 
 
 def request() -> TelegramRequest:
-    return TelegramRequest(skills=["Python"], oldest=date(2026, 11, 1), cursor=None)
+    return TelegramRequest(skills=["Python"], kinds=["job"], oldest=date(2026, 11, 1), cursor=None)
 
 
 def posts_for(tmp_path: Path, script: list[Scripted]) -> tuple[TelegramPosts, RecordedRunner]:
@@ -110,7 +110,7 @@ class TestToScouted:
     @pytest.mark.parametrize(
         ("item", "result"),
         [
-            (post(1), parsed(1, is_job=False, title=None)),
+            (post(1), parsed(1, kind=None, title=None)),
             (post(1), parsed(1, title="  ")),
             (post(1, url=None), parsed(1)),
         ],
@@ -194,3 +194,21 @@ class TestCollect:
         assert outcome.cursors == {"telegram": None}, "the next run reads the failed posts again"
         assert any("unknown post id 'py_jobs/7'" in c for c in outcome.concerns)
         assert any(c.startswith(telegram_posts.UNPARSED) for c in outcome.concerns)
+
+    @pytest.mark.parametrize(
+        ("kinds", "expected"),
+        [(["job"], ["job"]), (["job", "gig"], ["job", "gig"])],
+        ids=["jobs only", "both kinds"],
+    )
+    async def test_posts_keep_the_parsed_kind_and_other_kinds_are_dropped(
+        self, tmp_path: Path, kinds: list[ListingKind], expected: list[str]
+    ) -> None:
+        script: list[Scripted] = [
+            ParserResult(posts=[parsed(1), parsed(2, kind="gig")], concerns=[]),
+        ]
+        posts, _ = posts_for(tmp_path, script)
+        wanted = request().model_copy(update={"kinds": kinds})
+
+        outcome = await posts.collect(FakeChannel([post(1), post(2)]), wanted)
+
+        assert [s.kind for s in outcome.listings] == expected

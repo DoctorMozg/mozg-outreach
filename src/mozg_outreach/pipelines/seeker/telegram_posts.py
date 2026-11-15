@@ -1,4 +1,4 @@
-"""Telegram job posts as listings: a skill filter, then an agent reads each post and its links."""
+"""Telegram job and gig posts as listings: a skill filter, then an agent reads each post."""
 
 import asyncio
 import logging
@@ -13,7 +13,7 @@ from mozg_outreach.domain import IdentifierKind
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
 from mozg_outreach.pipelines.seeker.feeds import FeedOutcome
 from mozg_outreach.pipelines.seeker.listings import SourcedListing
-from mozg_outreach.pipelines.seeker.models import ScoutedListing, TelegramContact
+from mozg_outreach.pipelines.seeker.models import ListingKind, ScoutedListing, TelegramContact
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.registry.identifiers import normalize
 from mozg_outreach.sources.base import SourceAdapter
@@ -44,7 +44,7 @@ class ParserInput(BaseModel):
 
 class ParsedPost(BaseModel):
     id: str
-    is_job: bool
+    kind: ListingKind | None = Field(description="Null unless the post offers work.")
     title: str | None
     company: str | None
     location: str | None
@@ -63,6 +63,7 @@ class ParserResult(BaseModel):
 
 class TelegramRequest(BaseModel):
     skills: list[str] = Field(description="Kept posts name at least one; works in any language.")
+    kinds: list[ListingKind] = Field(min_length=1, description="Posts of other kinds are dropped.")
     oldest: date
     cursor: str | None
 
@@ -74,7 +75,7 @@ def post_links(item: SourceItem) -> list[str]:
 
 def to_scouted(item: SourceItem, parsed: ParsedPost, concerns: list[str]) -> ScoutedListing | None:
     """Keep only what the post shows: the company must appear in its text, the link in its links."""
-    if not (parsed.is_job and parsed.title and parsed.title.strip() and item.url):
+    if not (parsed.kind and parsed.title and parsed.title.strip() and item.url):
         return None
     company = (parsed.company or "").strip()
     if company and company.casefold() not in item.raw_text.casefold():
@@ -138,9 +139,12 @@ class TelegramPosts:
         if len(fresh) > MAX_POSTS:
             concerns.append(f"telegram: parsed the newest {MAX_POSTS} of {len(fresh)} posts.")
         failures = len(concerns)
-        listings = await self.parse(recent, concerns)
+        parsed = await self.parse(recent, concerns)
+        listings = [p for p in parsed if p.kind in request.kinds]
         parsed_all = not any(c.startswith(UNPARSED) for c in concerns[failures:])
-        logger.info("telegram: %d posts gave %d listings", len(recent), len(listings))
+        logger.info(
+            "telegram: %d posts gave %d listings of %s", len(recent), len(listings), request.kinds
+        )
         # Keeping the old cursor after a failed batch makes the next run read those posts again.
         cursor = fetched.cursor if parsed_all else None
         return FeedOutcome(listings=listings, cursors={adapter.name: cursor}, concerns=concerns)
@@ -166,8 +170,10 @@ class TelegramPosts:
                     concerns.append(f"Telegram parser returned an unknown post id '{parsed.id}'.")
                     continue
                 scouted = to_scouted(item, parsed, concerns)
-                if scouted:
-                    listings.append(SourcedListing(source=item.source, kind="job", listing=scouted))
+                if scouted and parsed.kind:
+                    listings.append(
+                        SourcedListing(source=item.source, kind=parsed.kind, listing=scouted)
+                    )
         return listings
 
     async def _parse_batch(
