@@ -1,4 +1,5 @@
 import {
+  ActionIcon,
   Affix,
   Anchor,
   Badge,
@@ -25,7 +26,7 @@ import { notifications } from "@mantine/notifications";
 import { IconColumns3, IconExternalLink, IconMail, IconSearch, IconSparkles, IconTable } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
-import { call, get, type Graph, type Item, type Project } from "../api";
+import { call, get, type Graph, type Item, type Project, type Run } from "../api";
 import { Empty, ErrorBox, Score, Value } from "../components/common";
 import { GraphView } from "../components/GraphView";
 import { href } from "../router";
@@ -94,6 +95,23 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
     mutationFn: (item: Item) => call<Item>("PATCH", `/api/items/${item.id}`, { selected: !item.selected }),
     onSuccess: () => client.invalidateQueries({ queryKey: ["items", project.id] }),
   });
+  const enrich = useMutation({
+    mutationFn: async (item: Item) => {
+      // The server enriches only selected leads, so starting one from the list selects it.
+      if (!item.selected) await call("PATCH", `/api/items/${item.id}`, { selected: true });
+      return call<Run>("POST", `/api/items/${item.id}/enrich`);
+    },
+    onSuccess: (run, item) => {
+      void client.invalidateQueries({ queryKey: ["items", project.id] });
+      void client.invalidateQueries({ queryKey: ["runs", project.id] });
+      notifications.show({
+        color: "indigo",
+        title: `Enriching ${item.title}`,
+        message: <Anchor href={href.run(run.id)}>Follow run {run.id}</Anchor>,
+      });
+    },
+  });
+  const enriching = (item: Item): boolean => enrich.isPending && enrich.variables.id === item.id;
 
   const needle = query.trim().toLowerCase();
   const rows = (items.data ?? []).filter(
@@ -154,7 +172,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
           <ColumnPicker all={allColumns} shown={columns} onChange={setPicked} />
         </Group>
       </Group>
-      <ErrorBox error={items.error ?? select.error} />
+      <ErrorBox error={items.error ?? select.error ?? enrich.error} />
       <ScrollArea type="auto">
         <Table highlightOnHover stickyHeader verticalSpacing="sm" miw={760}>
           <Table.Thead>
@@ -172,6 +190,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
                   <span>Date</span>
                 </Tooltip>
               </Table.Th>
+              <Table.Th w={50} />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -215,6 +234,15 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
                 <Table.Td c="dimmed" fz="sm" style={{ whiteSpace: "nowrap" }}>
                   {item.dated}
                 </Table.Td>
+                <Table.Td onClick={(e) => e.stopPropagation()}>
+                  {item.kind !== "gig" && (
+                    <Tooltip label="Enrich: find people, contacts and signals">
+                      <ActionIcon variant="subtle" loading={enriching(item)} onClick={() => enrich.mutate(item)} aria-label={`Enrich ${item.title}`}>
+                        <IconSparkles size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </Table.Td>
               </Table.Tr>
             ))}
           </Table.Tbody>
@@ -222,7 +250,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
       </ScrollArea>
       <BulkBar project={project} chosen={chosen} />
       <Drawer opened={open !== null} onClose={() => setOpenId(null)} position="right" size="xl" title={<Text fw={650}>{open?.title}</Text>}>
-        {open && <LeadPreview item={open} onToggle={() => select.mutate(open)} />}
+        {open && <LeadPreview item={open} onToggle={() => select.mutate(open)} onEnrich={() => enrich.mutate(open)} enriching={enriching(open)} />}
       </Drawer>
     </Card>
   );
@@ -334,7 +362,14 @@ function BulkBar({ project, chosen }: { project: Project; chosen: Item[] }): Rea
   );
 }
 
-function LeadPreview({ item, onToggle }: { item: Item; onToggle: () => void }): ReactElement {
+interface PreviewProps {
+  item: Item;
+  onToggle: () => void;
+  onEnrich: () => void;
+  enriching: boolean;
+}
+
+function LeadPreview({ item, onToggle, onEnrich, enriching }: PreviewProps): ReactElement {
   return (
     <Stack>
       <Group justify="space-between">
@@ -349,6 +384,11 @@ function LeadPreview({ item, onToggle }: { item: Item; onToggle: () => void }): 
         </Group>
         <Group gap="xs">
           <Switch label="Selected" checked={item.selected} onChange={onToggle} />
+          {item.kind !== "gig" && (
+            <Button size="xs" variant="default" leftSection={<IconSparkles size={14} />} loading={enriching} onClick={onEnrich}>
+              Enrich
+            </Button>
+          )}
           <Button size="xs" variant="light" component="a" href={href.item(item.id)} rightSection={<IconExternalLink size={14} />}>
             Open lead
           </Button>
