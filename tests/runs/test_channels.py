@@ -216,6 +216,7 @@ async def test_telegram_post_becomes_a_lead_with_a_telegram_sighting(
         roles = {
             (link.role, link.entity_id) for link in db.query(ItemLink).filter_by(item_id=item.id)
         }
-        relations = db.query(Relation).filter_by(from_id=handle.entity_id).count()
+        subject = next(entity_id for role, entity_id in roles if role == "subject")
+        works_at = [r.to_id for r in db.query(Relation).filter_by(from_id=handle.entity_id)]
     assert (handle.value, ("contact", handle.entity_id) in roles) == ("hr_anna", True)
-    assert relations == 0, "a Telegram recruiter isn't tied to the employer"
+    assert works_at == [subject], "the contact works at the confirmed company"

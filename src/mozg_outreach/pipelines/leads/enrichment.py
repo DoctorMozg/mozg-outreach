@@ -54,15 +54,14 @@ class LeadEnrichment:
                 context = IngestContext(
                     project_id=ref.project_id, run_id=ref.run_id, item_id=task.item_id
                 )
+                if outcome.identity is not None:
+                    items.set_detail(item, IDENTITY, outcome.identity)
+                    counts = ingest.identity(task.listing, outcome.identity, context)
+                    report.companies += counts.companies
+                    report.people += counts.people
                 # The post names its contact itself, so it counts even when identification fails.
                 if ingest.telegram_contact(task.listing, context) is not None:
                     report.people += 1
-                if outcome.identity is None:
-                    continue
-                items.set_detail(item, IDENTITY, outcome.identity)
-                counts = ingest.identity(task.listing, outcome.identity, context)
-                report.companies += counts.companies
-                report.people += counts.people
         logger.info(
             "leads: %d of %d with a company, %d people", report.companies, len(tasks), report.people
         )

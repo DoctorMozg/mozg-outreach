@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mozg_outreach.domain import EntityKind, FieldValue, IdentifierKind, ProjectMode, SourceKind
-from mozg_outreach.pipelines.job.models import JobContacts, Listing, NamedContact
+from mozg_outreach.pipelines.job.models import JobContacts, Listing, NamedContact, TelegramContact
 from mozg_outreach.pipelines.job.search import to_candidate
 from mozg_outreach.pipelines.leads.ingest import LeadRegistryIngest, listing_kind
 from mozg_outreach.registry.ingest import IngestContext
@@ -165,3 +165,34 @@ class TestContacts:
 
         assert entities(session, EntityKind.COMPANY) == []
         assert links(session, context.item_id) == {("contact", "Ann Lee")}
+
+
+class TestTelegramContact:
+    @pytest.fixture
+    def post(self, lead: Listing) -> Listing:
+        contact = TelegramContact(handle="hr_anna", name="Anna", quote="Write to Anna: @hr_anna")
+        return lead.model_copy(update={"telegram_contact": contact})
+
+    def test_contact_works_at_the_confirmed_company(
+        self, session: Session, post: Listing, context: IngestContext
+    ) -> None:
+        ingest = LeadRegistryIngest(session)
+        ingest.identity(post, identity(company()), context)
+
+        anna = ingest.telegram_contact(post, context)
+
+        assert anna is not None
+        [acme] = entities(session, EntityKind.COMPANY)
+        [works] = session.scalars(select(Relation))
+        assert (works.from_id, works.to_id) == (anna.id, acme.id)
+
+    def test_contact_without_a_confirmed_company_links_to_the_lead_only(
+        self, session: Session, post: Listing, context: IngestContext
+    ) -> None:
+        ingest = LeadRegistryIngest(session)
+        ingest.identity(post, identity(None), context)
+
+        ingest.telegram_contact(post, context)
+
+        assert list(session.scalars(select(Relation))) == []
+        assert links(session, context.item_id) == {("contact", "Anna")}
