@@ -4,10 +4,10 @@ import logging
 
 from pydantic import BaseModel
 
-from mozg_outreach.pipelines.job.models import Listing
 from mozg_outreach.pipelines.leads.identify import LeadIdentifier
 from mozg_outreach.pipelines.leads.ingest import LeadRegistryIngest
 from mozg_outreach.pipelines.leads.models import LeadInput
+from mozg_outreach.pipelines.seeker.models import Listing
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.storage.db import Database

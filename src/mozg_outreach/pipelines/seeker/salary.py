@@ -2,7 +2,7 @@
 
 import re
 
-from mozg_outreach.pipelines.job.models import Money, Period, Salary
+from mozg_outreach.pipelines.seeker.models import Money, Period, Salary
 
 # Reference rates (USD per unit) from the legacy pipeline; good to about 5%, which is
 # enough to compare a band with a floor. Unknown currencies stay unconverted.

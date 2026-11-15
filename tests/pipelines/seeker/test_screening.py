@@ -1,9 +1,9 @@
 import pytest
 
-from mozg_outreach.pipelines.job.eligibility import EligibilityChecker, places_in
-from mozg_outreach.pipelines.job.models import JobBrief, JobStrategy
-from mozg_outreach.pipelines.job.screening import ListingScreener, ScreenRules
-from mozg_outreach.pipelines.job.skills import SkillMatcher, _pattern
+from mozg_outreach.pipelines.seeker.eligibility import EligibilityChecker, places_in
+from mozg_outreach.pipelines.seeker.models import JobBrief, JobStrategy
+from mozg_outreach.pipelines.seeker.screening import ListingScreener, ScreenRules
+from mozg_outreach.pipelines.seeker.skills import SkillMatcher, _pattern
 
 from .conftest import TODAY, listing, scouted
 

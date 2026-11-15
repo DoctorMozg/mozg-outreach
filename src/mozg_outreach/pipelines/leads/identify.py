@@ -9,7 +9,6 @@ from pydantic import BaseModel
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
 from mozg_outreach.domain import IdentifierKind
-from mozg_outreach.pipelines.job.models import Listing
 from mozg_outreach.pipelines.leads.models import (
     IdentifiedCompany,
     LeadIdentity,
@@ -17,6 +16,7 @@ from mozg_outreach.pipelines.leads.models import (
     LeadMode,
     NamedPerson,
 )
+from mozg_outreach.pipelines.seeker.models import Listing
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.registry.identifiers import normalize, normalize_domain
 

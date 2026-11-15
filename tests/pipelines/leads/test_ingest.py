@@ -3,9 +3,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mozg_outreach.domain import EntityKind, FieldValue, IdentifierKind, ProjectMode, SourceKind
-from mozg_outreach.pipelines.job.models import JobContacts, Listing, NamedContact, TelegramContact
-from mozg_outreach.pipelines.job.search import to_candidate
 from mozg_outreach.pipelines.leads.ingest import LeadRegistryIngest, listing_kind
+from mozg_outreach.pipelines.seeker.models import (
+    JobContacts,
+    Listing,
+    NamedContact,
+    TelegramContact,
+)
+from mozg_outreach.pipelines.seeker.search import to_candidate
 from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.storage.models import (
     Entity,
@@ -17,7 +22,7 @@ from mozg_outreach.storage.models import (
     Sighting,
 )
 from mozg_outreach.storage.repositories import ItemRepository
-from tests.pipelines.job.conftest import listing
+from tests.pipelines.seeker.conftest import listing
 
 from .conftest import CAREERS, POSTING, company, identity, person
 

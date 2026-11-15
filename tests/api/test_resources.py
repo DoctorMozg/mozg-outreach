@@ -18,7 +18,7 @@ from mozg_outreach.storage.models import (
     Sighting,
 )
 from tests.pipelines.conftest import HangingRunner
-from tests.pipelines.job.conftest import CV_TEXT
+from tests.pipelines.seeker.conftest import CV_TEXT
 
 from .conftest import Api, biz_brief, open_api
 

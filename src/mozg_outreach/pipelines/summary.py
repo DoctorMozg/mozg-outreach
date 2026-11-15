@@ -9,7 +9,7 @@ from mozg_outreach.agents import AgentOutputError, AgentRunError
 from mozg_outreach.domain import FieldScalar, FieldValue, ItemScore, ScoreAxis
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
 from mozg_outreach.pipelines.freelance.models import FreelanceStrategy
-from mozg_outreach.pipelines.job.models import JobStrategy
+from mozg_outreach.pipelines.seeker.models import JobStrategy
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import Item

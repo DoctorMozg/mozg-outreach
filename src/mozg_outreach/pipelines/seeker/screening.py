@@ -6,9 +6,9 @@ from datetime import date, timedelta
 
 from pydantic import BaseModel
 
-from mozg_outreach.pipelines.job.eligibility import EligibilityChecker
-from mozg_outreach.pipelines.job.listings import ListingNormalizer, SourcedListing
-from mozg_outreach.pipelines.job.models import (
+from mozg_outreach.pipelines.seeker.eligibility import EligibilityChecker
+from mozg_outreach.pipelines.seeker.listings import ListingNormalizer, SourcedListing
+from mozg_outreach.pipelines.seeker.models import (
     CvProfile,
     Excluded,
     ExcludedReason,
@@ -18,7 +18,7 @@ from mozg_outreach.pipelines.job.models import (
     PlacePreferences,
     SkillRules,
 )
-from mozg_outreach.pipelines.job.skills import SkillMatcher
+from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 
 logger = logging.getLogger(__name__)
 

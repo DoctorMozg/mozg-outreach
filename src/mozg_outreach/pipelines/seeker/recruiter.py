@@ -4,8 +4,8 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from mozg_outreach.pipelines.job.listings import canonical_url
-from mozg_outreach.pipelines.job.models import ContactInput, JobContacts, Listing
+from mozg_outreach.pipelines.seeker.listings import canonical_url
+from mozg_outreach.pipelines.seeker.models import ContactInput, JobContacts, Listing
 from mozg_outreach.pipelines.steps import PipelineSteps
 
 logger = logging.getLogger(__name__)
@@ -38,5 +38,5 @@ class RecruiterLookup:
         )
         logger.info("recruiter lookup for %s", target.company)
         return await self._steps.run(
-            "job", "job-contact-finder", ContactInput(listing=listing), JobContacts
+            "seeker", "job-contact-finder", ContactInput(listing=listing), JobContacts
         )

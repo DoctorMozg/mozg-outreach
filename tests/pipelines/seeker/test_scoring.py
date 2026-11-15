@@ -2,10 +2,10 @@ from datetime import date
 
 import pytest
 
-from mozg_outreach.pipelines.job.models import JobStrategy, Money, Salary
-from mozg_outreach.pipelines.job.salary import SalaryParser
-from mozg_outreach.pipelines.job.skills import SkillMatcher
-from mozg_outreach.scoring.job import JobScoreInput, JobScorer
+from mozg_outreach.pipelines.seeker.models import JobStrategy, Money, Salary
+from mozg_outreach.pipelines.seeker.salary import SalaryParser
+from mozg_outreach.pipelines.seeker.skills import SkillMatcher
+from mozg_outreach.scoring.seeker import JobScoreInput, JobScorer
 
 from .conftest import TODAY, judgment, listing
 

@@ -4,9 +4,9 @@ import pytest
 
 from mozg_outreach.pipelines.freelance.budget import BudgetParser, hourly_usd, project_hours
 from mozg_outreach.pipelines.freelance.models import FreelanceStrategy, GigBudget
-from mozg_outreach.pipelines.job.models import Money
-from mozg_outreach.pipelines.job.salary import USD_PER_UNIT
-from mozg_outreach.pipelines.job.skills import SkillMatcher
+from mozg_outreach.pipelines.seeker.models import Money
+from mozg_outreach.pipelines.seeker.salary import USD_PER_UNIT
+from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.scoring.freelance import FreelanceScorer, GigScoreInput
 
 from .conftest import SCOPE, gig, gig_judgment

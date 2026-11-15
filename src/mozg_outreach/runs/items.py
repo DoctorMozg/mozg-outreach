@@ -10,12 +10,12 @@ from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.biz.outreach import BizOutreach
 from mozg_outreach.pipelines.freelance.models import FreelanceBrief, FreelanceStrategy
 from mozg_outreach.pipelines.freelance.proposals import ProposalRequest, ProposalWriter
-from mozg_outreach.pipelines.job.letters import CoverLetterRequest, JobLetterWriter
-from mozg_outreach.pipelines.job.models import JobBrief, JobContacts, JobStrategy
-from mozg_outreach.pipelines.job.screening import listing_text
-from mozg_outreach.pipelines.job.search import JobSearch
-from mozg_outreach.pipelines.job.skills import SkillMatcher
 from mozg_outreach.pipelines.leads.ingest import LeadRegistryIngest
+from mozg_outreach.pipelines.seeker.letters import CoverLetterRequest, JobLetterWriter
+from mozg_outreach.pipelines.seeker.models import JobBrief, JobContacts, JobStrategy
+from mozg_outreach.pipelines.seeker.screening import listing_text
+from mozg_outreach.pipelines.seeker.search import JobSearch
+from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.freelance import gig_of

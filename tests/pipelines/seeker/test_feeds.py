@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from mozg_outreach.pipelines.job.feeds import FeedRequest, JobFeeds, to_listing
+from mozg_outreach.pipelines.seeker.feeds import FeedRequest, JobFeeds, to_listing
 from mozg_outreach.sources.models import FetchResult, SourceItem, SourceQuery
 
 from .conftest import LONG_POSTING, TODAY

@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
 from mozg_outreach.domain import FieldValue, ItemCandidate, ItemKind, ItemScore
-from mozg_outreach.pipelines.job.listings import SourcedListing
-from mozg_outreach.pipelines.job.models import (
+from mozg_outreach.pipelines.seeker.listings import SourcedListing
+from mozg_outreach.pipelines.seeker.models import (
     ContactInput,
     JobBrief,
     JobContacts,
@@ -27,15 +27,15 @@ from mozg_outreach.pipelines.job.models import (
     SourcePlan,
     SourceResearchInput,
 )
-from mozg_outreach.pipelines.job.screening import (
+from mozg_outreach.pipelines.seeker.screening import (
     ListingScreener,
     Screening,
     ScreenRules,
     listing_text,
 )
-from mozg_outreach.pipelines.job.skills import SkillMatcher
+from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.steps import PipelineSteps
-from mozg_outreach.scoring.job import JobScoreInput, JobScorer
+from mozg_outreach.scoring.seeker import JobScoreInput, JobScorer
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class JobSearch:
             recency_days=brief.recency_days,
             feedback=feedback,
         )
-        strategy = await self._steps.run("job", "job-strategist", payload, JobStrategy)
+        strategy = await self._steps.run("seeker", "job-strategist", payload, JobStrategy)
         known = {s.casefold() for s in strategy.cv.skills}
         stray = [s for s in strategy.must_have_skills if s.casefold() not in known]
         if stray:
@@ -85,7 +85,7 @@ class JobSearch:
         """Canonical boards first, then the agent's additions; only boards we may scout."""
         payload = SourceResearchInput(strategy=strategy, canonical=self._canonical)
         try:
-            plan = await self._steps.run("job", "job-source-researcher", payload, SourcePlan)
+            plan = await self._steps.run("seeker", "job-source-researcher", payload, SourcePlan)
             augmented = plan.augmented
         except (AgentRunError, AgentOutputError) as exc:
             logger.warning("source research failed, using canonical boards only: %s", exc)
@@ -119,7 +119,7 @@ class JobSearch:
             for source in sources
         ]
         results = await asyncio.gather(
-            *(self._steps.run("job", "job-scout", p, JobScoutResult) for p in payloads),
+            *(self._steps.run("seeker", "job-scout", p, JobScoutResult) for p in payloads),
             return_exceptions=True,
         )
         outcome = ScoutOutcome(listings=[], empty_sources=[], concerns=[])
@@ -149,7 +149,7 @@ class JobSearch:
         results = await asyncio.gather(
             *(
                 self._steps.run(
-                    "job",
+                    "seeker",
                     "job-listing-judge",
                     JudgeInput(
                         cv=strategy.cv,
@@ -202,7 +202,10 @@ class JobSearch:
 
     async def contacts(self, listing: Listing) -> JobContacts:
         return await self._steps.run(
-            "job", "job-contact-finder", ContactInput(listing=listing.for_agents([])), JobContacts
+            "seeker",
+            "job-contact-finder",
+            ContactInput(listing=listing.for_agents([])),
+            JobContacts,
         )
 
 

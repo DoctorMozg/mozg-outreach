@@ -8,8 +8,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel
 
-from mozg_outreach.pipelines.job.models import Listing, ScoutedListing
-from mozg_outreach.pipelines.job.salary import SalaryParser
+from mozg_outreach.pipelines.seeker.models import Listing, ScoutedListing
+from mozg_outreach.pipelines.seeker.salary import SalaryParser
 
 logger = logging.getLogger(__name__)
 

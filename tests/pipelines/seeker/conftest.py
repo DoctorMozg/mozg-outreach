@@ -2,8 +2,8 @@ from datetime import date
 
 import pytest
 
-from mozg_outreach.pipelines.job.listings import SourcedListing
-from mozg_outreach.pipelines.job.models import (
+from mozg_outreach.pipelines.seeker.listings import SourcedListing
+from mozg_outreach.pipelines.seeker.models import (
     CvProfile,
     JobBrief,
     JobPreferences,

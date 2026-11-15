@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
-from mozg_outreach.pipelines.job.models import (
+from mozg_outreach.pipelines.seeker.models import (
     CvProfile,
     JobSource,
     Listing,

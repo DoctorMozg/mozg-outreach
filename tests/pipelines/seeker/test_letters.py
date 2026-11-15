@@ -5,9 +5,9 @@ from mozg_outreach.letters.composer import WrittenLetter
 from mozg_outreach.letters.models import LetterBrief, LetterDraft, SenderSettings
 from mozg_outreach.naturalize.models import NaturalizeResult
 from mozg_outreach.naturalize.naturalizer import Naturalizer
-from mozg_outreach.pipelines.job.letters import CoverLetterRequest, JobLetterWriter
-from mozg_outreach.pipelines.job.models import JobContacts, JobStrategy, NamedContact
-from mozg_outreach.pipelines.job.skills import SkillMatcher
+from mozg_outreach.pipelines.seeker.letters import CoverLetterRequest, JobLetterWriter
+from mozg_outreach.pipelines.seeker.models import JobContacts, JobStrategy, NamedContact
+from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.steps import PipelineSteps
 
 from ..conftest import REPO_PROMPTS, RecordedRunner

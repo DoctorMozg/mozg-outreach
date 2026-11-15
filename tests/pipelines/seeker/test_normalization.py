@@ -2,9 +2,9 @@ from datetime import date
 
 import pytest
 
-from mozg_outreach.pipelines.job.listings import ListingNormalizer, canonical_url
-from mozg_outreach.pipelines.job.models import Money
-from mozg_outreach.pipelines.job.salary import USD_PER_UNIT, SalaryParser, annual_usd
+from mozg_outreach.pipelines.seeker.listings import ListingNormalizer, canonical_url
+from mozg_outreach.pipelines.seeker.models import Money
+from mozg_outreach.pipelines.seeker.salary import USD_PER_UNIT, SalaryParser, annual_usd
 
 from .conftest import TODAY, scouted
 

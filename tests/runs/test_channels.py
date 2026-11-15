@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 from mozg_outreach.domain import IdentifierKind, RunStatus, SourceKind
-from mozg_outreach.pipelines.job.models import JobStrategy, JudgeResult
-from mozg_outreach.pipelines.job.telegram_posts import ParsedPost, ParserResult
+from mozg_outreach.pipelines.seeker.models import JobStrategy, JudgeResult
+from mozg_outreach.pipelines.seeker.telegram_posts import ParsedPost, ParserResult
 from mozg_outreach.runs.flow import GateAnswer
 from mozg_outreach.runs.job import ChannelChoice, _discovery_terms
 from mozg_outreach.sources import telegram_discovery
@@ -26,8 +26,8 @@ from mozg_outreach.storage.models import (
     SourceConfig,
 )
 from tests.pipelines.conftest import Scripted
-from tests.pipelines.job.conftest import judgment
 from tests.pipelines.leads.conftest import company, identity
+from tests.pipelines.seeker.conftest import judgment
 from tests.sources.conftest import SearchSession, channel
 
 from .conftest import FEED_URL, Harness

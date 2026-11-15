@@ -11,9 +11,9 @@ from pydantic import BaseModel, Field
 from mozg_outreach.agents import AgentOutputError, AgentRunError
 from mozg_outreach.domain import IdentifierKind
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
-from mozg_outreach.pipelines.job.feeds import FeedOutcome
-from mozg_outreach.pipelines.job.listings import SourcedListing
-from mozg_outreach.pipelines.job.models import ScoutedListing, TelegramContact
+from mozg_outreach.pipelines.seeker.feeds import FeedOutcome
+from mozg_outreach.pipelines.seeker.listings import SourcedListing
+from mozg_outreach.pipelines.seeker.models import ScoutedListing, TelegramContact
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.registry.identifiers import normalize
 from mozg_outreach.sources.base import SourceAdapter
@@ -186,7 +186,7 @@ class TelegramPosts:
             ]
         )
         try:
-            return await self._steps.run("job", "telegram-post-parser", payload, ParserResult)
+            return await self._steps.run("seeker", "telegram-post-parser", payload, ParserResult)
         except (AgentRunError, AgentOutputError) as exc:
             # One failed batch costs its posts this run; the cursor still moves past them.
             logger.warning("telegram post parser failed on %d posts: %s", len(batch), exc)

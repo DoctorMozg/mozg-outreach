@@ -5,7 +5,7 @@ from mozg_outreach.pipelines.leads.identify import LeadIdentifier, accept_identi
 from mozg_outreach.pipelines.leads.models import SourcedFact
 from mozg_outreach.pipelines.steps import PipelineSteps
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner, Scripted
-from tests.pipelines.job.conftest import listing
+from tests.pipelines.seeker.conftest import listing
 
 from .conftest import CAREERS, company, identity, person
 

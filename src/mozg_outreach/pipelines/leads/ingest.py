@@ -4,8 +4,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from mozg_outreach.domain import FieldValue, IdentifierKind, SourceKind
-from mozg_outreach.pipelines.job.models import JobContacts, Listing
 from mozg_outreach.pipelines.leads.models import IdentifiedCompany, LeadIdentity, SourcedFact
+from mozg_outreach.pipelines.seeker.models import JobContacts, Listing
 from mozg_outreach.registry.identifiers import normalize
 from mozg_outreach.registry.ingest import (
     CompanySeen,

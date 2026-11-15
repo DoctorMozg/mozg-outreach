@@ -7,7 +7,7 @@ from mozg_outreach.pipelines.biz.discovery import BizDiscovery
 from mozg_outreach.pipelines.biz.models import BizBrief, BriefReview
 from mozg_outreach.pipelines.fields import FieldProposalInput, FieldProposer, SeekerBrief
 from mozg_outreach.pipelines.freelance import search as freelance_search
-from mozg_outreach.pipelines.job import search as job_search
+from mozg_outreach.pipelines.seeker import search as job_search
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.storage.repositories import FieldSpecRepository

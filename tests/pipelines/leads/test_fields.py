@@ -1,7 +1,7 @@
 from mozg_outreach.domain import FieldDefinition, FieldSpec, FieldType
 from mozg_outreach.pipelines.leads.fields import field_task
 from mozg_outreach.pipelines.leads.identify import lead_input
-from tests.pipelines.job.conftest import listing
+from tests.pipelines.seeker.conftest import listing
 
 from .conftest import company, identity
 

@@ -7,9 +7,9 @@ from pydantic import BaseModel
 from mozg_outreach.domain import ItemScore
 from mozg_outreach.pipelines.freelance.budget import hourly_usd
 from mozg_outreach.pipelines.freelance.models import FreelanceStrategy, Gig, GigJudgment
-from mozg_outreach.pipelines.job.skills import SkillMatch
+from mozg_outreach.pipelines.seeker.skills import SkillMatch
 from mozg_outreach.scoring.axes import AxisValue, weighted_axes, weighted_total
-from mozg_outreach.scoring.job import DEAL_BREAKER_CAP, NOT_JUDGED, UNKNOWN, JobScorer, band_fit
+from mozg_outreach.scoring.seeker import DEAL_BREAKER_CAP, NOT_JUDGED, UNKNOWN, JobScorer, band_fit
 
 SCOPE_POINTS = {"clear": 100.0, "partial": 60.0, "vague": 20.0}
 VETTING_POINTS = {

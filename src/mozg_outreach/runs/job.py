@@ -10,9 +10,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from mozg_outreach.domain import FieldSpec
-from mozg_outreach.pipelines.job.feeds import FeedRequest, JobFeeds
-from mozg_outreach.pipelines.job.listings import SourcedListing
-from mozg_outreach.pipelines.job.models import (
+from mozg_outreach.pipelines.leads.enrichment import IDENTITY, LeadEnrichment, LeadTask, RunRef
+from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, field_task
+from mozg_outreach.pipelines.leads.identify import lead_input
+from mozg_outreach.pipelines.leads.models import LeadIdentity
+from mozg_outreach.pipelines.seeker.feeds import FeedRequest, JobFeeds
+from mozg_outreach.pipelines.seeker.listings import SourcedListing
+from mozg_outreach.pipelines.seeker.models import (
     Excluded,
     JobBrief,
     JobSource,
@@ -20,12 +24,8 @@ from mozg_outreach.pipelines.job.models import (
     Listing,
     ListingJudgment,
 )
-from mozg_outreach.pipelines.job.search import JobSearch, Judgments, load_canonical, to_candidate
-from mozg_outreach.pipelines.job.telegram_posts import TelegramPosts, TelegramRequest
-from mozg_outreach.pipelines.leads.enrichment import IDENTITY, LeadEnrichment, LeadTask, RunRef
-from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, field_task
-from mozg_outreach.pipelines.leads.identify import lead_input
-from mozg_outreach.pipelines.leads.models import LeadIdentity
+from mozg_outreach.pipelines.seeker.search import JobSearch, Judgments, load_canonical, to_candidate
+from mozg_outreach.pipelines.seeker.telegram_posts import TelegramPosts, TelegramRequest
 from mozg_outreach.pipelines.summary import (
     RunSummary,
     SeekerRunSummarizer,
@@ -47,7 +47,7 @@ from mozg_outreach.storage.repositories import ItemRepository
 logger = logging.getLogger(__name__)
 
 JOB_CANONICAL = (
-    Path(__file__).resolve().parents[3] / "prompts" / "job" / "sources" / "job_canonical.json"
+    Path(__file__).resolve().parents[3] / "prompts" / "seeker" / "sources" / "job_canonical.json"
 )
 WEB_SEARCH = "web_search"
 LISTING, JUDGMENT, CONTACTS = "listing", "judgment", "contacts"

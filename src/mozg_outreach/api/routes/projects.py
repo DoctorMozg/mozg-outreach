@@ -22,7 +22,7 @@ from mozg_outreach.api.services import Services, get_or_404, services
 from mozg_outreach.domain import FieldSpec, ProjectMode
 from mozg_outreach.pipelines.biz.models import BizBrief
 from mozg_outreach.pipelines.freelance.models import FreelanceBrief
-from mozg_outreach.pipelines.job.models import JobBrief
+from mozg_outreach.pipelines.seeker.models import JobBrief
 from mozg_outreach.runs.catalog import FIELD_PIPELINES, SEARCH_OPTIONS
 from mozg_outreach.runs.job import WEB_SEARCH
 from mozg_outreach.sources.factory import source_kinds

@@ -12,16 +12,16 @@ from mozg_outreach.domain import (
 from mozg_outreach.pipelines.fields import FieldProposal, FieldResearchResult, ResearchedValue
 from mozg_outreach.pipelines.freelance.models import FreelanceBrief
 from mozg_outreach.pipelines.freelance.search import COLUMNS as GIGS
-from mozg_outreach.pipelines.job.models import JobStrategy, JudgeResult
-from mozg_outreach.pipelines.job.search import COLUMNS as JOBS
+from mozg_outreach.pipelines.seeker.models import JobStrategy, JudgeResult
+from mozg_outreach.pipelines.seeker.search import COLUMNS as JOBS
 from mozg_outreach.runs.flow import GateAnswer
 from mozg_outreach.runs.job import JobSearchState
 from mozg_outreach.sources.models import SourceItem
 from mozg_outreach.storage.models import FieldSpecVersion, Item, JsonObject, Project, Run
 from mozg_outreach.storage.repositories import FieldSpecRepository
 from tests.pipelines.conftest import Scripted
-from tests.pipelines.job.conftest import CV_TEXT, judgment
 from tests.pipelines.leads.conftest import CAREERS, company, identity
+from tests.pipelines.seeker.conftest import CV_TEXT, judgment
 
 from .conftest import FEED_URL, NOW, Harness
 

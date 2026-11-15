@@ -25,10 +25,10 @@ from mozg_outreach.pipelines.freelance.models import (
     GigTerms,
     ScoutedGig,
 )
-from mozg_outreach.pipelines.job.listings import SourcedListing, canonical_url
-from mozg_outreach.pipelines.job.models import Excluded, JobSource, ScoutedListing, SourcePlan
-from mozg_outreach.pipelines.job.screening import ListingScreener, ScreenRules, listing_text
-from mozg_outreach.pipelines.job.skills import SkillMatcher
+from mozg_outreach.pipelines.seeker.listings import SourcedListing, canonical_url
+from mozg_outreach.pipelines.seeker.models import Excluded, JobSource, ScoutedListing, SourcePlan
+from mozg_outreach.pipelines.seeker.screening import ListingScreener, ScreenRules, listing_text
+from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.scoring.freelance import FreelanceScorer, GigScoreInput
 
@@ -83,7 +83,9 @@ class FreelanceSearch:
             recency_days=brief.recency_days,
             feedback=feedback,
         )
-        strategy = await self._steps.run("job", "freelance-strategist", payload, FreelanceStrategy)
+        strategy = await self._steps.run(
+            "seeker", "freelance-strategist", payload, FreelanceStrategy
+        )
         known = {s.casefold() for s in strategy.cv.skills}
         stray = [s for s in strategy.must_have_skills if s.casefold() not in known]
         if stray:
@@ -98,7 +100,7 @@ class FreelanceSearch:
         canonical = [s for s in self._catalog.scrape if _serves(s, strategy)]
         payload = GigSourceResearchInput(strategy=strategy, canonical=canonical)
         try:
-            plan = await self._steps.run("job", "job-source-researcher", payload, SourcePlan)
+            plan = await self._steps.run("seeker", "job-source-researcher", payload, SourcePlan)
             augmented = plan.augmented
         except (AgentRunError, AgentOutputError) as exc:
             logger.warning("freelance source research failed, canonical only: %s", exc)
@@ -134,7 +136,7 @@ class FreelanceSearch:
             for source in sources
         ]
         results = await asyncio.gather(
-            *(self._steps.run("job", "freelance-scout", p, GigScoutResult) for p in payloads),
+            *(self._steps.run("seeker", "freelance-scout", p, GigScoutResult) for p in payloads),
             return_exceptions=True,
         )
         outcome = GigScoutOutcome(gigs=[], empty_sources=[], concerns=[])
@@ -170,7 +172,7 @@ class FreelanceSearch:
         results = await asyncio.gather(
             *(
                 self._steps.run(
-                    "job",
+                    "seeker",
                     "freelance-gig-judge",
                     GigJudgeInput(
                         cv=strategy.cv,

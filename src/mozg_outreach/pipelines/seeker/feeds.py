@@ -6,8 +6,8 @@ from datetime import date, timedelta
 
 from pydantic import BaseModel
 
-from mozg_outreach.pipelines.job.listings import SourcedListing
-from mozg_outreach.pipelines.job.models import ScoutedListing
+from mozg_outreach.pipelines.seeker.listings import SourcedListing
+from mozg_outreach.pipelines.seeker.models import ScoutedListing
 from mozg_outreach.sources.base import SourceAdapter
 from mozg_outreach.sources.models import FetchResult, SourceItem, SourceQuery
 

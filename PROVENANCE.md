@@ -5,13 +5,13 @@ The agent prompts and reference material here come from [claude-pipelines](https
 | Here                                                  | Upstream                                                                |
 | ----------------------------------------------------- | ----------------------------------------------------------------------- |
 | `prompts/biz/*.md`                                    | `plugins/mz-biz-outreach/agents/`                                       |
-| `prompts/job/*.md`                                    | `plugins/mz-job-outreach/agents/`                                       |
-| `prompts/job/sources/*.json`                          | `plugins/mz-job-outreach/skills/{job-search,freelance-search}/sources/` |
+| `prompts/seeker/*.md`                                 | `plugins/mz-job-outreach/agents/`                                       |
+| `prompts/seeker/sources/*.json`                       | `plugins/mz-job-outreach/skills/{job-search,freelance-search}/sources/` |
 | `prompts/creative/expert-{naturalizer,copywriter}.md` | `plugins/mz-creative/agents/` (forked; diverges on purpose)             |
 
 `prompts/biz/run-summarizer.md` is adapted from upstream `outreach-reporter`. Upstream `outreach-enrichment-orchestrator` and `outreach-card-writer` were dropped: Python fans out enrichment and builds the report from the database.
 
-`prompts/shared/seeker-run-summarizer.md` adapts `run-summarizer` to job and freelance leads. `prompts/job/telegram-post-parser.md` has no upstream: it was written here.
+`prompts/shared/seeker-run-summarizer.md` adapts `run-summarizer` to job and freelance leads. `prompts/seeker/telegram-post-parser.md` has no upstream: it was written here.
 
 The forked `expert-copywriter` is cut down to short outreach letters; the general marketing formats (landing pages, changelogs) were dropped.
 

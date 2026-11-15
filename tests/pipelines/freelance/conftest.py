@@ -12,8 +12,8 @@ from mozg_outreach.pipelines.freelance.models import (
     ScoutedGig,
 )
 from mozg_outreach.pipelines.freelance.search import SourcedGig
-from mozg_outreach.pipelines.job.models import CvProfile, Money
-from tests.pipelines.job.conftest import CV_TEXT, listing
+from mozg_outreach.pipelines.seeker.models import CvProfile, Money
+from tests.pipelines.seeker.conftest import CV_TEXT, listing
 
 GIG_URL = "https://www.malt.com/projects/acme-payments"
 SCOPE = (

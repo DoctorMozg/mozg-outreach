@@ -3,8 +3,8 @@
 import re
 
 from mozg_outreach.pipelines.freelance.models import BudgetBasis, GigBudget
-from mozg_outreach.pipelines.job.models import Money
-from mozg_outreach.pipelines.job.salary import USD_PER_UNIT, SalaryParser
+from mozg_outreach.pipelines.seeker.models import Money
+from mozg_outreach.pipelines.seeker.salary import USD_PER_UNIT, SalaryParser
 
 # The legacy freelance assumptions: an 8-hour day, 160-hour month, 2000-hour year.
 HOURS_PER: dict[BudgetBasis, float] = {"hour": 1, "day": 8, "month": 160, "year": 2000}

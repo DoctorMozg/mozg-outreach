@@ -5,14 +5,14 @@ from datetime import date
 from pydantic import BaseModel
 
 from mozg_outreach.domain import ItemScore
-from mozg_outreach.pipelines.job.models import (
+from mozg_outreach.pipelines.seeker.models import (
     JobStrategy,
     Listing,
     ListingJudgment,
     Seniority,
 )
-from mozg_outreach.pipelines.job.salary import annual_usd
-from mozg_outreach.pipelines.job.skills import SkillMatch
+from mozg_outreach.pipelines.seeker.salary import annual_usd
+from mozg_outreach.pipelines.seeker.skills import SkillMatch
 from mozg_outreach.scoring.axes import AxisValue, weighted_axes, weighted_total
 
 LADDER: tuple[Seniority, ...] = (

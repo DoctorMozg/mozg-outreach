@@ -10,15 +10,15 @@ from mozg_outreach.pipelines.freelance.budget import BudgetParser
 from mozg_outreach.pipelines.freelance.models import FreelanceBrief, FreelanceStrategy
 from mozg_outreach.pipelines.freelance.proposals import ProposalRequest, ProposalWriter
 from mozg_outreach.pipelines.freelance.search import FreelanceSearch, load_catalog
-from mozg_outreach.pipelines.job.models import SourcePlan
-from mozg_outreach.pipelines.job.skills import SkillMatcher
+from mozg_outreach.pipelines.seeker.models import SourcePlan
+from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.steps import PipelineSteps
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner
-from tests.pipelines.job.conftest import CV_TEXT
+from tests.pipelines.seeker.conftest import CV_TEXT
 
 from .conftest import GIG_URL, SCOPE, gig, scouted_gig
 
-CATALOG = REPO_PROMPTS / "job" / "sources" / "freelance_canonical.json"
+CATALOG = REPO_PROMPTS / "seeker" / "sources" / "freelance_canonical.json"
 TODAY = date(2026, 11, 14)
 
 

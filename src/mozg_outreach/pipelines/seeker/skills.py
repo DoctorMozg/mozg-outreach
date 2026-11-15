@@ -4,7 +4,7 @@ import re
 
 from pydantic import BaseModel, Field
 
-from mozg_outreach.pipelines.job.models import SkillRules
+from mozg_outreach.pipelines.seeker.models import SkillRules
 
 
 class SkillHit(BaseModel):

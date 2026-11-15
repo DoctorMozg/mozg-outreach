@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
-from mozg_outreach.pipelines.job import telegram_posts
-from mozg_outreach.pipelines.job.models import TelegramContact
-from mozg_outreach.pipelines.job.telegram_posts import (
+from mozg_outreach.pipelines.seeker import telegram_posts
+from mozg_outreach.pipelines.seeker.models import TelegramContact
+from mozg_outreach.pipelines.seeker.telegram_posts import (
     ParsedPost,
     ParserResult,
     TelegramPosts,

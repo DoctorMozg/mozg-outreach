@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
-from mozg_outreach.pipelines.job.models import (
+from mozg_outreach.pipelines.seeker.models import (
     AGENT_CHARS,
     OPENING_CHARS,
     ContactInput,
@@ -17,14 +17,14 @@ from mozg_outreach.pipelines.job.models import (
     JudgeResult,
     SourcePlan,
 )
-from mozg_outreach.pipelines.job.recruiter import RecruiterLookup, RecruiterTarget
-from mozg_outreach.pipelines.job.search import JobSearch, Judgments, load_canonical
+from mozg_outreach.pipelines.seeker.recruiter import RecruiterLookup, RecruiterTarget
+from mozg_outreach.pipelines.seeker.search import JobSearch, Judgments, load_canonical
 from mozg_outreach.pipelines.steps import PipelineSteps
 
 from ..conftest import REPO_PROMPTS, RecordedRunner
 from .conftest import LONG_POSTING, REQUIREMENTS, TODAY, judgment, listing, scouted
 
-CANONICAL = REPO_PROMPTS / "job" / "sources" / "job_canonical.json"
+CANONICAL = REPO_PROMPTS / "seeker" / "sources" / "job_canonical.json"
 
 
 def source(name: str, *, allowed: bool = True, language: str = "en") -> JobSource:

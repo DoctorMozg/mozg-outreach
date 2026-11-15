@@ -6,7 +6,7 @@ import pytest
 
 from mozg_outreach.agents import PromptLibrary
 from mozg_outreach.domain import ProjectMode
-from mozg_outreach.pipelines.job.models import JobBrief, JudgeResult
+from mozg_outreach.pipelines.seeker.models import JobBrief, JudgeResult
 from mozg_outreach.pipelines.summary import RunSummary
 from mozg_outreach.runs.catalog import FLOWS
 from mozg_outreach.runs.manager import RunEnvironment, RunManager
@@ -15,8 +15,8 @@ from mozg_outreach.sources.models import FetchResult, SourceItem, SourceQuery
 from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import JsonObject, Project, SourceConfig
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner, Scripted
-from tests.pipelines.job.conftest import CV_TEXT, judgment
-from tests.pipelines.job.conftest import strategy as strategy  # fixture re-export
+from tests.pipelines.seeker.conftest import CV_TEXT, judgment
+from tests.pipelines.seeker.conftest import strategy as strategy  # fixture re-export
 
 NOW = datetime(2026, 11, 13, 9, tzinfo=UTC)
 SUMMARIZER = "seeker-run-summarizer"

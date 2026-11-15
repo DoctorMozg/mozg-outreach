@@ -18,11 +18,11 @@ from mozg_outreach.pipelines.freelance.search import (
     load_catalog,
     to_candidate,
 )
-from mozg_outreach.pipelines.job.models import Excluded, JobSource
 from mozg_outreach.pipelines.leads.enrichment import IDENTITY, LeadEnrichment, LeadTask, RunRef
 from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, field_task
 from mozg_outreach.pipelines.leads.identify import lead_input
 from mozg_outreach.pipelines.leads.models import LeadIdentity
+from mozg_outreach.pipelines.seeker.models import Excluded, JobSource
 from mozg_outreach.pipelines.summary import (
     RunSummary,
     SeekerRunSummarizer,

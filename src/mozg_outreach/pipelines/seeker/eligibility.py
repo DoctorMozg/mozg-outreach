@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from mozg_outreach.pipelines.job.models import CvProfile, Listing, PlacePreferences
+from mozg_outreach.pipelines.seeker.models import CvProfile, Listing, PlacePreferences
 
 
 def _codes(text: str) -> frozenset[str]:

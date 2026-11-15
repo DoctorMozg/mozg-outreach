@@ -4,8 +4,8 @@ from sqlalchemy import select
 
 from mozg_outreach.agents import AgentRunError
 from mozg_outreach.domain import RunStatus
-from mozg_outreach.pipelines.job.models import JobStrategy
 from mozg_outreach.pipelines.leads.enrichment import IDENTITY
+from mozg_outreach.pipelines.seeker.models import JobStrategy
 from mozg_outreach.runs.flow import GateAnswer
 from mozg_outreach.runs.job import JUDGMENT, LISTING
 from mozg_outreach.storage.db import Database

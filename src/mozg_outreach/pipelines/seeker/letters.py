@@ -15,8 +15,8 @@ from mozg_outreach.letters.models import (
     Skipped,
 )
 from mozg_outreach.naturalize.naturalizer import WORD_BUDGETS, Naturalizer, VoiceContext
-from mozg_outreach.pipelines.job.models import JobContacts, Listing, ListingJudgment
-from mozg_outreach.pipelines.job.skills import SkillMatch
+from mozg_outreach.pipelines.seeker.models import JobContacts, Listing, ListingJudgment
+from mozg_outreach.pipelines.seeker.skills import SkillMatch
 from mozg_outreach.pipelines.steps import PipelineSteps
 
 logger = logging.getLogger(__name__)
