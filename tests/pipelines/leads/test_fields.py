@@ -12,7 +12,7 @@ SPEC = FieldSpec(
 
 class TestFieldTask:
     def test_confirmed_company_supplies_the_subject(self) -> None:
-        lead = lead_input(listing(), "job", "long text " * 400)
+        lead = lead_input(listing(), "long text " * 400)
         task = field_task(7, lead, identity(company()), SPEC)
 
         subject = task.request.subject
@@ -25,7 +25,7 @@ class TestFieldTask:
         assert len(task.request.listing.summary) <= 1500, "summary capped like identification"
 
     def test_unconfirmed_company_falls_back_to_the_listed_name(self) -> None:
-        lead = lead_input(listing(company="Acme"), "job", "scope")
+        lead = lead_input(listing(company="Acme"), "scope")
         task = field_task(7, lead, identity(), SPEC)
 
         assert task.request.subject.model_dump() == {
@@ -37,6 +37,6 @@ class TestFieldTask:
         }
 
     def test_client_hidden_behind_a_board_has_no_name(self) -> None:
-        lead = lead_input(listing(company="Upwork"), "freelance", "scope", frozenset({"upwork"}))
+        lead = lead_input(listing(company="Upwork", kind="gig"), "scope", frozenset({"upwork"}))
 
         assert field_task(7, lead, None, SPEC).request.subject.name is None

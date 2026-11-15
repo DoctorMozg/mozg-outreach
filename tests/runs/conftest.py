@@ -6,7 +6,11 @@ import pytest
 
 from mozg_outreach.agents import PromptLibrary
 from mozg_outreach.domain import ProjectMode
-from mozg_outreach.pipelines.seeker.models import JobBrief, JudgeResult
+from mozg_outreach.pipelines.seeker.models import (
+    JudgeResult,
+    SearchScope,
+    SeekerBrief,
+)
 from mozg_outreach.pipelines.summary import RunSummary
 from mozg_outreach.runs.catalog import FLOWS
 from mozg_outreach.runs.manager import RunEnvironment, RunManager
@@ -74,17 +78,23 @@ class Harness:
 
     def script(self, script: dict[str, list[Scripted]]) -> None:
         """Each scripted search also gets a run summary unless the script brings its own."""
-        if "job-strategist" in script or "freelance-strategist" in script:
+        if "seeker-strategist" in script:
             quiet: dict[str, list[Scripted]] = {SUMMARIZER: [QUIET_SUMMARY]}
             script = quiet | script
         for name, results in script.items():
             self.runner._script.setdefault(name, []).extend(results)
 
-    def job_project(self) -> int:
+    def seeker_project(self, gigs: bool = False) -> int:
+        """A seeker project with a job feed; it searches jobs, and gigs when asked."""
+        seeker = SeekerBrief(
+            cv_text=CV_TEXT,
+            preferences="Remote EU",
+            gigs=SearchScope(recency_days=30) if gigs else None,
+        )
         with self.db.session() as session:
-            brief: JsonObject = JobBrief(cv_text=CV_TEXT, preferences="Remote EU").model_dump()
+            brief: JsonObject = seeker.model_dump()
             project = Project(
-                name="Jobs", mode=ProjectMode.JOB, sender_name="Stan Petrov", brief=brief
+                name="Search", mode=ProjectMode.SEEKER, sender_name="Stan Petrov", brief=brief
             )
             session.add(project)
             session.flush()

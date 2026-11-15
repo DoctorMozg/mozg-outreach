@@ -56,10 +56,10 @@ class TestRuns:
 class TestProjects:
     async def test_brief_is_validated_against_the_mode(self, api: Api) -> None:
         bad = await api.client.post(
-            "/api/projects", json={"name": "x", "mode": "job", "brief": biz_brief()}
+            "/api/projects", json={"name": "x", "mode": "seeker", "brief": biz_brief()}
         )
         assert bad.status_code == 422
-        project_id = await api.project("job", {"cv_text": CV_TEXT, "preferences": "Remote EU"})
+        project_id = await api.project("seeker", {"cv_text": CV_TEXT, "preferences": "Remote EU"})
         patched = await api.ok("PATCH", f"/api/projects/{project_id}", {"sender_tone": "warm"})
         assert patched["sender_tone"] == "warm"
         assert patched["brief"] is not None
@@ -70,24 +70,24 @@ class TestProjects:
         assert "offering" in str(schemas["brief"])
         assert "limit" in str(schemas["options"])
 
-    async def test_feeds_belong_to_job_projects(self, api: Api) -> None:
+    async def test_feeds_belong_to_seeker_projects(self, api: Api) -> None:
         biz = await api.project(brief=biz_brief())
         refused = await api.client.post(
             f"/api/projects/{biz}/sources", json={"kind": "greenhouse", "config": {}}
         )
         assert refused.status_code == 422
-        job = await api.project("job")
+        seeker = await api.project("seeker")
         added = await api.ok(
             "POST",
-            f"/api/projects/{job}/sources",
+            f"/api/projects/{seeker}/sources",
             {"kind": "greenhouse", "config": {"boards": ["acme"]}},
         )
-        kinds = [s["kind"] for s in await api.ok_list(f"/api/projects/{job}/sources")]
+        kinds = [s["kind"] for s in await api.ok_list(f"/api/projects/{seeker}/sources")]
         assert kinds == ["web_search", "greenhouse"]
         assert added["cursor"] is None
 
     async def test_only_the_same_item_waits_for_its_open_run(self, api: Api) -> None:
-        project_id = await api.project("job")
+        project_id = await api.project("seeker")
         with api.services.db.session() as session:
             rows = [
                 Item(project_id=project_id, kind=ItemKind.JOB, dedup_key=k, title=k, selected=True)
@@ -97,13 +97,13 @@ class TestProjects:
             session.flush()
             busy, free = rows[0].id, rows[1].id
             state: JsonObject = {"item_id": busy}
-            session.add(Run(project_id=project_id, pipeline="job.enrich", state=state))
+            session.add(Run(project_id=project_id, pipeline="seeker.enrich", state=state))
         clash = await api.client.post(f"/api/items/{busy}/enrich")
         assert clash.status_code == 409
         assert (await api.client.post(f"/api/items/{free}/enrich")).status_code == 202
 
     async def test_item_actions_need_selection_and_a_pipeline(self, api: Api) -> None:
-        project_id = await api.project("freelance")
+        project_id = await api.project("seeker")
         with api.services.db.session() as session:
             item = Item(project_id=project_id, kind=ItemKind.GIG, dedup_key="g", title="Gig")
             session.add(item)

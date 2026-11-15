@@ -6,8 +6,7 @@ import { href } from "../router";
 
 const MODES: { mode: Mode; label: string }[] = [
   { mode: "biz", label: "Business: find client companies" },
-  { mode: "job", label: "Job: salaried roles" },
-  { mode: "freelance", label: "Freelance: gigs and contracts" },
+  { mode: "seeker", label: "Seeker: salaried jobs and freelance gigs" },
 ];
 
 export function Projects(): ReactElement {

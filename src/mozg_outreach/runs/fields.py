@@ -5,9 +5,9 @@ from pydantic import Field
 from mozg_outreach.domain import ProjectMode
 from mozg_outreach.pipelines.biz.discovery import BizDiscovery
 from mozg_outreach.pipelines.biz.models import BizBrief, BriefReview
-from mozg_outreach.pipelines.fields import FieldProposalInput, FieldProposer, SeekerBrief
-from mozg_outreach.pipelines.freelance import search as freelance_search
-from mozg_outreach.pipelines.seeker import search as job_search
+from mozg_outreach.pipelines.fields import FieldProposalInput, FieldProposer, SeekerWants
+from mozg_outreach.pipelines.seeker.models import KINDS, SeekerBrief
+from mozg_outreach.pipelines.seeker.search import COLUMNS
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.storage.repositories import FieldSpecRepository
@@ -29,18 +29,20 @@ async def review(ctx: Ctx) -> PhaseResult:
     return None
 
 
-BUILT_IN = {ProjectMode.JOB: job_search.COLUMNS, ProjectMode.FREELANCE: freelance_search.COLUMNS}
+BUILT_IN = {ProjectMode.SEEKER: COLUMNS}
 
 
 async def propose(ctx: Ctx) -> PhaseResult:
     inputs = ProjectInputs.load(ctx.db, ctx.project_id)
     raw = inputs.require_brief()
-    # Job and freelance briefs hold the CV, which proposing fields doesn't need.
-    brief = (
-        BizBrief.model_validate(raw)
-        if inputs.mode == ProjectMode.BIZ
-        else SeekerBrief.model_validate(raw)
-    )
+    brief: BizBrief | SeekerWants
+    if inputs.mode == ProjectMode.BIZ:
+        brief = BizBrief.model_validate(raw)
+    else:
+        # The CV isn't needed to propose fields, only what the seeker wants.
+        seeker = SeekerBrief.model_validate(raw)
+        kinds = [k for k in KINDS if seeker.scope(k)]
+        brief = SeekerWants(preferences=seeker.preferences, kinds=kinds)
     proposal = await FieldProposer(ctx.steps).propose(
         FieldProposalInput(
             mode=inputs.mode,
@@ -63,9 +65,6 @@ BIZ_FIELDS = FlowSpec[FieldProposalState](
     state_type=FieldProposalState,
     phases=(Phase("review", review), Phase("propose", propose)),
 )
-JOB_FIELDS = FlowSpec[FieldProposalState](
-    pipeline="job.fields", state_type=FieldProposalState, phases=(Phase("propose", propose),)
-)
-FREELANCE_FIELDS = FlowSpec[FieldProposalState](
-    pipeline="freelance.fields", state_type=FieldProposalState, phases=(Phase("propose", propose),)
+SEEKER_FIELDS = FlowSpec[FieldProposalState](
+    pipeline="seeker.fields", state_type=FieldProposalState, phases=(Phase("propose", propose),)
 )

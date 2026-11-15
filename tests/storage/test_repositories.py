@@ -172,7 +172,7 @@ class TestItems:
 
 def test_deleting_project_cascades(db: Database) -> None:
     with db.session() as s:
-        p = Project(name="p", mode=ProjectMode.JOB, sender_name=None, brief=None)
+        p = Project(name="p", mode=ProjectMode.SEEKER, sender_name=None, brief=None)
         s.add(p)
         s.flush()
         s.add(Run(project_id=p.id, pipeline="job_search"))

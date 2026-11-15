@@ -1,22 +1,18 @@
 """Run summaries shared by every mode: patterns across the scored items, cited by item id."""
 
 import logging
-from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
 from mozg_outreach.domain import FieldScalar, FieldValue, ItemScore, ScoreAxis
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
-from mozg_outreach.pipelines.freelance.models import FreelanceStrategy
-from mozg_outreach.pipelines.seeker.models import JobStrategy
+from mozg_outreach.pipelines.seeker.models import KINDS, ListingKind, SeekerStrategy
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import Item
 
 logger = logging.getLogger(__name__)
-
-type Strategy = JobStrategy | FreelanceStrategy
 
 
 class ScoredItem(BaseModel):
@@ -41,7 +37,7 @@ class RunSummary(BaseModel):
 
 
 class SeekerSummaryInput(BaseModel):
-    mode: Literal["job", "freelance"]
+    kinds: list[ListingKind] = Field(min_length=1, description="What was searched.")
     preferences: str = Field(description="The seeker's own words about the work they want.")
     target_titles: list[str]
     must_have_skills: list[str]
@@ -51,15 +47,16 @@ class SeekerSummaryInput(BaseModel):
     @classmethod
     def build(
         cls,
-        mode: Literal["job", "freelance"],
         preferences: str,
-        strategy: Strategy,
+        strategy: SeekerStrategy,
         items: list[ScoredItem],
     ) -> "SeekerSummaryInput":
+        kinds = [k for k in KINDS if strategy.plan_for(k)]
+        plans = [p for p in (strategy.jobs, strategy.gigs) if p]
         return cls(
-            mode=mode,
+            kinds=kinds,
             preferences=preferences,
-            target_titles=strategy.cv.top_titles,
+            target_titles=list(dict.fromkeys(t for p in plans for t in p.titles)),
             must_have_skills=strategy.must_have_skills,
             must_have_or_groups=strategy.must_have_or_groups,
             items=best_first(items),

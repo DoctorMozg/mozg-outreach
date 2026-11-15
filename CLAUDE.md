@@ -44,7 +44,7 @@ The pipelines come from the `mz-biz-outreach` and `mz-job-outreach` plugins in h
 
 - `runs/`: flows as phase lists (`FlowSpec`), `RunManager` (one task per run, state saved after every phase, gates, resume), and the run event log behind SSE.
 - `api/`: FastAPI app and routes; `ui/` mirrors its response types in `ui/src/api.ts`, so change both together.
-- `pipelines/{biz,seeker,freelance}/`: agent steps and their pydantic contracts; `scoring/`, `letters/`, `naturalize/`, `registry/`, `sources/` and `storage/` hold the shared parts.
+- `pipelines/{biz,seeker}/`: agent steps and their pydantic contracts; `scoring/`, `letters/`, `naturalize/`, `registry/`, `sources/` and `storage/` hold the shared parts.
 
 ## Architecture decisions
 

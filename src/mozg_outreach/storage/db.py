@@ -28,13 +28,29 @@ class Database:
 
     def migrate(self) -> None:
         """Bring the schema to the newest revision, adopting a pre-migration database first."""
-        with self.engine.begin() as connection:
-            config = alembic_config(connection)
-            tables = inspect(connection).get_table_names()
-            if tables and "alembic_version" not in tables:
-                logger.info("stamping a pre-migration database at revision %s", BASELINE)
-                command.stamp(config, BASELINE)
-            command.upgrade(config, "head")
+        with self.engine.connect() as connection:
+            # Batch migrations rebuild a table by dropping it, which with foreign keys on would
+            # cascade-delete its children. SQLite only changes this pragma outside a transaction.
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()
+            try:
+                with connection.begin():
+                    self._upgrade(connection)
+            finally:
+                connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                connection.commit()
+
+    @staticmethod
+    def _upgrade(connection: Connection) -> None:
+        config = alembic_config(connection)
+        tables = inspect(connection).get_table_names()
+        if tables and "alembic_version" not in tables:
+            logger.info("stamping a pre-migration database at revision %s", BASELINE)
+            command.stamp(config, BASELINE)
+        command.upgrade(config, "head")
+        broken = connection.exec_driver_sql("PRAGMA foreign_key_check").all()
+        if broken:
+            raise RuntimeError(f"migration left rows with dangling foreign keys: {broken[:5]}")
 
     @contextmanager
     def session(self) -> Iterator[Session]:

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
-import { call, get, type Draft, type ItemDetail, type Project, type Run } from "../api";
+import { call, get, type Draft, type ItemDetail, type Run } from "../api";
 import { ErrorBox, Score, Section, Value } from "../components/common";
 import { Diff } from "../components/Diff";
 import { href } from "../router";
@@ -12,11 +12,6 @@ export function ItemView({ id }: { id: number }): ReactElement {
   const client = useQueryClient();
   const key = ["item", id];
   const item = useQuery({ queryKey: key, queryFn: () => get<ItemDetail>(`/api/items/${id}`) });
-  const project = useQuery({
-    queryKey: ["project", item.data?.project_id],
-    queryFn: () => get<Project>(`/api/projects/${item.data?.project_id}`),
-    enabled: item.data !== undefined,
-  });
   const refresh = (): void => void client.invalidateQueries({ queryKey: key });
   const select = useMutation({
     mutationFn: (selected: boolean) => call("PATCH", `/api/items/${id}`, { selected }),
@@ -28,7 +23,6 @@ export function ItemView({ id }: { id: number }): ReactElement {
   });
   const i = item.data;
   if (!i) return <ErrorBox error={item.error} />;
-  const mode = project.data?.mode;
 
   return (
     <div className="stack">
@@ -45,13 +39,13 @@ export function ItemView({ id }: { id: number }): ReactElement {
             <label>
               <input type="checkbox" checked={i.selected} onChange={(e) => select.mutate(e.target.checked)} /> selected
             </label>
-            {mode !== "freelance" && (
+            {i.kind !== "gig" && (
               <button className="secondary" disabled={!i.selected || start.isPending} onClick={() => start.mutate("enrich")}>
                 Enrich
               </button>
             )}
             <button disabled={!i.selected || start.isPending} onClick={() => start.mutate("letters")}>
-              {mode === "job" ? "Write cover letter" : mode === "freelance" ? "Write proposal" : "Write letters"}
+              {{ company: "Write letters", job: "Write cover letter", gig: "Write proposal" }[i.kind]}
             </button>
           </span>
         }

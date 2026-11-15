@@ -6,22 +6,19 @@ from mozg_outreach.domain import (
     FieldSpec,
     FieldType,
     FieldValue,
-    ProjectMode,
     RunStatus,
 )
 from mozg_outreach.pipelines.fields import FieldProposal, FieldResearchResult, ResearchedValue
-from mozg_outreach.pipelines.freelance.models import FreelanceBrief
-from mozg_outreach.pipelines.freelance.search import COLUMNS as GIGS
-from mozg_outreach.pipelines.seeker.models import JobStrategy, JudgeResult
-from mozg_outreach.pipelines.seeker.search import COLUMNS as JOBS
+from mozg_outreach.pipelines.seeker.models import JudgeResult, SeekerStrategy
+from mozg_outreach.pipelines.seeker.search import COLUMNS
 from mozg_outreach.runs.flow import GateAnswer
-from mozg_outreach.runs.job import JobSearchState
+from mozg_outreach.runs.seeker import SeekerSearchState
 from mozg_outreach.sources.models import SourceItem
-from mozg_outreach.storage.models import FieldSpecVersion, Item, JsonObject, Project, Run
+from mozg_outreach.storage.models import FieldSpecVersion, Item, JsonObject, Run
 from mozg_outreach.storage.repositories import FieldSpecRepository
 from tests.pipelines.conftest import Scripted
 from tests.pipelines.leads.conftest import CAREERS, company, identity
-from tests.pipelines.seeker.conftest import CV_TEXT, judgment
+from tests.pipelines.seeker.conftest import judgment
 
 from .conftest import FEED_URL, NOW, Harness
 
@@ -55,7 +52,7 @@ def research(team_size: object, visa: object) -> FieldResearchResult:
 
 
 async def finished_search(harness: Harness, project_id: int, options: JsonObject) -> Run:
-    run_id = harness.manager.start(project_id, "job.search", {"options": options})
+    run_id = harness.manager.start(project_id, "seeker.search", {"options": options})
     await harness.manager.wait(run_id)
     harness.manager.answer_gate(run_id, GateAnswer(approve=True))
     await harness.manager.wait(run_id)
@@ -68,53 +65,50 @@ async def finished_search(harness: Harness, project_id: int, options: JsonObject
 
 
 class TestFieldProposal:
-    async def test_job_proposes_from_preferences_without_cv_or_brief_review(
+    async def test_seeker_proposes_from_preferences_without_cv_or_brief_review(
         self, harness: Harness
     ) -> None:
-        project_id = harness.job_project()
+        project_id = harness.seeker_project(gigs=True)
         harness.script({"field-proposer": [FieldProposal(spec=SPEC, rationale="r")]})
-        run_id = harness.manager.start(project_id, "job.fields", {})
+        run_id = harness.manager.start(project_id, "seeker.fields", {})
         await harness.manager.wait(run_id)
 
         [sent] = harness.runner.payloads["field-proposer"]
-        assert sent.model_dump(mode="json")["mode"] == "job"
-        assert sent.model_dump(mode="json")["brief"] == {"preferences": "Remote EU"}
+        assert sent.model_dump(mode="json")["mode"] == "seeker"
+        assert sent.model_dump(mode="json")["brief"] == {
+            "preferences": "Remote EU",
+            "kinds": ["job", "gig"],
+        }
         assert "brief-reviewer" not in harness.runner.payloads
         with harness.db.session() as session:
             draft = session.scalars(select(FieldSpecVersion)).one()
             assert (draft.project_id, draft.accepted_at) == (project_id, None)
 
-    @pytest.mark.parametrize(
-        ("mode", "columns", "repeat"),
-        [
-            (ProjectMode.JOB, JOBS, "apply_url"),
-            (ProjectMode.FREELANCE, GIGS, "budget"),
-        ],
-    )
+    @pytest.mark.parametrize("repeat", ["apply_url", "pay"])
     async def test_built_in_columns_are_sent_and_repeats_dropped(
-        self, harness: Harness, mode: ProjectMode, columns: tuple[str, ...], repeat: str
+        self, harness: Harness, repeat: str
     ) -> None:
-        project_id = seeker_project(harness, mode)
+        project_id = harness.seeker_project()
         proposed = FieldSpec(fields=[*SPEC.fields, definition(repeat)])
         harness.script({"field-proposer": [FieldProposal(spec=proposed, rationale="r")]})
-        run_id = harness.manager.start(project_id, f"{mode.value}.fields", {})
+        run_id = harness.manager.start(project_id, "seeker.fields", {})
         await harness.manager.wait(run_id)
 
         [sent] = harness.runner.payloads["field-proposer"]
-        assert sent.model_dump()["built_in"] == list(columns)
+        assert sent.model_dump()["built_in"] == list(COLUMNS)
         assert draft_ids(harness) == ["team_size", "visa"]
 
     async def test_an_accepted_field_keeps_its_place_even_if_built_in(
         self, harness: Harness
     ) -> None:
-        project_id = harness.job_project()
+        project_id = harness.seeker_project()
         accepted = FieldSpec(fields=[definition("apply_url")])
         with harness.db.session() as session:
             repo = FieldSpecRepository(session)
             repo.accept(project_id, repo.propose(project_id, accepted).version)
         proposed = FieldSpec(fields=[definition("apply_url"), *SPEC.fields])
         harness.script({"field-proposer": [FieldProposal(spec=proposed, rationale="r")]})
-        run_id = harness.manager.start(project_id, "job.fields", {})
+        run_id = harness.manager.start(project_id, "seeker.fields", {})
         await harness.manager.wait(run_id)
 
         assert draft_ids(harness) == ["apply_url", "team_size", "visa"]
@@ -122,17 +116,6 @@ class TestFieldProposal:
 
 def definition(field_id: str) -> FieldDefinition:
     return FieldDefinition(id=field_id, label=field_id, type=FieldType.TEXT, description="d")
-
-
-def seeker_project(harness: Harness, mode: ProjectMode) -> int:
-    if mode == ProjectMode.JOB:
-        return harness.job_project()
-    brief: JsonObject = FreelanceBrief(cv_text=CV_TEXT, preferences="Remote EU").model_dump()
-    with harness.db.session() as session:
-        project = Project(name="Gigs", mode=mode, sender_name="Stan Petrov", brief=brief)
-        session.add(project)
-        session.flush()
-        return project.id
 
 
 def draft_ids(harness: Harness) -> list[str]:
@@ -145,9 +128,9 @@ def draft_ids(harness: Harness) -> list[str]:
 
 class TestSearchFields:
     async def test_top_lead_gets_typed_values_and_the_rest_are_skipped(
-        self, harness: Harness, strategy: JobStrategy
+        self, harness: Harness, strategy: SeekerStrategy
     ) -> None:
-        project_id = harness.job_project()
+        project_id = harness.seeker_project()
         accept_spec(harness, project_id)
         harness.feed.extra.append(
             SourceItem(
@@ -167,7 +150,7 @@ class TestSearchFields:
         judged = JudgeResult(judgments=[judgment(FEED_URL), judgment(OTHER_URL)], concerns=[])
         harness.script(
             {
-                "job-strategist": [strategy],
+                "seeker-strategist": [strategy],
                 "seeker-judge": [judged],
                 "lead-identifier": [identity(company()), identity(company())],
                 "field-researcher": [research(12, "yes")],
@@ -177,7 +160,7 @@ class TestSearchFields:
 
         [request] = harness.runner.payloads["field-researcher"]
         sent = request.model_dump()
-        state = JobSearchState.model_validate(run.state)
+        state = SeekerSearchState.model_validate(run.state)
         top_id, other_id = state.item_ids
         with harness.db.session() as session:
             top, other = session.get(Item, top_id), session.get(Item, other_id)
@@ -192,11 +175,11 @@ class TestSearchFields:
         assert any("'visa'" in c for c in state.concerns)
 
     async def test_no_accepted_spec_or_zero_top_skips_research(
-        self, harness: Harness, strategy: JobStrategy
+        self, harness: Harness, strategy: SeekerStrategy
     ) -> None:
-        project_id = harness.job_project()
+        project_id = harness.seeker_project()
         script: dict[str, list[Scripted]] = {
-            "job-strategist": [strategy],
+            "seeker-strategist": [strategy],
             "seeker-judge": [JudgeResult(judgments=[judgment(FEED_URL)], concerns=[])],
             "lead-identifier": [identity()],
         }

@@ -1,4 +1,4 @@
-"""Contracts between the job-search pipeline and its agents, and the normalized listings."""
+"""Contracts between the seeker pipeline and its agents, and the normalized listings."""
 
 import re
 from datetime import date
@@ -13,6 +13,7 @@ RemotePreference = Literal["required", "preferred", "no"]
 Period = Literal["year", "month", "day", "hour"]
 PayBasis = Literal["year", "month", "day", "hour", "project"]
 ListingKind = Literal["job", "gig"]
+KINDS: tuple[ListingKind, ...] = ("job", "gig")
 Discipline = Literal["engineering", "design", "marketing", "product", "data", "ops", "founder"]
 # Salaried and freelance work on one scale, so one preference list covers both kinds.
 EngagementType = Literal[
@@ -36,17 +37,6 @@ ExcludedReason = Literal[
     "missing_must_have",
     "salary_below_floor",
 ]
-
-
-class JobBrief(BaseModel):
-    """What the user gives a job project: their CV text and what they want."""
-
-    cv_text: str = Field(min_length=200, description="The CV as plain text or markdown.")
-    preferences: str = Field(min_length=1)
-    recency_days: int = Field(default=7, ge=1, le=90)
-    limit: int = Field(default=50, ge=1, le=200)
-    contacts_top_n: int = Field(default=10, ge=0, le=50)
-    letters_top_n: int = Field(default=10, ge=0, le=50)
 
 
 class Money(BaseModel):
@@ -73,14 +63,6 @@ class CvProfile(BaseModel):
 class PlacePreferences(BaseModel):
     remote: RemotePreference
     regions_allowed: list[str] = Field(description="Region codes like EU, EMEA, US or 'anywhere'.")
-
-
-class JobPreferences(PlacePreferences):
-    employment_type: Literal["full-time", "part-time", "contract", "any"] = "any"
-    excluded_industries: list[str]
-    excluded_company_attributes: list[str]
-    salary_floor: Money | None = Field(description="Null unless the user named a minimum.")
-    deal_breakers: list[str]
 
 
 class ScoringWeights(BaseModel):
@@ -123,32 +105,6 @@ class SkillRules(BaseModel):
     must_have_or_groups: list[list[str]]
     nice_to_have_skills: list[str]
     synonym_clusters: dict[str, list[str]] = Field(description="Canonical skill to its synonyms.")
-
-
-class JobStrategyInput(BaseModel):
-    cv_text: str
-    preferences: str
-    recency_days: int
-    feedback: str | None = Field(default=None, description="The user's notes on a rejected draft.")
-
-
-class JobStrategy(SkillRules):
-    cv: CvProfile
-    preferences: JobPreferences
-    search_queries: dict[str, list[str]] = Field(description="Queries keyed by target title.")
-    title_aliases: dict[str, list[str]]
-    bilingual_query_variants: dict[str, list[str]] = Field(
-        description="Keyed by language code; empty unless the CV lists a language at B2 or above."
-    )
-    work_auth_blockers: list[str] = Field(description="Listing phrases that rule the user out.")
-    scoring_weights: ScoringWeights
-    scoring_rationale: str
-    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
-
-    def skills(self) -> list[str]:
-        """Must-haves first, then the CV's skills in its order, which leads with the core stack."""
-        grouped = [s for group in self.must_have_or_groups for s in group]
-        return list(dict.fromkeys([*self.must_have_skills, *grouped, *self.cv.skills]))
 
 
 class SearchScope(BaseModel):
@@ -266,42 +222,6 @@ class ScoutInput(BaseModel):
     max_results: int = Field(ge=1, le=50)
 
 
-class JobSource(BaseModel):
-    name: str
-    url: str
-    type: str = Field(description="Free label: global, regional, niche, ATS, guidance...")
-    tier: Literal["canonical", "augmented"]
-    relevance_score: int = Field(ge=1, le=10)
-    scrape_hints: str = ""
-    access_notes: str = ""
-    language_hint: str = "en"
-    scrape_allowed: bool = True
-    discipline: str | None = Field(default=None, description="Freelance boards: comma list.")
-    guidance_note: str | None = Field(default=None, description="How to get in, for gated sites.")
-
-
-class SourceResearchInput(BaseModel):
-    strategy: JobStrategy
-    canonical: list[JobSource]
-    mode: Literal["job"] = "job"
-
-
-class SourcePlan(BaseModel):
-    augmented: list[JobSource]
-    concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
-
-
-class JobScoutInput(BaseModel):
-    source: JobSource
-    target_titles: list[str]
-    queries: list[str]
-    title_aliases: list[str]
-    skills: list[str]
-    region_hint: str
-    recency_days: int
-    max_results: int = Field(ge=1, le=50)
-
-
 class TelegramContact(BaseModel):
     """The person a Telegram post says to write to, checked against the post itself."""
 
@@ -327,7 +247,7 @@ class ScoutedListing(BaseModel):
     application_method_raw: str | None = None
 
 
-class JobScoutResult(BaseModel):
+class ScoutResult(BaseModel):
     listings: list[ScoutedListing]
     queries_used: list[str]
     zero_results_verified: bool = Field(

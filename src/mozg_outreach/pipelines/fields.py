@@ -14,20 +14,22 @@ from mozg_outreach.domain import (
     ProjectMode,
 )
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION, BizBrief
+from mozg_outreach.pipelines.seeker.models import ListingKind
 from mozg_outreach.pipelines.steps import PipelineSteps
 
 logger = logging.getLogger(__name__)
 
 
-class SeekerBrief(BaseModel):
-    """A job or freelance brief without the CV, which proposing fields doesn't need."""
+class SeekerWants(BaseModel):
+    """A seeker brief without the CV, which proposing fields doesn't need."""
 
     preferences: str
+    kinds: list[ListingKind] = Field(min_length=1, description="What is searched.")
 
 
 class FieldProposalInput(BaseModel):
     mode: ProjectMode
-    brief: BizBrief | SeekerBrief
+    brief: BizBrief | SeekerWants
     current_spec: FieldSpec | None = None
     built_in: list[str] = Field(default_factory=list, description="Columns the report always has.")
 

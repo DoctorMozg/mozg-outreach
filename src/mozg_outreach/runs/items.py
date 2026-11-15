@@ -3,24 +3,23 @@
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from mozg_outreach.domain import ItemKind
 from mozg_outreach.letters.composer import WrittenLetter
 from mozg_outreach.letters.models import Skipped
 from mozg_outreach.naturalize.naturalizer import Naturalizer
 from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.biz.outreach import BizOutreach
-from mozg_outreach.pipelines.freelance.models import FreelanceBrief, FreelanceStrategy
-from mozg_outreach.pipelines.freelance.proposals import ProposalRequest, ProposalWriter
 from mozg_outreach.pipelines.leads.ingest import LeadRegistryIngest
 from mozg_outreach.pipelines.seeker.letters import CoverLetterRequest, JobLetterWriter
-from mozg_outreach.pipelines.seeker.models import JobBrief, JobContacts, JobStrategy
+from mozg_outreach.pipelines.seeker.models import JobContacts, SeekerBrief, SeekerStrategy
+from mozg_outreach.pipelines.seeker.proposals import ProposalRequest, ProposalWriter
 from mozg_outreach.pipelines.seeker.screening import listing_text
-from mozg_outreach.pipelines.seeker.search import JobSearch
+from mozg_outreach.pipelines.seeker.search import SeekerSearch
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
-from mozg_outreach.runs.freelance import gig_of
 from mozg_outreach.runs.inputs import ProjectInputs, load_voice, search_state
-from mozg_outreach.runs.job import CONTACTS, listing_of
+from mozg_outreach.runs.seeker import CONTACTS, listing_of
 from mozg_outreach.storage.models import Item
 from mozg_outreach.storage.repositories import DraftRepository, ItemRepository, NewDraft
 
@@ -59,7 +58,8 @@ def _store(ctx: Ctx, letter: WrittenLetter | Skipped) -> None:
                 review=letter.review,
             ),
         )
-        ctx.emit("draft", {"draft_id": draft.id, "recipient": letter.recipient})
+    # Emitting writes an event row, which must wait until this session releases its write lock.
+    ctx.emit("draft", {"draft_id": draft.id, "recipient": letter.recipient})
 
 
 async def biz_enrich(ctx: Ctx) -> PhaseResult:
@@ -84,10 +84,11 @@ async def biz_letters(ctx: Ctx) -> PhaseResult:
     return None
 
 
-async def job_enrich(ctx: Ctx) -> PhaseResult:
+async def seeker_enrich(ctx: Ctx) -> PhaseResult:
+    """Find who to write to about a job; a gig is answered on its own board."""
     item, _ = _item(ctx)
     listing, _ = listing_of(item)
-    contacts = await JobSearch(ctx.steps, []).contacts(listing)
+    contacts = await SeekerSearch(ctx.steps, []).contacts(listing)
     with ctx.db.session() as session:
         row = _row(session, ctx.state.item_id)
         ItemRepository(session).set_detail(row, CONTACTS, contacts)
@@ -97,42 +98,39 @@ async def job_enrich(ctx: Ctx) -> PhaseResult:
     return None
 
 
-async def job_letter(ctx: Ctx) -> PhaseResult:
+async def seeker_letter(ctx: Ctx) -> PhaseResult:
+    """A cover letter for a job, a proposal for a gig."""
     item, state = _item(ctx)
-    strategy = JobStrategy.model_validate(state["strategy"])
+    strategy = SeekerStrategy.model_validate(state["strategy"])
     listing, judgment = listing_of(item)
-    found = item.details.get(CONTACTS)
     inputs = ProjectInputs.load(ctx.db, ctx.project_id)
-    letter = await JobLetterWriter(ctx.steps, Naturalizer(ctx.steps)).write(
-        CoverLetterRequest(
-            listing=listing,
-            judgment=judgment,
-            contacts=JobContacts.model_validate(found) if found else None,
-            skills=SkillMatcher(strategy).match(listing_text(listing)),
-            cv_text=JobBrief.model_validate(inputs.require_brief()).cv_text,
-            sender=inputs.sender(),
-            voice=load_voice(ctx.db, "cover_letter"),
+    cv_text = SeekerBrief.model_validate(inputs.require_brief()).cv_text
+    skills = SkillMatcher(strategy).match(listing_text(listing))
+    naturalizer = Naturalizer(ctx.steps)
+    if listing.kind == "gig":
+        letter = await ProposalWriter(ctx.steps, naturalizer).write(
+            ProposalRequest(
+                gig=listing,
+                skills=skills,
+                rate=strategy.preferences.rate_floor,
+                cv_text=cv_text,
+                sender=inputs.sender(),
+                voice=load_voice(ctx.db, "proposal"),
+            )
         )
-    )
-    _store(ctx, letter)
-    return None
-
-
-async def freelance_proposal(ctx: Ctx) -> PhaseResult:
-    item, state = _item(ctx)
-    strategy = FreelanceStrategy.model_validate(state["strategy"])
-    gig, _ = gig_of(item)
-    inputs = ProjectInputs.load(ctx.db, ctx.project_id)
-    letter = await ProposalWriter(ctx.steps, Naturalizer(ctx.steps)).write(
-        ProposalRequest(
-            gig=gig,
-            skills=SkillMatcher(strategy).match(listing_text(gig)),
-            rate=strategy.preferences.rate_floor,
-            cv_text=FreelanceBrief.model_validate(inputs.require_brief()).cv_text,
-            sender=inputs.sender(),
-            voice=load_voice(ctx.db, "proposal"),
+    else:
+        found = item.details.get(CONTACTS)
+        letter = await JobLetterWriter(ctx.steps, naturalizer).write(
+            CoverLetterRequest(
+                listing=listing,
+                judgment=judgment,
+                contacts=JobContacts.model_validate(found) if found else None,
+                skills=skills,
+                cv_text=cv_text,
+                sender=inputs.sender(),
+                voice=load_voice(ctx.db, "cover_letter"),
+            )
         )
-    )
     _store(ctx, letter)
     return None
 
@@ -144,21 +142,20 @@ def _single(pipeline: str, phase: Phase[ItemState]) -> FlowSpec[ItemState]:
 ITEM_FLOWS = (
     _single("biz.enrich", Phase("enrich", biz_enrich)),
     _single("biz.letters", Phase("letters", biz_letters)),
-    _single("job.enrich", Phase("contacts", job_enrich)),
-    _single("job.letters", Phase("cover_letter", job_letter)),
-    _single("freelance.letters", Phase("proposal", freelance_proposal)),
+    _single("seeker.enrich", Phase("contacts", seeker_enrich)),
+    _single("seeker.letters", Phase("letter", seeker_letter)),
 )
 
 
 class ItemAction(BaseModel):
-    """Which item pipelines exist per project mode, for the API to validate requests."""
+    """Which item pipelines exist per item kind, for the API to validate requests."""
 
     enrich: str | None
     letters: str
 
 
 ITEM_ACTIONS = {
-    "biz": ItemAction(enrich="biz.enrich", letters="biz.letters"),
-    "job": ItemAction(enrich="job.enrich", letters="job.letters"),
-    "freelance": ItemAction(enrich=None, letters="freelance.letters"),
+    ItemKind.COMPANY: ItemAction(enrich="biz.enrich", letters="biz.letters"),
+    ItemKind.JOB: ItemAction(enrich="seeker.enrich", letters="seeker.letters"),
+    ItemKind.GIG: ItemAction(enrich=None, letters="seeker.letters"),
 }

@@ -13,7 +13,6 @@ from mozg_outreach.pipelines.leads.models import (
     IdentifiedCompany,
     LeadIdentity,
     LeadInput,
-    LeadMode,
     NamedPerson,
 )
 from mozg_outreach.pipelines.seeker.models import Listing
@@ -50,14 +49,12 @@ class LeadIdentifier:
         return list(await asyncio.gather(*(self.identify(lead) for lead in leads)))
 
 
-def lead_input(
-    listing: Listing, mode: LeadMode, summary: str, hidden: frozenset[str] = frozenset()
-) -> LeadInput:
+def lead_input(listing: Listing, summary: str, hidden: frozenset[str] = frozenset()) -> LeadInput:
     """`hidden` holds board names: a client shown as the board itself is no client name at all."""
     named = listing.company.strip()
     organization = None if not named or named.casefold() in hidden else named
     return LeadInput(
-        mode=mode,
+        kind=listing.kind,
         title=listing.title,
         organization=organization,
         url=listing.url,

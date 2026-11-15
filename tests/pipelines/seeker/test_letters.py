@@ -6,7 +6,7 @@ from mozg_outreach.letters.models import LetterBrief, LetterDraft, SenderSetting
 from mozg_outreach.naturalize.models import NaturalizeResult
 from mozg_outreach.naturalize.naturalizer import Naturalizer
 from mozg_outreach.pipelines.seeker.letters import CoverLetterRequest, JobLetterWriter
-from mozg_outreach.pipelines.seeker.models import JobContacts, JobStrategy, NamedContact
+from mozg_outreach.pipelines.seeker.models import JobContacts, NamedContact, SeekerStrategy
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.steps import PipelineSteps
 
@@ -48,7 +48,7 @@ def contacts(email: str | None) -> JobContacts:
 
 
 async def write(
-    strategy: JobStrategy, found: JobContacts | None, tmp_path: Path
+    strategy: SeekerStrategy, found: JobContacts | None, tmp_path: Path
 ) -> tuple[WrittenLetter, RecordedRunner]:
     reader = found.named_contact.name if found and found.named_contact else "Hiring Team"
     framed = f"Dear {reader},\n\n{BODY}\n\nThanks,\nStan"
@@ -80,7 +80,7 @@ async def write(
 
 
 async def test_no_named_contact_goes_to_hiring_team_via_apply_form(
-    strategy: JobStrategy, tmp_path: Path
+    strategy: SeekerStrategy, tmp_path: Path
 ) -> None:
     letter, runner = await write(strategy, None, tmp_path)
     lines = letter.text.splitlines()
@@ -98,7 +98,7 @@ async def test_no_named_contact_goes_to_hiring_team_via_apply_form(
 
 
 async def test_named_contact_email_is_used_and_guesses_are_not(
-    strategy: JobStrategy, tmp_path: Path
+    strategy: SeekerStrategy, tmp_path: Path
 ) -> None:
     letter, _ = await write(strategy, contacts("jane@acme.example"), tmp_path)
     assert letter.text.startswith("Dear Jane Example,")

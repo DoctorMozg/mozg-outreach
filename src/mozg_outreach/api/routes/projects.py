@@ -21,10 +21,9 @@ from mozg_outreach.api.schemas import (
 from mozg_outreach.api.services import Services, get_or_404, services
 from mozg_outreach.domain import FieldSpec, ProjectMode
 from mozg_outreach.pipelines.biz.models import BizBrief
-from mozg_outreach.pipelines.freelance.models import FreelanceBrief
-from mozg_outreach.pipelines.seeker.models import JobBrief
+from mozg_outreach.pipelines.seeker.models import SeekerBrief
 from mozg_outreach.runs.catalog import FIELD_PIPELINES, SEARCH_OPTIONS
-from mozg_outreach.runs.job import WEB_SEARCH
+from mozg_outreach.runs.seeker import WEB_SEARCH
 from mozg_outreach.sources.factory import source_kinds
 from mozg_outreach.storage.models import FieldSpecVersion, JsonObject, Project, Run, SourceConfig
 from mozg_outreach.storage.repositories import FieldSpecRepository
@@ -35,15 +34,14 @@ Svc = Annotated[Services, Depends(services)]
 
 BRIEFS: dict[ProjectMode, type[BaseModel]] = {
     ProjectMode.BIZ: BizBrief,
-    ProjectMode.JOB: JobBrief,
-    ProjectMode.FREELANCE: FreelanceBrief,
+    ProjectMode.SEEKER: SeekerBrief,
 }
-# Feed adapters only serve job projects; biz and freelance search the web through agents.
+# Feed adapters only serve seeker projects; biz searches the web through agents.
 SOURCE_NOTES = {
     WEB_SEARCH: "Agents search and read the web.",
     "telegram": (
         "Reads public channels with your Telegram login; run telegram_login first. With "
-        "discover: true, job runs search Telegram for job channels and ask you to approve them."
+        "discover: true, seeker runs search Telegram for job channels and ask you to approve them."
     ),
 }
 
@@ -161,7 +159,7 @@ async def propose_fields(project_id: int, svc: Svc) -> RunOut:
 async def list_source_kinds() -> list[SourceKindOut]:
     web = SourceKindOut(kind=WEB_SEARCH, modes=list(ProjectMode), note=SOURCE_NOTES[WEB_SEARCH])
     feeds = [
-        SourceKindOut(kind=k, modes=[ProjectMode.JOB], note=SOURCE_NOTES.get(k, "Job feed."))
+        SourceKindOut(kind=k, modes=[ProjectMode.SEEKER], note=SOURCE_NOTES.get(k, "Job feed."))
         for k in source_kinds()
     ]
     return [web, *feeds]
@@ -180,8 +178,8 @@ def _check_source(svc: Services, mode: ProjectMode, kind: str, config: JsonObjec
         if config:
             raise HTTPException(422, "web_search takes no config")
         return
-    if mode != ProjectMode.JOB:
-        raise HTTPException(422, f"{kind} feeds serve job projects only")
+    if mode != ProjectMode.SEEKER:
+        raise HTTPException(422, f"{kind} feeds serve seeker projects only")
     try:
         svc.adapters(kind, config)
     except ValueError as exc:  # unknown kind, or a config the adapter's model rejects

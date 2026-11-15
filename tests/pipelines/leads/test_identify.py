@@ -67,7 +67,7 @@ class TestAcceptIdentity:
 
 class TestLeadInput:
     def test_names_the_organization_as_listed(self) -> None:
-        lead = lead_input(listing(), "job", "x" * 5000)
+        lead = lead_input(listing(), "x" * 5000)
 
         assert lead.organization == "Acme GmbH"
         assert len(lead.summary) == 1500
@@ -75,14 +75,14 @@ class TestLeadInput:
     def test_a_client_shown_as_the_board_is_hidden(self) -> None:
         gig = listing(company="Malt", sources=["Malt"])
 
-        lead = lead_input(gig, "freelance", "scope", frozenset({"malt"}))
+        lead = lead_input(gig, "scope", frozenset({"malt"}))
 
         assert lead.organization is None
 
     def test_a_post_without_a_company_starts_from_its_vacancy_link(self) -> None:
         post = listing(company="", apply_url="https://career.habr.com/vacancies/1")
 
-        lead = lead_input(post, "job", "Python developer, remote")
+        lead = lead_input(post, "Python developer, remote")
 
         assert (lead.organization, lead.apply_url) == (None, "https://career.habr.com/vacancies/1")
 
@@ -93,7 +93,7 @@ async def test_a_failed_identification_is_a_concern(tmp_path: Path) -> None:
     }
     steps = PipelineSteps(RecordedRunner(script), PromptLibrary(REPO_PROMPTS), tmp_path)
 
-    [outcome] = await LeadIdentifier(steps).identify_many([lead_input(listing(), "job", "s")])
+    [outcome] = await LeadIdentifier(steps).identify_many([lead_input(listing(), "s")])
 
     assert outcome.identity is None
     assert "out of turns" in outcome.concerns[0]

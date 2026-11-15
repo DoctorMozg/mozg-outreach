@@ -106,7 +106,7 @@ class TestIdentity:
     def test_the_same_domain_in_another_project_is_one_company(
         self, session: Session, lead: Listing, context: IngestContext, run: Run
     ) -> None:
-        other = Project(name="Second search", mode=ProjectMode.JOB, brief=None)
+        other = Project(name="Second search", mode=ProjectMode.SEEKER, brief=None)
         session.add(other)
         session.flush()
         again = context_for(session, other, run, lead)

@@ -1,10 +1,10 @@
 # mozg-outreach
 
-A local web service for outreach: find client companies (biz), job openings (job) or freelance gigs (freelance), score them, enrich the ones you pick, and get draft letters in your own voice. It never sends anything. Drafts only.
+A local web service for outreach: find client companies (biz), or job openings and freelance gigs for one person (seeker), score them, enrich the ones you pick, and get draft letters in your own voice. It never sends anything. Drafts only.
 
 - **Projects** hold a brief. For biz projects the AI proposes the report fields from the brief, and you edit and accept them.
 - **Runs** search your chosen sources. A run pauses at a strategy approval gate, so you can edit the plan before the search starts. Scores are computed in Python from per-axis features, each with a reason.
-- **Leads** you select can be enriched (biz and job) and turned into letters, cover letters or proposals. Every draft is rewritten toward your voice, built from your writing samples and style rules.
+- **Leads** you select can be enriched (companies and jobs) and turned into letters, cover letters or proposals. Every draft is rewritten toward your voice, built from your writing samples and style rules.
 - **Registry**: people and companies from all projects live in one global registry with profiles, the sources each was seen in, merge suggestions and a graph.
 - **AI steps** run on your locally installed Claude Code through the Claude Agent SDK, using your subscription login. There is no Anthropic API key.
 
@@ -37,11 +37,11 @@ Open <http://127.0.0.1:8742>. The server binds to localhost only and has no auth
 
 Before step 6, open **Voice** and paste messages you wrote yourself, per channel (`email`, `dm`, `cover_letter`, `proposal`). Add style rules, one per line, and build the profile. Your rules win over inferred style.
 
-Job projects work the same way without the fields step. Freelance projects have no enrich action: you go from selected lead to proposal.
+Seeker projects work the same way without the fields step, and search salaried jobs, freelance gigs or both in one run. Gigs have no enrich action: you go from selected gig to proposal.
 
 ## Data sources
 
-Web search is available to every mode: agents search and read the web. Feed adapters serve job projects only. Kinds registered in `src/mozg_outreach/sources/factory.py`:
+Web search is available to every mode: agents search and read the web. Feed adapters serve seeker projects only and give jobs. Kinds registered in `src/mozg_outreach/sources/factory.py`:
 
 `greenhouse`, `lever`, `ashby`, `remotive`, `remoteok`, `arbeitnow`, `hn_whoishiring`, `telegram`
 

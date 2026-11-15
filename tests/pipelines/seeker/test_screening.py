@@ -1,7 +1,7 @@
 import pytest
 
 from mozg_outreach.pipelines.seeker.eligibility import EligibilityChecker, places_in
-from mozg_outreach.pipelines.seeker.models import JobBrief, JobStrategy
+from mozg_outreach.pipelines.seeker.models import SeekerStrategy
 from mozg_outreach.pipelines.seeker.screening import ListingScreener, ScreenRules
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher, _pattern
 
@@ -9,7 +9,7 @@ from .conftest import TODAY, listing, scouted
 
 
 @pytest.fixture
-def checker(strategy: JobStrategy) -> EligibilityChecker:
+def checker(strategy: SeekerStrategy) -> EligibilityChecker:
     return EligibilityChecker(strategy.cv, strategy.preferences, strategy.work_auth_blockers)
 
 
@@ -60,25 +60,25 @@ class TestSkills:
     def test_term_boundaries(self, term: str, text: str, found: bool) -> None:
         assert bool(_pattern(term).search(text)) is found
 
-    def test_synonym_satisfies_an_or_group(self, strategy: JobStrategy) -> None:
+    def test_synonym_satisfies_an_or_group(self, strategy: SeekerStrategy) -> None:
         match = SkillMatcher(strategy).match("Python on Postgres")
         assert match.gate_passed
         assert match.or_groups[0].term == "Postgres"
         assert not match.or_groups[0].canonical
 
-    def test_partial_match_passes_the_gate(self, strategy: JobStrategy) -> None:
+    def test_partial_match_passes_the_gate(self, strategy: SeekerStrategy) -> None:
         match = SkillMatcher(strategy).match("Java and MySQL")
         assert match.missing_must_haves == ["Python"]
         assert match.gate_passed
         assert not match.complete
 
-    def test_no_required_skill_fails_the_gate(self, strategy: JobStrategy) -> None:
+    def test_no_required_skill_fails_the_gate(self, strategy: SeekerStrategy) -> None:
         assert not SkillMatcher(strategy).match("Java and Oracle").gate_passed
 
 
 class TestScreener:
-    def test_kept_listings_come_newest_first(self, strategy: JobStrategy, brief: JobBrief) -> None:
-        screening = ListingScreener(ScreenRules.for_jobs(strategy, brief), TODAY).screen(
+    def test_kept_listings_come_newest_first(self, strategy: SeekerStrategy) -> None:
+        screening = ListingScreener(ScreenRules.for_seeker(strategy, 7), TODAY).screen(
             [
                 scouted("telegram", url="https://t.me/a/1", title="Old", posted_date="2026-11-09"),
                 scouted(url="https://a.example/2", title="New", posted_date="2026-11-14"),
@@ -87,8 +87,8 @@ class TestScreener:
         )
         assert [item.title for item in screening.kept] == ["New", "Old", "Undated"]
 
-    def test_each_gate_names_its_reason(self, strategy: JobStrategy, brief: JobBrief) -> None:
-        screening = ListingScreener(ScreenRules.for_jobs(strategy, brief), TODAY).screen(
+    def test_each_gate_names_its_reason(self, strategy: SeekerStrategy) -> None:
+        screening = ListingScreener(ScreenRules.for_seeker(strategy, 7), TODAY).screen(
             [
                 scouted(),
                 scouted(url="https://a.example/1", title="Old", posted_date="2026-10-01"),

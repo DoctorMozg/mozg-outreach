@@ -1,125 +1,217 @@
+from datetime import timedelta
 from pathlib import Path
-
-import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
 from mozg_outreach.pipelines.seeker.judge import Judgments
+from mozg_outreach.pipelines.seeker.listings import SourcedListing
 from mozg_outreach.pipelines.seeker.models import (
     AGENT_CHARS,
+    GIG_WEIGHTS,
+    JOB_WEIGHTS,
     OPENING_CHARS,
+    Board,
+    BoardPlan,
     ContactInput,
-    JobBrief,
     JobContacts,
-    JobScoutInput,
-    JobScoutResult,
-    JobSource,
-    JobStrategy,
     JudgeInput,
     JudgeResult,
-    SourcePlan,
+    ScoutInput,
+    ScoutResult,
+    SearchScope,
+    SeekerBrief,
+    SeekerStrategy,
+    SeekerStrategyInput,
 )
 from mozg_outreach.pipelines.seeker.recruiter import RecruiterLookup, RecruiterTarget
-from mozg_outreach.pipelines.seeker.search import JobSearch, load_canonical
+from mozg_outreach.pipelines.seeker.search import SeekerSearch, load_boards
 from mozg_outreach.pipelines.steps import PipelineSteps
 
 from ..conftest import REPO_PROMPTS, RecordedRunner
-from .conftest import LONG_POSTING, REQUIREMENTS, TODAY, judgment, listing, scouted
+from .conftest import LONG_POSTING, REQUIREMENTS, TODAY, board, judgment, listing, scouted
 
-CANONICAL = REPO_PROMPTS / "seeker" / "sources" / "job_canonical.json"
-
-
-def source(name: str, *, allowed: bool = True, language: str = "en") -> JobSource:
-    return JobSource(
-        name=name,
-        url=f"https://{name.lower()}.example/",
-        type="global",
-        tier="augmented",
-        relevance_score=7,
-        scrape_hints="",
-        access_notes="",
-        language_hint=language,
-        scrape_allowed=allowed,
-    )
+BOARDS = REPO_PROMPTS / "seeker" / "sources" / "boards.json"
+GIG_URL = "https://malt.example/p/0"
 
 
-def scout_result(*urls: str) -> JobScoutResult:
-    return JobScoutResult(
-        listings=[scouted(url=u).listing for u in urls],
-        queries_used=["q"],
-        zero_results_verified=not urls,
-        concerns=[],
-    )
+def search(
+    runner: RecordedRunner, tmp_path: Path, boards: list[Board] | None = None
+) -> SeekerSearch:
+    steps = PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path)
+    return SeekerSearch(steps, boards or [])
 
 
-def search(runner: RecordedRunner, tmp_path: Path, canonical: list[JobSource]) -> JobSearch:
-    return JobSearch(PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path), canonical)
-
-
-def test_canonical_boards_load_and_exclude_tos_sites() -> None:
-    boards = load_canonical(CANONICAL)
-    blocked = {b.name for b in boards if not b.scrape_allowed}
+def test_catalog_blocks_tos_sites_and_marks_gated_networks_as_guidance() -> None:
+    boards = load_boards(BOARDS)
+    blocked = {b.name for b in boards if not b.scrape_allowed and b.type != "guidance"}
     assert blocked == {"LinkedIn Jobs", "Indeed"}
+    assert all(b.guidance_note for b in boards if b.type == "guidance")
 
 
-class TestPlanning:
-    async def test_must_have_missing_from_cv_becomes_a_concern(
-        self, tmp_path: Path, strategy: JobStrategy, brief: JobBrief
+class TestPlan:
+    async def test_jobs_only_brief_drops_the_gig_plan_and_gig_engagements(
+        self, tmp_path: Path, brief: SeekerBrief, strategy: SeekerStrategy
     ) -> None:
-        drafted = strategy.model_copy(update={"must_have_skills": ["Python", "Scala"]})
-        runner = RecordedRunner({"job-strategist": [drafted]})
-        planned = await search(runner, tmp_path, []).plan(brief, feedback="more Go roles")
-        assert planned.concerns == ["Must-have skills not found in the CV skills list: Scala"]
-        assert runner.payloads["job-strategist"][0].model_dump()["feedback"] == "more Go roles"
+        brief = brief.model_copy(update={"gigs": None})
+        runner = RecordedRunner({"seeker-strategist": [strategy]})
 
-    async def test_sources_drop_blocked_and_duplicate_boards(
-        self, tmp_path: Path, strategy: JobStrategy
-    ) -> None:
-        canonical = [source("Alpha"), source("Blocked", allowed=False)]
-        plan = SourcePlan(augmented=[source("Alpha"), source("Beta")], concerns=[])
-        runner = RecordedRunner({"job-source-researcher": [plan]})
-        chosen = await search(runner, tmp_path, canonical).sources(strategy)
-        assert [s.name for s in chosen] == ["Alpha", "Beta"]
+        planned = await search(runner, tmp_path).plan(brief, feedback="more Go")
 
-    async def test_failed_research_falls_back_to_canonical(
-        self, tmp_path: Path, strategy: JobStrategy
+        assert planned.gigs is None
+        assert planned.preferences.engagement_types == ["full_time", "contract"]
+        [payload] = runner.payloads["seeker-strategist"]
+        assert isinstance(payload, SeekerStrategyInput)
+        assert (payload.gigs, payload.feedback) == (None, "more Go")
+
+    async def test_missing_plan_and_engagements_for_a_requested_kind_become_concerns(
+        self, tmp_path: Path, brief: SeekerBrief, strategy: SeekerStrategy
     ) -> None:
-        runner = RecordedRunner(
-            {
-                "job-source-researcher": [
-                    AgentRunError("job-source-researcher", "error_max_turns", "timeout")
-                ]
-            }
+        prefs = strategy.preferences.model_copy(update={"engagement_types": ["full_time"]})
+        drafted = strategy.model_copy(
+            update={"jobs": None, "preferences": prefs, "must_have_skills": ["Python", "Scala"]}
         )
-        chosen = await search(runner, tmp_path, [source("Alpha")]).sources(strategy)
-        assert [s.name for s in chosen] == ["Alpha"]
+        runner = RecordedRunner({"seeker-strategist": [drafted]})
 
+        planned = await search(runner, tmp_path).plan(brief)
 
-class TestScouting:
-    async def test_failed_scout_is_a_concern_and_queries_follow_language(
-        self, tmp_path: Path, strategy: JobStrategy, brief: JobBrief
-    ) -> None:
-        boards = [source("Alpha"), source("Stepstone", language="de"), source("Gamma")]
-        runner = RecordedRunner(
-            {
-                "job-scout": [
-                    scout_result("https://a.example/1"),
-                    scout_result(),
-                    AgentRunError("job-scout", "error_during_execution", "rate limited"),
-                ]
-            }
-        )
-        outcome = await search(runner, tmp_path, []).scout(strategy, boards, brief)
-        assert [i.source for i in outcome.listings] == ["Alpha"]
-        assert outcome.empty_sources == ["Stepstone"]
-        assert outcome.concerns == [
-            "Scout for Gamma failed: job-scout: run failed (error_during_execution): rate limited"
+        assert planned.preferences.engagement_types == [
+            "full_time",
+            "project_gig",
+            "contractor_placement",
+            "consulting_advisory",
         ]
-        payloads = [p for p in runner.payloads["job-scout"] if isinstance(p, JobScoutInput)]
-        assert payloads[1].queries == [
+        assert planned.concerns == [
+            "Must-have skills not found in the CV skills list: Scala",
+            "The strategy has no plan for salaried jobs, so none are searched.",
+            "No engagement type for freelance gigs; the defaults were used.",
+        ]
+
+
+class TestBoards:
+    async def test_boards_follow_kinds_and_disciplines_and_split_guidance(
+        self, tmp_path: Path, strategy: SeekerStrategy
+    ) -> None:
+        strategy = strategy.model_copy(update={"jobs": None})
+        catalog = [
+            board("Remotive", "job"),
+            board("Malt", "gig", disciplines=["engineering"]),
+            board("Dribbble", "gig", disciplines=["design"]),
+            board("Datajobs", "gig", disciplines=["data"]),
+            board("Spc", "gig", type="guidance", scrape_allowed=False, guidance_note="Apply."),
+        ]
+        added = [board("Malt", "gig"), board("Arbeitnow", "job"), board("Codementor", "gig")]
+        runner = RecordedRunner(
+            {"seeker-source-researcher": [BoardPlan(augmented=added, concerns=[])]}
+        )
+
+        choice = await search(runner, tmp_path, catalog).boards(strategy)
+
+        assert [b.name for b in choice.scouted] == ["Malt", "Datajobs", "Codementor"]
+        assert [b.name for b in choice.guidance] == ["Spc"]
+
+    async def test_failed_research_keeps_the_catalog(
+        self, tmp_path: Path, strategy: SeekerStrategy
+    ) -> None:
+        failure = AgentRunError("seeker-source-researcher", "error_max_turns", "timeout")
+        runner = RecordedRunner({"seeker-source-researcher": [failure]})
+
+        choice = await search(runner, tmp_path, [board("Remotive")]).boards(strategy)
+
+        assert [b.name for b in choice.scouted] == ["Remotive"]
+
+
+class TestScout:
+    async def test_one_scout_per_board_and_kind_with_that_kinds_plan(
+        self, tmp_path: Path, brief: SeekerBrief, strategy: SeekerStrategy
+    ) -> None:
+        boards = [board("Stepstone", "job", language_hint="de"), board("Wwr", "job", "gig")]
+        found = ScoutResult(
+            listings=[scouted().listing],
+            queries_used=["q"],
+            zero_results_verified=False,
+            concerns=[],
+        )
+        failure = AgentRunError("seeker-scout", "error_during_execution", "rate limited")
+        runner = RecordedRunner({"seeker-scout": [found, found, failure]})
+
+        outcome = await search(runner, tmp_path).scout(strategy, boards, brief)
+
+        payloads = [p for p in runner.payloads["seeker-scout"] if isinstance(p, ScoutInput)]
+        sent = [(p.source.name, p.kind, p.max_results) for p in payloads]
+        assert sent == [("Stepstone", "job", 50), ("Wwr", "job", 50), ("Wwr", "gig", 40)]
+        assert payloads[0].queries == [
             "remote python backend engineer",
             "Backend Entwickler remote",
         ]
-        assert payloads[0].max_results == 34
+        assert payloads[2].target_titles == ["Backend Consultant"]
+        assert payloads[2].title_aliases == ["API Engineer"]
+        assert payloads[2].engagement_types == ["project_gig"]
+        assert payloads[2].recency_days == 30
+        assert [(s.source, s.kind) for s in outcome.listings] == [
+            ("Stepstone", "job"),
+            ("Wwr", "job"),
+        ]
+        assert outcome.concerns == [
+            "Scout for Wwr (gig) failed: seeker-scout: run failed (error_during_execution): "
+            "rate limited"
+        ]
+
+
+class TestScreen:
+    def test_each_kind_keeps_its_own_recency_and_limit(
+        self, tmp_path: Path, brief: SeekerBrief, strategy: SeekerStrategy
+    ) -> None:
+        brief = brief.model_copy(update={"gigs": SearchScope(recency_days=30, limit=1)})
+        old = (TODAY - timedelta(days=20)).isoformat()
+        job = scouted(posted_date=old)
+        gigs = [
+            SourcedListing(
+                source="Malt",
+                kind="gig",
+                listing=scouted(
+                    url=f"https://malt.example/p/{n}", posted_date=old, title=title
+                ).listing,
+            )
+            for n, title in enumerate(["Python API audit", "Postgres migration"])
+        ]
+
+        screening = search(RecordedRunner({}), tmp_path).screen(
+            [job, *gigs], strategy, brief, TODAY
+        )
+
+        assert [(x.kind, x.url) for x in screening.kept] == [("gig", "https://malt.example/p/0")]
+        assert [e.reason for e in screening.excluded] == ["stale"]
+        assert screening.over_limit == {"job": 0, "gig": 1}
+
+    def test_excluded_companies_gate_like_attributes(
+        self, tmp_path: Path, brief: SeekerBrief, strategy: SeekerStrategy
+    ) -> None:
+        screening = search(RecordedRunner({}), tmp_path).screen(
+            [scouted(company="Globex")], strategy, brief, TODAY
+        )
+
+        assert [(e.reason, e.detail) for e in screening.excluded] == [
+            ("attribute_blocklist", "Globex")
+        ]
+
+
+class TestRank:
+    def test_jobs_and_gigs_are_scored_with_their_own_weights(
+        self, tmp_path: Path, strategy: SeekerStrategy
+    ) -> None:
+        job = listing()
+        gig = listing(kind="gig", key=GIG_URL, url=GIG_URL)
+        judged = Judgments(
+            by_key={
+                job.key: judgment(job.key),
+                gig.key: judgment(gig.key, engagement_type="project_gig"),
+            },
+            concerns=[],
+        )
+
+        ranked = search(RecordedRunner({}), tmp_path).rank([job, gig], judged, strategy, TODAY)
+
+        weights = {r.listing.kind: {a.axis: a.weight for a in r.score.axes} for r in ranked}
+        assert weights == {"job": JOB_WEIGHTS.model_dump(), "gig": GIG_WEIGHTS.model_dump()}
 
 
 class TestExcerpt:
@@ -141,14 +233,14 @@ class TestExcerpt:
 
 class TestJudging:
     async def test_judge_reads_the_requirements_of_a_long_posting(
-        self, tmp_path: Path, strategy: JobStrategy
+        self, tmp_path: Path, strategy: SeekerStrategy
     ) -> None:
         posting = listing(summary=LONG_POSTING * 3)
         runner = RecordedRunner(
             {"seeker-judge": [JudgeResult(judgments=[judgment(posting.key)], concerns=[])]}
         )
 
-        await search(runner, tmp_path, []).judge([posting], strategy)
+        await search(runner, tmp_path).judge([posting], strategy)
 
         [payload] = runner.payloads["seeker-judge"]
         assert isinstance(payload, JudgeInput)
@@ -157,7 +249,7 @@ class TestJudging:
         assert REQUIREMENTS in sent.summary
 
     async def test_batches_of_ten_and_foreign_keys_dropped(
-        self, tmp_path: Path, strategy: JobStrategy
+        self, tmp_path: Path, strategy: SeekerStrategy
     ) -> None:
         listings = [listing(key=f"https://a.example/{i}") for i in range(12)]
         first = JudgeResult(
@@ -167,32 +259,13 @@ class TestJudging:
         )
         second = JudgeResult(judgments=[judgment("https://a.example/10")], concerns=[])
         runner = RecordedRunner({"seeker-judge": [first, second]})
-        judged = await search(runner, tmp_path, []).judge(listings, strategy)
+        judged = await search(runner, tmp_path).judge(listings, strategy)
         sizes = [
             len(p.listings) for p in runner.payloads["seeker-judge"] if isinstance(p, JudgeInput)
         ]
         assert sizes == [10, 2]
         assert len(judged.by_key) == 11
         assert judged.concerns == ["No judgment for: Senior Backend Engineer"]
-
-    @pytest.mark.parametrize("hits", [[], ["on-call"]])
-    def test_rank_orders_by_total(
-        self, tmp_path: Path, strategy: JobStrategy, hits: list[str]
-    ) -> None:
-        good = listing(key="https://a.example/good", summary="Python PostgreSQL Go Kafka")
-        weak = listing(key="https://a.example/weak", summary="Python MySQL")
-        judgments = Judgments(
-            by_key={
-                good.key: judgment(good.key, deal_breaker_hits=hits),
-                weak.key: judgment(weak.key),
-            },
-            concerns=[],
-        )
-        ranked = search(RecordedRunner({}), tmp_path, []).rank(
-            [weak, good], judgments, strategy, TODAY
-        )
-        order = [r.listing.key for r in ranked]
-        assert order == ([good.key, weak.key] if not hits else [weak.key, good.key])
 
 
 async def test_recruiter_lookup_without_listing_keys_by_company(tmp_path: Path) -> None:

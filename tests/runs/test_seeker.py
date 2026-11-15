@@ -1,0 +1,121 @@
+from sqlalchemy import select
+
+from mozg_outreach.domain import FieldValue, ItemKind, RunStatus
+from mozg_outreach.letters.models import LetterDraft
+from mozg_outreach.naturalize.models import NaturalizeResult
+from mozg_outreach.pipelines.seeker.models import (
+    BoardPlan,
+    JudgeResult,
+    ScoutedListing,
+    ScoutResult,
+    SeekerStrategy,
+)
+from mozg_outreach.runs.flow import GateAnswer
+from mozg_outreach.runs.seeker import WEB_SEARCH
+from mozg_outreach.storage.models import Draft, Item, Run, SourceConfig
+from tests.pipelines.conftest import Scripted
+from tests.pipelines.leads.conftest import company, identity
+from tests.pipelines.seeker.conftest import GIG_URL, SCOPE, judgment
+from tests.pipelines.seeker.test_letters import BODY
+
+from .conftest import FEED_URL, NOW, Harness
+
+OPTIONS = {"max_boards": 1, "research_fields_top": 0, "summary": False}
+# Proposals get a longer word budget than cover letters.
+PROPOSAL_BODY = " ".join(["word"] * 300)
+
+
+def scouted_gig() -> ScoutedListing:
+    return ScoutedListing(
+        title="Payments API redesign",
+        company="AcmeCo",
+        location_string="Remote (EU)",
+        remote_status_raw="Remote",
+        url=GIG_URL,
+        posted_date=NOW.date().isoformat(),
+        salary_string="EUR 700/day",
+        summary_snippet=SCOPE,
+        duration_raw="8 weeks",
+        application_method_raw="Apply via Malt.",
+    )
+
+
+def scouted(*listings: ScoutedListing) -> ScoutResult:
+    return ScoutResult(
+        listings=list(listings), queries_used=["q"], zero_results_verified=False, concerns=[]
+    )
+
+
+def letter(salutation: str, body: str) -> dict[str, list[Scripted]]:
+    """The project's neutral tone signs off with "Best regards"."""
+    draft = LetterDraft(subject=None, body=body, hook_used="", angle_used="", concerns=[])
+    framed = f"{salutation}\n\n{body}\n\nBest regards,\nStan"
+    natural = NaturalizeResult(text=framed, changes=[], specificity_needed=[], concerns=[])
+    return {"expert-copywriter": [draft], "expert-naturalizer": [natural]}
+
+
+async def finish(harness: Harness, run_id: int) -> Run:
+    await harness.manager.wait(run_id)
+    with harness.db.session() as session:
+        run = session.get(Run, run_id)
+        assert run is not None
+        session.expunge(run)
+    return run
+
+
+async def test_one_search_reports_jobs_and_gigs_and_drafts_a_letter_for_each(
+    harness: Harness, strategy: SeekerStrategy
+) -> None:
+    project_id = harness.seeker_project(gigs=True)
+    with harness.db.session() as session:
+        session.add(SourceConfig(project_id=project_id, kind=WEB_SEARCH))
+    harness.script(
+        {
+            "seeker-strategist": [strategy],
+            "seeker-source-researcher": [BoardPlan(augmented=[], concerns=[])],
+            # The job board scouts first and finds nothing new; the feed brings the job.
+            "seeker-scout": [scouted(), scouted(scouted_gig())],
+            "seeker-judge": [
+                JudgeResult(
+                    judgments=[
+                        judgment(FEED_URL),
+                        judgment(GIG_URL, engagement_type="project_gig"),
+                    ],
+                    concerns=[],
+                )
+            ],
+            "lead-identifier": [identity(company()), identity(None)],
+        }
+    )
+    search = harness.manager.start(project_id, "seeker.search", {"options": OPTIONS})
+    await harness.manager.wait(search)
+    harness.manager.answer_gate(search, GateAnswer(approve=True))
+    done = await finish(harness, search)
+    assert done.status == RunStatus.COMPLETE, done.error
+
+    scouts = harness.runner.payloads["seeker-scout"]
+    assert [p.model_dump()["kind"] for p in scouts] == ["job", "gig"]
+    with harness.db.session() as session:
+        items = {i.kind: i for i in session.scalars(select(Item))}
+        assert set(items) == {ItemKind.JOB, ItemKind.GIG}
+        assert all(i.score_total is not None for i in items.values())
+        gig_fields = items[ItemKind.GIG].fields
+        assert FieldValue.model_validate(gig_fields["pay"]).value == "EUR 700/day"
+        assert FieldValue.model_validate(gig_fields["duration"]).value == "8 weeks"
+        for item in items.values():
+            item.selected = True
+        ids = {kind: item.id for kind, item in items.items()}
+
+    letters = {
+        ItemKind.JOB: letter("Dear Hiring Team,", BODY),
+        ItemKind.GIG: letter("Hi there,", PROPOSAL_BODY),
+    }
+    for kind, script in letters.items():
+        harness.script(script)
+        run_id = harness.manager.start(project_id, "seeker.letters", {"item_id": ids[kind]})
+        drafted = await finish(harness, run_id)
+        assert drafted.status == RunStatus.COMPLETE, drafted.error
+
+    with harness.db.session() as session:
+        channels = {d.item_id: d.channel for d in session.scalars(select(Draft))}
+    assert channels == {ids[ItemKind.JOB]: "cover_letter", ids[ItemKind.GIG]: "proposal"}

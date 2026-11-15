@@ -6,10 +6,10 @@ import pytest
 from mozg_outreach.pipelines.seeker.models import (
     GIG_WEIGHTS,
     JOB_WEIGHTS,
-    JobStrategy,
     Listing,
     Money,
     Pay,
+    SeekerStrategy,
 )
 from mozg_outreach.pipelines.seeker.pay import PayParser
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
@@ -40,12 +40,12 @@ def gig(pay: Pay | None = None) -> Listing:
 
 
 @pytest.fixture
-def job_profile(strategy: JobStrategy) -> ScoreProfile:
-    return ScoreProfile(seniority="senior", weights=strategy.scoring_weights, pay_floor=USD_FLOOR)
+def job_profile(strategy: SeekerStrategy) -> ScoreProfile:
+    return ScoreProfile(seniority="senior", weights=JOB_WEIGHTS, pay_floor=USD_FLOOR)
 
 
 @pytest.fixture
-def matcher(strategy: JobStrategy) -> SkillMatcher:
+def matcher(strategy: SeekerStrategy) -> SkillMatcher:
     return SkillMatcher(strategy)
 
 
@@ -71,19 +71,19 @@ class TestAxes:
         ],
     )
     def test_skill_match_by_nice_to_haves(
-        self, strategy: JobStrategy, text: str, points: float
+        self, strategy: SeekerStrategy, text: str, points: float
     ) -> None:
         assert SeekerScorer.skill_match(SkillMatcher(strategy).match(text)).value == points
 
     @pytest.mark.parametrize(("text", "points"), [("Python, Go, Kafka", 55.0), ("Python", 45.0)])
     def test_partial_must_haves_score_below_complete(
-        self, strategy: JobStrategy, text: str, points: float
+        self, strategy: SeekerStrategy, text: str, points: float
     ) -> None:
         value = SeekerScorer.skill_match(SkillMatcher(strategy).match(text))
         assert value.value == points
         assert "missing: PostgreSQL or MySQL" in value.reason
 
-    def test_skill_match_through_synonyms_only_is_weak(self, strategy: JobStrategy) -> None:
+    def test_skill_match_through_synonyms_only_is_weak(self, strategy: SeekerStrategy) -> None:
         only = strategy.model_copy(update={"must_have_skills": []})
         assert SeekerScorer.skill_match(SkillMatcher(only).match("Postgres")).value == 40.0
 

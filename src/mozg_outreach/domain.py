@@ -9,8 +9,7 @@ FIELD_ID_PATTERN = r"^[a-z][a-z0-9_]{0,47}$"
 
 class ProjectMode(StrEnum):
     BIZ = "biz"
-    JOB = "job"
-    FREELANCE = "freelance"
+    SEEKER = "seeker"
 
 
 class RunStatus(StrEnum):

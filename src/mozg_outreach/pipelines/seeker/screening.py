@@ -12,10 +12,9 @@ from mozg_outreach.pipelines.seeker.models import (
     CvProfile,
     Excluded,
     ExcludedReason,
-    JobBrief,
-    JobStrategy,
     Listing,
     PlacePreferences,
+    SeekerStrategy,
     SkillRules,
 )
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
@@ -39,7 +38,7 @@ class ScreenRules(BaseModel):
     recency_days: int
 
     @classmethod
-    def for_jobs(cls, strategy: JobStrategy, brief: JobBrief) -> "ScreenRules":
+    def for_seeker(cls, strategy: SeekerStrategy, recency_days: int) -> "ScreenRules":
         prefs = strategy.preferences
         return cls(
             cv=strategy.cv,
@@ -48,9 +47,12 @@ class ScreenRules(BaseModel):
             skills=strategy,
             blocklist={
                 "industry_blocklist": prefs.excluded_industries,
-                "attribute_blocklist": prefs.excluded_company_attributes,
+                "attribute_blocklist": [
+                    *prefs.excluded_company_attributes,
+                    *prefs.excluded_companies,
+                ],
             },
-            recency_days=brief.recency_days,
+            recency_days=recency_days,
         )
 
 

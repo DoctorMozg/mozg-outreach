@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 
 from mozg_outreach.domain import IdentifierKind, RunStatus, SourceKind
-from mozg_outreach.pipelines.seeker.models import JobStrategy, JudgeResult
+from mozg_outreach.pipelines.seeker.models import JudgeResult, SeekerStrategy
 from mozg_outreach.pipelines.seeker.telegram_posts import ParsedPost, ParserResult
 from mozg_outreach.runs.flow import GateAnswer
-from mozg_outreach.runs.job import ChannelChoice, _discovery_terms
+from mozg_outreach.runs.seeker import ChannelChoice, _discovery_terms
 from mozg_outreach.sources import telegram_discovery
 from mozg_outreach.sources.telegram import (
     ChannelMessage,
@@ -64,7 +64,7 @@ def session(harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 
 def telegram_project(harness: Harness) -> int:
-    project_id = harness.job_project()
+    project_id = harness.seeker_project()
     with harness.db.session() as session:
         config = {"discover": True, "kind": "job"}
         session.add(SourceConfig(project_id=project_id, kind="telegram", config=config))
@@ -77,9 +77,9 @@ def telegram_config(harness: Harness) -> TelegramConfig:
         return TelegramConfig.model_validate(row.config)
 
 
-def script(harness: Harness, strategy: JobStrategy) -> None:
+def script(harness: Harness, strategy: SeekerStrategy) -> None:
     runs: dict[str, list[Scripted]] = {
-        "job-strategist": [strategy],
+        "seeker-strategist": [strategy],
         "seeker-judge": [JudgeResult(judgments=[judgment(FEED_URL)], concerns=[])],
         "lead-identifier": [identity()],
     }
@@ -98,11 +98,11 @@ async def answer(harness: Harness, run_id: int, gate: GateAnswer) -> Run:
 
 class TestChannelDiscovery:
     async def test_approved_channels_are_read_and_rejected_ones_never_offered_again(
-        self, harness: Harness, strategy: JobStrategy, session: SearchSession
+        self, harness: Harness, strategy: SeekerStrategy, session: SearchSession
     ) -> None:
         project_id = telegram_project(harness)
         script(harness, strategy)
-        run_id = harness.manager.start(project_id, "job.search", {})
+        run_id = harness.manager.start(project_id, "seeker.search", {})
         await harness.manager.wait(run_id)
         parked = await answer(harness, run_id, GateAnswer(approve=True))
 
@@ -122,7 +122,7 @@ class TestChannelDiscovery:
         assert session.reads == [("py_jobs", 0), ("py_more", 0), ("py_jobs", 0)]
 
         script(harness, strategy)
-        again = harness.manager.start(project_id, "job.search", {})
+        again = harness.manager.start(project_id, "seeker.search", {})
         await harness.manager.wait(again)
         rerun = await answer(harness, again, GateAnswer(approve=True))
         assert rerun.status == RunStatus.COMPLETE, "nothing new to offer, so no channel gate"
@@ -130,14 +130,14 @@ class TestChannelDiscovery:
         assert session.reads[-1] == ("py_jobs", 2), "the second run resumes from the cursor"
 
     async def test_full_channel_list_skips_the_search(
-        self, harness: Harness, strategy: JobStrategy, session: SearchSession
+        self, harness: Harness, strategy: SeekerStrategy, session: SearchSession
     ) -> None:
-        project_id = harness.job_project()
+        project_id = harness.seeker_project()
         with harness.db.session() as db:
             config = {"discover": True, "channels": ["a_jobs"], "max_channels": 1}
             db.add(SourceConfig(project_id=project_id, kind="telegram", config=config))
         script(harness, strategy)
-        run_id = harness.manager.start(project_id, "job.search", {})
+        run_id = harness.manager.start(project_id, "seeker.search", {})
         await harness.manager.wait(run_id)
 
         done = await answer(harness, run_id, GateAnswer(approve=True))
@@ -146,7 +146,7 @@ class TestChannelDiscovery:
 
 
 def test_discovery_searches_cv_skills_when_the_gate_cleared_must_haves(
-    strategy: JobStrategy,
+    strategy: SeekerStrategy,
 ) -> None:
     cleared = strategy.model_copy(update={"must_have_skills": [], "must_have_or_groups": []})
 
@@ -162,14 +162,14 @@ TG_POST = "Senior Python developer at Acme GmbH, PostgreSQL, remote within the E
 
 
 async def test_telegram_post_becomes_a_lead_with_a_telegram_sighting(
-    harness: Harness, strategy: JobStrategy, session: SearchSession
+    harness: Harness, strategy: SeekerStrategy, session: SearchSession
 ) -> None:
     session.history["py_jobs"] = [
         ChannelMessage(
             id=1, text=TG_POST, date=datetime.now(UTC) - timedelta(days=1), links=[VACANCY]
         )
     ]
-    project_id = harness.job_project()
+    project_id = harness.seeker_project()
     with harness.db.session() as db:
         config = {"channels": ["py_jobs"]}
         db.add(SourceConfig(project_id=project_id, kind="telegram", config=config))
@@ -189,13 +189,13 @@ async def test_telegram_post_becomes_a_lead_with_a_telegram_sighting(
     judged = JudgeResult(judgments=[judgment(FEED_URL), judgment(TG_URL)], concerns=[])
     harness.script(
         {
-            "job-strategist": [strategy],
+            "seeker-strategist": [strategy],
             "telegram-post-parser": [ParserResult(posts=[found], concerns=[])],
             "seeker-judge": [judged],
             "lead-identifier": [identity(company()), identity(company())],
         }
     )
-    run_id = harness.manager.start(project_id, "job.search", {})
+    run_id = harness.manager.start(project_id, "seeker.search", {})
     await harness.manager.wait(run_id)
     done = await answer(harness, run_id, GateAnswer(approve=True))
 

@@ -36,7 +36,8 @@ export function Report({ project }: { project: Project }): ReactElement {
   });
   const bulk = useMutation({
     mutationFn: async (action: "enrich" | "letters") => {
-      const chosen = (items.data ?? []).filter((i) => i.selected);
+      // Gigs are answered on their own board, so there is nothing to enrich.
+      const chosen = (items.data ?? []).filter((i) => i.selected && (action === "letters" || i.kind !== "gig"));
       // One run per item; the server queues them behind its run limit.
       const results = await Promise.allSettled(chosen.map((i) => call("POST", `/api/items/${i.id}/${action}`)));
       const failed = results.filter((r) => r.status === "rejected").map((r) => String((r as PromiseRejectedResult).reason));
@@ -49,8 +50,8 @@ export function Report({ project }: { project: Project }): ReactElement {
   const allColumns = [...new Set(rows.flatMap((i) => Object.keys(i.fields)))];
   const columns = allColumns.filter((c) => !hidden.has(c));
   const selectedCount = items.data?.filter((i) => i.selected).length ?? 0;
-  const canEnrich = project.mode !== "freelance";
-  const letterLabel = { biz: "Write letters", job: "Write cover letters", freelance: "Write proposals" }[project.mode];
+  const enrichable = items.data?.filter((i) => i.selected && i.kind !== "gig").length ?? 0;
+  const letterLabel = { biz: "Write letters", seeker: "Write cover letters and proposals" }[project.mode];
 
   return (
     <>
@@ -61,9 +62,9 @@ export function Report({ project }: { project: Project }): ReactElement {
             <label>
               <input type="checkbox" checked={onlySelected} onChange={(e) => setOnlySelected(e.target.checked)} /> selected only
             </label>
-            {canEnrich && (
-              <button className="secondary" disabled={!selectedCount || bulk.isPending} onClick={() => bulk.mutate("enrich")}>
-                Enrich {selectedCount}
+            {(project.mode === "biz" || enrichable > 0) && (
+              <button className="secondary" disabled={!enrichable || bulk.isPending} onClick={() => bulk.mutate("enrich")}>
+                Enrich {enrichable}
               </button>
             )}
             <button disabled={!selectedCount || bulk.isPending} onClick={() => bulk.mutate("letters")}>

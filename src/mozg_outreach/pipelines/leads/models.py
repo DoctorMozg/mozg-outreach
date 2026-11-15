@@ -5,12 +5,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
-
-LeadMode = Literal["job", "freelance"]
+from mozg_outreach.pipelines.seeker.models import ListingKind
 
 
 class LeadInput(BaseModel):
-    mode: LeadMode
+    kind: ListingKind
     title: str
     organization: str | None = Field(description="As the listing shows it; null when not named.")
     url: str

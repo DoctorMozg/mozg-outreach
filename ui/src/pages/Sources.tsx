@@ -68,7 +68,7 @@ export function Sources({ project }: { project: Project }): ReactElement {
             ))}
           </tbody>
         </table>
-        {project.mode !== "job" && <p className="hint">Business and freelance searches run on web search; feeds serve job projects.</p>}
+        {project.mode !== "seeker" && <p className="hint">Business searches run on web search; feeds serve seeker projects.</p>}
       </Section>
       <Section title="Add a source">
         <div className="form-grid">

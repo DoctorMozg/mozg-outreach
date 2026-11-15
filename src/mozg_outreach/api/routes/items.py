@@ -88,10 +88,10 @@ def _start_item_run(svc: Services, item_id: int, action: str) -> RunOut:
         project = get_or_404(session, Project, item.project_id)
         if not item.selected:
             raise HTTPException(409, f"item {item_id} is not selected")
-    actions = ITEM_ACTIONS[project.mode]
+    actions = ITEM_ACTIONS[item.kind]
     pipeline = actions.enrich if action == "enrich" else actions.letters
     if pipeline is None:
-        raise HTTPException(409, f"{project.mode} items have nothing to enrich")
+        raise HTTPException(409, f"{item.kind} items have nothing to enrich")
     ensure_idle(svc, project.id, pipeline, item_id)
     return run_out(svc, svc.runs.start(project.id, pipeline, {"item_id": item_id}))
 

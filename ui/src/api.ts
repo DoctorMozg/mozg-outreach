@@ -1,6 +1,6 @@
 // Types mirror src/mozg_outreach/api/schemas.py; keep them in step when the API changes.
 
-export type Mode = "biz" | "job" | "freelance";
+export type Mode = "biz" | "seeker";
 export type RunStatus = "pending" | "running" | "awaiting_gate" | "complete" | "failed" | "cancelled";
 export type Channel = "email" | "dm" | "cover_letter" | "proposal";
 export type Json = Record<string, unknown>;

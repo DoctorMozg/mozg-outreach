@@ -8,13 +8,12 @@ from mozg_outreach.pipelines.seeker.models import (
     JOB_WEIGHTS,
     Board,
     CvProfile,
-    JobBrief,
-    JobPreferences,
-    JobStrategy,
+    GigTerms,
     KindPlan,
     Listing,
     ListingJudgment,
     Money,
+    Pay,
     ScoutedListing,
     SearchScope,
     SeekerBrief,
@@ -100,7 +99,7 @@ def board(name: str, *kinds: str, **fields: object) -> Board:
 
 
 @pytest.fixture
-def seeker_brief() -> SeekerBrief:
+def brief() -> SeekerBrief:
     return SeekerBrief(
         cv_text=CV_TEXT,
         preferences="Remote in the EU, at least EUR 70k or EUR 90 an hour.",
@@ -110,7 +109,7 @@ def seeker_brief() -> SeekerBrief:
 
 
 @pytest.fixture
-def seeker_strategy(cv: CvProfile) -> SeekerStrategy:
+def strategy(cv: CvProfile) -> SeekerStrategy:
     return SeekerStrategy(
         cv=cv,
         discipline="engineering",
@@ -167,32 +166,23 @@ def cv() -> CvProfile:
     )
 
 
-@pytest.fixture
-def brief() -> JobBrief:
-    return JobBrief(cv_text=CV_TEXT, preferences="Remote in the EU, at least EUR 70k.")
+GIG_URL = "https://www.malt.com/projects/acme-payments"
+SCOPE = (
+    "We need a backend engineer to redesign our payments API in Python. "
+    "Scope: migrate from synchronous REST to event-driven Kafka on PostgreSQL. "
+    "Deliver a working pilot in week 6 and the full cutover in week 8."
+)
 
 
-@pytest.fixture
-def strategy(cv: CvProfile) -> JobStrategy:
-    return JobStrategy(
-        cv=cv,
-        preferences=JobPreferences(
-            remote="required",
-            regions_allowed=["EU"],
-            excluded_industries=["gambling"],
-            excluded_company_attributes=["agency"],
-            salary_floor=Money(amount=70000, currency="EUR"),
-            deal_breakers=["on-call"],
-        ),
-        search_queries={"Backend Engineer": ["remote python backend engineer"]},
-        title_aliases={"Backend Engineer": ["Server Engineer"]},
-        bilingual_query_variants={"de": ["Backend Entwickler remote"]},
-        must_have_skills=["Python"],
-        must_have_or_groups=[["PostgreSQL", "MySQL"]],
-        nice_to_have_skills=["Go", "Kubernetes", "Kafka"],
-        synonym_clusters={"PostgreSQL": ["Postgres"], "Kubernetes": ["K8s"]},
-        work_auth_blockers=["US citizens only"],
-        scoring_weights=JOB_WEIGHTS,
-        scoring_rationale="Defaults.",
-        concerns=[],
+def gig(pay: Pay | None = None, company: str = "AcmeCo") -> Listing:
+    terms = GigTerms(duration_raw="8 weeks", application_method="Apply via Malt.")
+    return listing(
+        key=GIG_URL,
+        kind="gig",
+        url=GIG_URL,
+        company=company,
+        summary=SCOPE,
+        sources=["Malt"],
+        pay=pay,
+        terms=terms,
     )
