@@ -92,6 +92,10 @@ Done, M18:
 
 Found on the way and fixed: a brief's `limit` cut screened listings in collection order, so Telegram posts always took the slots. Kept listings now come newest first, and the `screened` event reports `over_limit`. Combined live run (7 Greenhouse boards, 6 channels, 3 leads researched): $3.64 for the search and $0.25 for the field proposal. Not covered: there's still no run-level freelance search test, so the freelance summary phase is checked only through code shared with job.
 
+**M19 Date filters and Telegram contacts** (approved by the user, 2026-11-15)
+
+Done, M19: a lead's date is `Item.dated` (the posting date when the source gives one, else when it was first stored). The report filters by from and to dates and sorts by date, the graph takes a date range, and the registry filters by "seen since" on sightings. The `telegram-post-parser` returns the post's contact handle and name. Python keeps a handle only when the post contains it as a whole word or one of its links points to it, never the channel itself or a bot, and keeps the name only when the post contains it. The contact becomes a person with a `telegram` identifier, linked to the lead as `contact`, and works at the lead's company only when identification confirmed one (user, 2026-11-15), since Telegram recruiters post for many employers. Live run on the 6 channels ($2.96): 35 listings, 8 kept, 1 contact registered with the post's own line as its quote. Not covered: the new date controls are checked only by `tsc` and the UI build, not in a browser.
+
 ## Order and size
 
 M12 comes first, so any later schema change gets a migration. M13 to M15 are independent of each other. M16 waits on your credentials and can run whenever they exist. Each milestone stays within about 10 files and 400 changed lines, ends with `uv run pytest` and pre-commit on the changed files, and is committed on its own on `feat/service-migration`.
