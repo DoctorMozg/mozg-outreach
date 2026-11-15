@@ -69,6 +69,8 @@ class FlowSpec[TState: RunState]:
     pipeline: str
     state_type: type[TState]
     phases: tuple[Phase[TState], ...]
+    # Says why the project can't run this flow yet; checked on start and resume, before any spend.
+    blocker: Callable[[Database, int], str | None] | None = None
 
     def index(self, name: str | None) -> int:
         if name is None:

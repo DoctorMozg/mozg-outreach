@@ -2,6 +2,7 @@ import pytest
 
 from mozg_outreach.agents import AgentRunError
 from mozg_outreach.api.schemas import ItemDetail, ItemOut
+from mozg_outreach.domain import RunStatus
 from mozg_outreach.pipelines.biz.assessment_models import FitVerdict
 from mozg_outreach.pipelines.biz.models import (
     BriefReview,
@@ -11,7 +12,7 @@ from mozg_outreach.pipelines.biz.models import (
 )
 from mozg_outreach.pipelines.fields import FieldProposal, FieldResearchResult
 from mozg_outreach.pipelines.summary import Pattern, RunSummary
-from mozg_outreach.storage.models import JsonObject
+from mozg_outreach.storage.models import JsonObject, Run
 from tests.pipelines.biz.conftest import load_fixture
 from tests.pipelines.conftest import Scripted
 
@@ -101,6 +102,35 @@ async def test_brief_to_scored_report_through_the_strategy_gate(
     assert state["summary"] == SUMMARY.model_dump(mode="json")
     sent = api.runner.payloads["run-summarizer"][0].model_dump()
     assert {i["id"] for i in sent["items"]} == {item.id for item in report}
+
+
+class TestNeedsAcceptedFields:
+    """Assessment reads the accepted fields, so a biz search neither starts nor resumes without."""
+
+    async def test_start_is_refused_before_any_agent_runs(self, api: Api) -> None:
+        project_id = await api.project(brief=biz_brief())
+        refused = await api.client.post(f"/api/projects/{project_id}/runs", json={})
+        assert refused.status_code == 409
+        assert "Fields tab" in refused.json()["detail"]
+        assert await api.ok_list(f"/api/projects/{project_id}/runs") == []
+
+    async def test_resume_is_refused_and_the_run_stays_failed(self, api: Api) -> None:
+        project_id = await api.project(brief=biz_brief())
+        with api.services.db.session() as session:
+            run = Run(
+                project_id=project_id,
+                pipeline="biz.search",
+                phase="assess",
+                status=RunStatus.FAILED,
+                error="ValueError: accept a field spec before running the search",
+            )
+            session.add(run)
+            session.flush()
+            run_id = run.id
+        refused = await api.client.post(f"/api/runs/{run_id}/resume")
+        assert refused.status_code == 409
+        assert "Fields tab" in refused.json()["detail"]
+        assert (await api.ok("GET", f"/api/runs/{run_id}"))["status"] == "failed"
 
 
 async def approved_run(api: Api, strategy: Strategy, options: dict[str, object]) -> JsonObject:

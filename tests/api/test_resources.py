@@ -27,7 +27,7 @@ class TestRuns:
     async def test_cancel_through_the_api(self, tmp_path: Path) -> None:
         runner = HangingRunner()
         async for api in open_api(tmp_path, runner):
-            project_id = await api.project(brief=biz_brief())
+            project_id = await api.biz_project()
             run = await api.ok("POST", f"/api/projects/{project_id}/runs", {})
             await runner.started.wait()
             cancelled = await api.ok("POST", f"/api/runs/{run['id']}/cancel")
@@ -36,7 +36,7 @@ class TestRuns:
             assert again.status_code == 409
 
     async def test_gate_errors(self, api: Api, strategy: Strategy) -> None:
-        project_id = await api.project(brief=biz_brief())
+        project_id = await api.biz_project()
         api.script({"outreach-strategist": [strategy]})
         run = await api.ok("POST", f"/api/projects/{project_id}/runs", {})
         await api.settle(int(str(run["id"])))

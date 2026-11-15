@@ -11,7 +11,9 @@ from mozg_outreach.api.app import create_app
 from mozg_outreach.api.services import Services
 from mozg_outreach.api.settings import Settings
 from mozg_outreach.pipelines.biz.models import Strategy
+from mozg_outreach.pipelines.fields import FieldProposal
 from mozg_outreach.storage.models import JsonObject
+from mozg_outreach.storage.repositories import FieldSpecRepository
 from tests.pipelines.biz.conftest import FIXTURES, load_fixture
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner, Scripted
 from tests.runs.conftest import FakeFeed
@@ -64,6 +66,15 @@ class Api:
             {"name": "DACH SaaS", "mode": mode, "sender_name": "Stan Petrov", "brief": brief},
         )
         return int(str(created["id"]))
+
+    async def biz_project(self) -> int:
+        """A biz project with a brief and accepted report fields, so a search may start."""
+        project_id = await self.project(brief=biz_brief())
+        spec = load_fixture("field_proposal", FieldProposal).spec
+        with self.services.db.session() as session:
+            fields = FieldSpecRepository(session)
+            fields.accept(project_id, fields.propose(project_id, spec).version)
+        return project_id
 
 
 def biz_brief() -> JsonObject:

@@ -24,6 +24,7 @@ from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.scoring.biz import BizScoreInput, BizScorer
+from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import Item
 from mozg_outreach.storage.repositories import ItemRepository
 
@@ -118,10 +119,16 @@ async def scout(ctx: Ctx) -> PhaseResult:
     return None
 
 
+def _missing_fields(db: Database, project_id: int) -> str | None:
+    if ProjectInputs.load(db, project_id).spec is None:
+        return "accept the report fields on the Fields tab before running the search"
+    return None
+
+
 async def assess(ctx: Ctx) -> PhaseResult:
     spec = ProjectInputs.load(ctx.db, ctx.project_id).spec
     if spec is None:
-        raise ValueError("accept a field spec before running the search")
+        raise ValueError("accept the report fields on the Fields tab before running the search")
     strategy = _strategy(ctx)
     results = await BizAssessment(ctx.steps).assess_many(
         ctx.state.candidates, AssessmentContext(strategy=strategy, spec=spec)
@@ -189,4 +196,5 @@ BIZ_SEARCH = FlowSpec[BizSearchState](
         Phase("assess", assess),
         Phase("summarize", summarize),
     ),
+    blocker=_missing_fields,
 )

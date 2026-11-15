@@ -57,6 +57,7 @@ class RunManager:
 
     def start(self, project_id: int, pipeline: str, state: JsonObject) -> int:
         flow = self._flow(pipeline)
+        self._check_ready(flow, project_id)
         initial = flow.state_type.model_validate(state).model_dump(mode="json")
         with self._env.db.session() as session:
             run = Run(project_id=project_id, pipeline=pipeline, state=initial)
@@ -89,6 +90,7 @@ class RunManager:
             run = self._get(session, run_id)
             if run.status not in (RunStatus.FAILED, RunStatus.CANCELLED):
                 raise RunStateError(f"run {run_id} is {run.status}; only stopped runs resume")
+            self._check_ready(self._flow(run.pipeline), run.project_id)
             run.status, run.error, run.finished_at = RunStatus.PENDING, None, None
         self._launch(run_id)
 
@@ -209,6 +211,12 @@ class RunManager:
         run.status, run.error, run.finished_at = status, error, utcnow()
         # A finished run resumes from its last phase, so a gate left open is dropped.
         run.pending_gate = None
+
+    def _check_ready(self, flow: AnyFlow, project_id: int) -> None:
+        reason = flow.blocker(self._env.db, project_id) if flow.blocker else None
+        if reason is not None:
+            logger.info("%s refused for project %d: %s", flow.pipeline, project_id, reason)
+            raise RunStateError(reason)
 
     def _flow(self, pipeline: str) -> AnyFlow:
         flow = self._flows.get(pipeline)
