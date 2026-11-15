@@ -235,3 +235,9 @@ export interface BriefDraft {
   field_version: number | null;
   cost_usd: number;
 }
+
+export interface SearchReadiness {
+  pipeline: string;
+  /** Why the search can't start yet; null when it can. */
+  blocker: string | null;
+}

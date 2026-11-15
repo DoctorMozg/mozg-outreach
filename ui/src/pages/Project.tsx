@@ -1,48 +1,128 @@
-import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactElement, useEffect, useState } from "react";
-import { type BriefDraft, call, get, type Json, type Project as ProjectRow, type Run } from "../api";
-import { Concerns, ErrorBox, Section, Status } from "../components/common";
-import { SchemaForm } from "../components/SchemaForm";
+import { ActionIcon, Alert, Badge, Button, Group, Loader, Menu, Modal, Stack, Tabs, Text, Title } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
+import {
+  IconAlertCircle,
+  IconCircleCheck,
+  IconCircleDashed,
+  IconDots,
+  IconFileText,
+  IconHistory,
+  IconListDetails,
+  IconPlugConnected,
+  IconTable,
+  IconTrash,
+} from "@tabler/icons-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ReactElement, ReactNode } from "react";
+import { call, type FieldSpecVersion, get, type Project as ProjectRow, type Run, type SearchReadiness, type Source } from "../api";
+import { ErrorBox, ModeBadge } from "../components/common";
 import { href } from "../router";
+import { Brief } from "./Brief";
 import { Fields } from "./Fields";
 import { Report } from "./Report";
+import { Runs } from "./Runs";
 import { Sources } from "./Sources";
 
-type Schemas = { brief: Json; options: Json };
-const TABS = ["brief", "fields", "sources", "runs", "report"] as const;
+const OPEN_RUN = new Set<Run["status"]>(["pending", "running", "awaiting_gate"]);
 
 export function Project({ id, tab }: { id: number; tab: string }): ReactElement {
   const project = useQuery({ queryKey: ["project", id], queryFn: () => get<ProjectRow>(`/api/projects/${id}`) });
-  if (!project.data) return <ErrorBox error={project.error} />;
+  const readiness = useQuery({ queryKey: ["search", id], queryFn: () => get<SearchReadiness>(`/api/projects/${id}/search`) });
+  const fields = useQuery({ queryKey: ["fields", id], queryFn: () => get<FieldSpecVersion[]>(`/api/projects/${id}/fields`) });
+  const sources = useQuery({ queryKey: ["sources", id], queryFn: () => get<Source[]>(`/api/projects/${id}/sources`) });
+  const runs = useQuery({ queryKey: ["runs", id], queryFn: () => get<Run[]>(`/api/projects/${id}/runs`), refetchInterval: 5000 });
   const p = project.data;
+  if (!p) return <ErrorBox error={project.error} />;
+
+  const biz = p.mode === "biz";
+  const accepted = fields.data?.some((v) => v.accepted_at) ?? false;
+  const enabledSources = sources.data?.filter((s) => s.enabled).length ?? 0;
+  const openRuns = runs.data?.filter((r) => OPEN_RUN.has(r.status)).length ?? 0;
+  const blocker = readiness.data?.blocker;
+  // The first unfinished step is where the blocker is fixed; Runs shows the blocker itself.
+  const fixAt = !p.brief ? "brief" : "fields";
+
   return (
-    <div className="stack">
-      <header className="inline">
-        <h2>
-          {p.name} <span className="tag">{p.mode}</span>
-        </h2>
-        <DeleteProject project={p} />
-      </header>
-      <nav className="tabs">
-        {TABS.map((t) => (
-          <a key={t} href={href.project(id, t)} className={t === tab ? "active" : ""}>
-            {t}
-          </a>
-        ))}
-      </nav>
+    <Stack maw={1400} mx="auto">
+      <Group justify="space-between" wrap="nowrap" align="flex-start">
+        <div>
+          <Group gap="sm">
+            <Title order={2}>{p.name}</Title>
+            <ModeBadge mode={p.mode} />
+          </Group>
+          <Text size="sm" c="dimmed">
+            {biz ? "Client companies for your services" : "Jobs and gigs for one person"} · created {new Date(p.created_at).toLocaleDateString()}
+          </Text>
+        </div>
+        <ProjectMenu project={p} />
+      </Group>
+
+      {blocker && tab !== fixAt && tab !== "runs" && (
+        <Alert variant="light" color="yellow" icon={<IconAlertCircle size={18} />} title="The search can't start yet">
+          <Group justify="space-between">
+            <Text size="sm">{capitalize(blocker)}.</Text>
+            <Button size="xs" variant="light" color="yellow" component="a" href={href.project(id, fixAt)}>
+              Go to {fixAt === "brief" ? "the brief" : "Fields"}
+            </Button>
+          </Group>
+        </Alert>
+      )}
+
+      <Tabs value={tab} onChange={(next) => next && (window.location.hash = href.project(id, next))} keepMounted={false}>
+        <Tabs.List>
+          <Tabs.Tab value="brief" leftSection={<StepIcon done={Boolean(p.brief)} icon={<IconFileText size={16} />} />}>
+            Brief
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="fields"
+            leftSection={<StepIcon done={accepted} optional={!biz} icon={<IconListDetails size={16} />} />}
+            rightSection={!biz && !accepted ? <Text size="xs" c="dimmed">optional</Text> : null}
+          >
+            Fields
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="sources"
+            leftSection={<IconPlugConnected size={16} />}
+            rightSection={<Badge size="xs" variant="light" color="gray">{enabledSources}</Badge>}
+          >
+            Sources
+          </Tabs.Tab>
+          <Tabs.Tab
+            value="runs"
+            leftSection={openRuns ? <Loader size={14} /> : <IconHistory size={16} />}
+            rightSection={runs.data?.length ? <Badge size="xs" variant="light" color="gray">{runs.data.length}</Badge> : null}
+          >
+            Runs
+          </Tabs.Tab>
+          <Tabs.Tab value="report" leftSection={<IconTable size={16} />}>
+            Report
+          </Tabs.Tab>
+        </Tabs.List>
+      </Tabs>
+
       {tab === "brief" && <Brief project={p} />}
       {tab === "fields" && <Fields project={p} />}
       {tab === "sources" && <Sources project={p} />}
-      {tab === "runs" && <Runs project={p} />}
+      {tab === "runs" && <Runs project={p} blocker={blocker ?? null} />}
       {tab === "report" && <Report project={p} />}
-    </div>
+    </Stack>
   );
 }
 
-/** Two clicks, so one stray click can't drop a project with its runs, report and drafts. */
-function DeleteProject({ project }: { project: ProjectRow }): ReactElement {
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** A setup step's state: done, still needed, or optional. */
+function StepIcon({ done, optional = false, icon }: { done: boolean; optional?: boolean; icon: ReactNode }): ReactElement {
+  if (done) return <IconCircleCheck size={16} color="var(--mantine-color-teal-filled)" />;
+  if (optional) return <>{icon}</>;
+  return <IconCircleDashed size={16} color="var(--mantine-color-yellow-filled)" />;
+}
+
+function ProjectMenu({ project }: { project: ProjectRow }): ReactElement {
   const client = useQueryClient();
-  const [asking, setAsking] = useState(false);
+  const [confirming, confirm] = useDisclosure();
   const remove = useMutation({
     mutationFn: () => call("DELETE", `/api/projects/${project.id}`),
     onSuccess: () => {
@@ -50,189 +130,36 @@ function DeleteProject({ project }: { project: ProjectRow }): ReactElement {
       window.location.hash = href.projects();
     },
   });
-  if (!asking) {
-    return (
-      <button className="secondary" onClick={() => setAsking(true)}>
-        Delete project
-      </button>
-    );
-  }
-  return (
-    <span className="actions">
-      <span className="hint">Delete its runs, report and drafts? People and companies stay in the registry.</span>
-      <button className="danger" disabled={remove.isPending} onClick={() => remove.mutate()}>
-        Delete
-      </button>
-      <button className="secondary" onClick={() => setAsking(false)}>
-        Cancel
-      </button>
-      <ErrorBox error={remove.error} />
-    </span>
-  );
-}
-
-function useSchemas(mode: string): UseQueryResult<Schemas> {
-  return useQuery({ queryKey: ["schemas", mode], queryFn: () => get<Schemas>(`/api/modes/${mode}/schemas`), staleTime: Infinity });
-}
-
-function Brief({ project }: { project: ProjectRow }): ReactElement {
-  const client = useQueryClient();
-  const schemas = useSchemas(project.mode);
-  const [brief, setBrief] = useState<Json>(project.brief ?? {});
-  const [sender, setSender] = useState({ name: project.sender_name ?? "", tone: project.sender_tone });
-  useEffect(() => setBrief(project.brief ?? {}), [project.brief]);
-  const save = useMutation({
-    mutationFn: () =>
-      call<ProjectRow>("PATCH", `/api/projects/${project.id}`, {
-        brief,
-        sender_name: sender.name || null,
-        sender_tone: sender.tone,
-      }),
-    onSuccess: (saved) => client.setQueryData(["project", project.id], saved),
-  });
   return (
     <>
-      <Section title="Sender">
-        <div className="form-grid">
-          <label className="field">
-            <span>Your name (signs every letter)</span>
-            <input value={sender.name} onChange={(e) => setSender({ ...sender, name: e.target.value })} />
-          </label>
-          <label className="field">
-            <span>Tone (picks salutation and sign-off)</span>
-            <select value={sender.tone} onChange={(e) => setSender({ ...sender, tone: e.target.value })}>
-              <option>warm</option>
-              <option>neutral</option>
-              <option>formal</option>
-            </select>
-          </label>
-        </div>
-      </Section>
-      <WriteWithAi project={project} brief={brief} onDraft={setBrief} />
-      <Section title="Brief" actions={<button onClick={() => save.mutate()} disabled={save.isPending}>Save</button>}>
-        {schemas.data && <SchemaForm schema={schemas.data.brief} value={brief} onChange={setBrief} />}
-        <ErrorBox error={save.error ?? schemas.error} />
-        {save.isSuccess && <p className="hint">Saved.</p>}
-      </Section>
-    </>
-  );
-}
-
-/** Drafts the brief from the company site (biz) or the CV (seeker) into the form, unsaved. */
-function WriteWithAi({ project, brief, onDraft }: { project: ProjectRow; brief: Json; onDraft: (brief: Json) => void }): ReactElement {
-  const client = useQueryClient();
-  const biz = project.mode === "biz";
-  const [source, setSource] = useState<string | null>(null);
-  const [note, setNote] = useState("");
-  const site = source ?? "";
-  const cv = source ?? (typeof brief.cv_text === "string" ? brief.cv_text : "");
-  const write = useMutation({
-    mutationFn: () =>
-      call<BriefDraft>("POST", `/api/projects/${project.id}/brief/generate`, biz ? { site_url: site, note } : { cv_text: cv, note }),
-    onSuccess: (draft) => {
-      onDraft(draft.brief);
-      void client.invalidateQueries({ queryKey: ["fields", project.id] });
-    },
-  });
-  const draft = write.data;
-  return (
-    <Section
-      title="Write with AI"
-      actions={
-        <button disabled={write.isPending || !(biz ? site : cv)} onClick={() => write.mutate()}>
-          {write.isPending ? "Writing, about a minute..." : "Write the brief"}
-        </button>
-      }
-    >
-      <div className="form-grid">
-        {biz ? (
-          <label className="field">
-            <span>Your company's website</span>
-            <input type="url" placeholder="https://" value={site} onChange={(e) => setSource(e.target.value)} />
-          </label>
-        ) : (
-          <label className="field">
-            <span>Your CV, pasted as text</span>
-            <textarea rows={8} value={cv} onChange={(e) => setSource(e.target.value)} />
-          </label>
-        )}
-        <label className="field">
-          <span>Note (optional)</span>
-          <textarea rows={2} placeholder={biz ? "Goal, target regions, companies to avoid" : "Regions, salary or rate, work you won't take"} value={note} onChange={(e) => setNote(e.target.value)} />
-        </label>
-      </div>
-      <ErrorBox error={write.error} />
-      {draft && (
-        <>
-          <p className="hint">
-            The form below now holds the draft (${draft.cost_usd.toFixed(2)}). It is not saved: check it, then press Save.
-            {draft.field_version !== null && (
-              <>
-                {" "}
-                Report fields were drafted too: <a href={href.project(project.id, "fields")}>review them on the Fields tab</a>.
-              </>
-            )}
-          </p>
-          <Concerns items={draft.concerns} />
-        </>
-      )}
-    </Section>
-  );
-}
-
-function Runs({ project }: { project: ProjectRow }): ReactElement {
-  const client = useQueryClient();
-  const schemas = useSchemas(project.mode);
-  const [options, setOptions] = useState<Json>({});
-  const runs = useQuery({
-    queryKey: ["runs", project.id],
-    queryFn: () => get<Run[]>(`/api/projects/${project.id}/runs`),
-    refetchInterval: 5000,
-  });
-  const start = useMutation({
-    mutationFn: () => call<Run>("POST", `/api/projects/${project.id}/runs`, { options }),
-    onSuccess: (run) => {
-      void client.invalidateQueries({ queryKey: ["runs", project.id] });
-      window.location.hash = href.run(run.id);
-    },
-  });
-  return (
-    <>
-      <Section title="Run the search" actions={<button onClick={() => start.mutate()} disabled={start.isPending || !project.brief}>Start</button>}>
-        {!project.brief && <p className="hint">Write and save the brief first.</p>}
-        {schemas.data && <SchemaForm schema={schemas.data.options} value={options} onChange={setOptions} />}
-        <ErrorBox error={start.error} />
-      </Section>
-      <Section title="Runs">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Pipeline</th>
-              <th>Status</th>
-              <th>Phase</th>
-              <th>Cost</th>
-              <th>Started</th>
-            </tr>
-          </thead>
-          <tbody>
-            {runs.data?.map((r) => (
-              <tr key={r.id}>
-                <td>
-                  <a href={href.run(r.id)}>{r.id}</a>
-                </td>
-                <td>{r.pipeline}</td>
-                <td>
-                  <Status status={r.status} />
-                </td>
-                <td>{r.phase}</td>
-                <td>${r.cost_usd.toFixed(2)}</td>
-                <td>{new Date(r.started_at).toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Section>
+      <Menu position="bottom-end" shadow="md">
+        <Menu.Target>
+          <ActionIcon variant="default" size="lg" aria-label="Project actions">
+            <IconDots size={18} />
+          </ActionIcon>
+        </Menu.Target>
+        <Menu.Dropdown>
+          <Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={confirm.open}>
+            Delete project
+          </Menu.Item>
+        </Menu.Dropdown>
+      </Menu>
+      <Modal opened={confirming} onClose={confirm.close} title={<Text fw={650}>Delete "{project.name}"?</Text>}>
+        <Stack>
+          <Text size="sm">
+            This deletes its runs, report and drafts. People and companies stay in the registry. It can't be undone.
+          </Text>
+          <ErrorBox error={remove.error} />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={confirm.close}>
+              Cancel
+            </Button>
+            <Button color="red" loading={remove.isPending} onClick={() => remove.mutate()}>
+              Delete project
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </>
   );
 }

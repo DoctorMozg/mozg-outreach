@@ -1,11 +1,60 @@
+import { Anchor, Badge, Button, Card, Group, SegmentedControl, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { IconBuilding, IconSearch, IconUser } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
-import { call, get, type Entity, type EntityDetail, type Graph, type MergeSuggestion } from "../api";
-import { ErrorBox, Section, Value } from "../components/common";
+import { call, type Entity, type EntityDetail, get, type Graph, type MergeSuggestion } from "../api";
+import { Empty, ErrorBox, Value } from "../components/common";
 import { GraphView } from "../components/GraphView";
 import { href } from "../router";
 
+function KindBadge({ kind }: { kind: Entity["kind"] }): ReactElement {
+  return (
+    <Badge size="sm" variant="light" color={kind === "person" ? "teal" : "indigo"} leftSection={kind === "person" ? <IconUser size={12} /> : <IconBuilding size={12} />}>
+      {kind}
+    </Badge>
+  );
+}
+
 export function Registry(): ReactElement {
+  const [view, setView] = useState<"list" | "graph">("list");
+  return (
+    <Stack maw={1200} mx="auto">
+      <Group justify="space-between" align="flex-end">
+        <div>
+          <Title order={2}>People and companies</Title>
+          <Text size="sm" c="dimmed">
+            One registry for every project. Each profile lists every place it was seen.
+          </Text>
+        </div>
+        <SegmentedControl
+          value={view}
+          onChange={(v) => setView(v === "graph" ? "graph" : "list")}
+          data={[
+            { value: "list", label: "List" },
+            { value: "graph", label: "Graph" },
+          ]}
+        />
+      </Group>
+      <Merges />
+      {view === "list" ? <EntityList /> : <RegistryGraph />}
+    </Stack>
+  );
+}
+
+function RegistryGraph(): ReactElement {
+  const graph = useQuery({ queryKey: ["graph", "registry"], queryFn: () => get<Graph>("/api/graph") });
+  return (
+    <Card>
+      <Text size="sm" c="dimmed" mb="sm">
+        Every person and company with the leads they belong to, the most recently updated first when there are too many to draw.
+      </Text>
+      <ErrorBox error={graph.error} />
+      {graph.data && <GraphView graph={graph.data} />}
+    </Card>
+  );
+}
+
+function EntityList(): ReactElement {
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("");
   const [seenSince, setSeenSince] = useState("");
@@ -17,31 +66,57 @@ export function Registry(): ReactElement {
       ),
   });
   return (
-    <div className="stack">
-      <h2>People and companies</h2>
-      <Merges />
-      <Section title="Registry">
-        <div className="inline">
-          <input placeholder="Search names" value={q} onChange={(e) => setQ(e.target.value)} />
-          <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="">all</option>
-            <option value="company">companies</option>
-            <option value="person">people</option>
-          </select>
-          <label>
-            seen since <input type="date" value={seenSince} onChange={(e) => setSeenSince(e.target.value)} />
-          </label>
-        </div>
-        <ErrorBox error={entities.error} />
-        <ul className="list">
-          {entities.data?.map((e) => (
-            <li key={e.id}>
-              <a href={href.entity(e.id)}>{e.name}</a> <span className="tag">{e.kind}</span>
-            </li>
-          ))}
-        </ul>
-      </Section>
-    </div>
+    <Card>
+      <Group mb="md" gap="sm">
+        <TextInput placeholder="Search names" leftSection={<IconSearch size={14} />} value={q} onChange={(e) => setQ(e.currentTarget.value)} w={260} />
+        <SegmentedControl
+          value={kind}
+          onChange={setKind}
+          data={[
+            { value: "", label: "All" },
+            { value: "company", label: "Companies" },
+            { value: "person", label: "People" },
+          ]}
+        />
+        <TextInput
+          type="date"
+          aria-label="Seen since"
+          leftSection={<Text size="xs">seen since</Text>}
+          leftSectionWidth={78}
+          value={seenSince}
+          onChange={(e) => setSeenSince(e.currentTarget.value)}
+        />
+      </Group>
+      <ErrorBox error={entities.error} />
+      {entities.data?.length === 0 ? (
+        <Empty icon={<IconUser size={32} />} title="Nobody here yet">
+          Enrich a lead and the people and companies it finds land here.
+        </Empty>
+      ) : (
+        <Table highlightOnHover verticalSpacing="xs">
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Name</Table.Th>
+              <Table.Th w={130}>Kind</Table.Th>
+              <Table.Th w={180}>Updated</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {entities.data?.map((e) => (
+              <Table.Tr key={e.id} style={{ cursor: "pointer" }} onClick={() => (window.location.hash = href.entity(e.id))}>
+                <Table.Td fw={500}>{e.name}</Table.Td>
+                <Table.Td>
+                  <KindBadge kind={e.kind} />
+                </Table.Td>
+                <Table.Td c="dimmed" fz="sm">
+                  {new Date(e.updated_at).toLocaleDateString()}
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      )}
+    </Card>
   );
 }
 
@@ -54,98 +129,147 @@ function Merges(): ReactElement | null {
   });
   if (!suggestions.data?.length) return null;
   return (
-    <Section title="Possible duplicates">
-      <p className="hint">Exact identifiers merge on their own; these only look alike. Merging keeps the first and moves everything onto it.</p>
-      <ul className="list">
+    <Card style={{ borderColor: "var(--mantine-color-yellow-filled)" }}>
+      <Title order={4} mb={4}>
+        Possible duplicates
+      </Title>
+      <Text size="sm" c="dimmed" mb="md">
+        Exact identifiers merge on their own; these only look alike. Merging keeps the first and moves everything onto it.
+      </Text>
+      <Stack gap="xs">
         {suggestions.data.map((s) => (
-          <li key={s.id}>
-            <a href={href.entity(s.a.id)}>{s.a.name}</a> and <a href={href.entity(s.b.id)}>{s.b.name}</a> <span className="muted">{s.reason}</span>{" "}
-            <button onClick={() => decide.mutate({ id: s.id, accept: true })}>Merge</button>{" "}
-            <button className="secondary" onClick={() => decide.mutate({ id: s.id, accept: false })}>
-              Different
-            </button>
-          </li>
+          <Group key={s.id} justify="space-between" wrap="nowrap">
+            <Text size="sm">
+              <Anchor href={href.entity(s.a.id)}>{s.a.name}</Anchor> and <Anchor href={href.entity(s.b.id)}>{s.b.name}</Anchor>{" "}
+              <Text span c="dimmed" size="sm">
+                {s.reason}
+              </Text>
+            </Text>
+            <Group gap="xs" wrap="nowrap">
+              <Button size="xs" loading={decide.isPending && decide.variables.id === s.id && decide.variables.accept} onClick={() => decide.mutate({ id: s.id, accept: true })}>
+                Merge
+              </Button>
+              <Button
+                size="xs"
+                variant="default"
+                loading={decide.isPending && decide.variables.id === s.id && !decide.variables.accept}
+                onClick={() => decide.mutate({ id: s.id, accept: false })}
+              >
+                Different
+              </Button>
+            </Group>
+          </Group>
         ))}
-      </ul>
+      </Stack>
       <ErrorBox error={decide.error} />
-    </Section>
+    </Card>
   );
 }
 
 export function EntityView({ id }: { id: number }): ReactElement {
   const entity = useQuery({ queryKey: ["entity", id], queryFn: () => get<EntityDetail>(`/api/entities/${id}`) });
-  const [depth, setDepth] = useState(1);
+  const [depth, setDepth] = useState("1");
   const graph = useQuery({ queryKey: ["graph", "entity", id, depth], queryFn: () => get<Graph>(`/api/graph?entity_id=${id}&depth=${depth}`) });
   const e = entity.data;
   if (!e) return <ErrorBox error={entity.error} />;
+  const profileRows = [
+    ...e.identifiers.map((i) => ({ key: `id-${i.kind}-${i.value}`, name: i.kind, value: <Text size="sm">{i.value}</Text> })),
+    ...Object.entries(e.profile).map(([name, field]) => ({ key: name, name, value: <Value field={field} /> })),
+  ];
   return (
-    <div className="stack">
-      <h2>
-        {e.name} <span className="tag">{e.kind}</span>
-      </h2>
-      <Section title="Profile">
-        <table className="compact">
-          <tbody>
-            {e.identifiers.map((i) => (
-              <tr key={`${i.kind}-${i.value}`}>
-                <th>{i.kind}</th>
-                <td>{i.value}</td>
-              </tr>
-            ))}
-            {Object.entries(e.profile).map(([name, field]) => (
-              <tr key={name}>
-                <th>{name}</th>
-                <td>
-                  <Value field={field} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Section>
-      <Section title="Connections">
-        <ul className="list">
+    <Stack maw={1200} mx="auto">
+      <Anchor href={href.registry()} size="sm">
+        People and companies
+      </Anchor>
+      <Group gap="sm">
+        <Title order={2}>{e.name}</Title>
+        <KindBadge kind={e.kind} />
+      </Group>
+      {profileRows.length > 0 && (
+        <Card>
+          <Title order={4} mb="sm">
+            Profile
+          </Title>
+          <Table variant="vertical" layout="fixed" withTableBorder>
+            <Table.Tbody>
+              {profileRows.map((row) => (
+                <Table.Tr key={row.key}>
+                  <Table.Th w={180}>{row.name.replaceAll("_", " ")}</Table.Th>
+                  <Table.Td>{row.value}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Card>
+      )}
+      <Card>
+        <Group justify="space-between" mb="sm">
+          <Title order={4}>Connections</Title>
+          <Group gap="xs">
+            <Text size="sm" c="dimmed">
+              Graph depth
+            </Text>
+            <SegmentedControl size="xs" value={depth} onChange={setDepth} data={["1", "2", "3"]} />
+          </Group>
+        </Group>
+        <Stack gap={6} mb="md">
           {e.relations.map((r, n) => (
-            <li key={n}>
-              {r.direction === "out" ? `${r.type} ` : ""}
-              <a href={href.entity(r.other_id)}>{r.other_name}</a>
-              {r.direction === "in" ? ` (${r.type})` : ""} {r.detail && <span className="muted">{r.detail}</span>}
-              {r.source_url && (
-                <a className="source" href={r.source_url} target="_blank" rel="noreferrer noopener">
-                  src
-                </a>
+            <Text key={n} size="sm">
+              {r.direction === "out" && <Text span c="dimmed">{r.type} </Text>}
+              <Anchor href={href.entity(r.other_id)}>{r.other_name}</Anchor>
+              {r.direction === "in" && <Text span c="dimmed"> ({r.type})</Text>}
+              {r.detail && (
+                <Text span c="dimmed">
+                  {" "}
+                  {r.detail}
+                </Text>
               )}
-            </li>
+              {r.source_url && (
+                <Anchor href={r.source_url} target="_blank" rel="noreferrer noopener" size="xs" ml={6}>
+                  source
+                </Anchor>
+              )}
+            </Text>
           ))}
           {e.leads.map((l) => (
-            <li key={`lead-${l.item_id}`}>
-              lead <a href={href.item(l.item_id)}>{l.title}</a> <span className="muted">{l.role}</span>
-            </li>
+            <Text key={`lead-${l.item_id}`} size="sm">
+              <Badge size="xs" variant="light" color="orange" mr={6}>
+                lead
+              </Badge>
+              <Anchor href={href.item(l.item_id)}>{l.title}</Anchor>{" "}
+              <Text span c="dimmed">
+                {l.role}
+              </Text>
+            </Text>
           ))}
-        </ul>
-        <label className="inline">
-          Graph depth
-          <select value={depth} onChange={(ev) => setDepth(Number(ev.target.value))}>
-            {[1, 2, 3].map((d) => (
-              <option key={d}>{d}</option>
-            ))}
-          </select>
-        </label>
+        </Stack>
+        <ErrorBox error={graph.error} />
         {graph.data && <GraphView graph={graph.data} />}
-      </Section>
-      <Section title={`Seen in ${e.sightings.length} places`}>
-        <ul className="list">
+      </Card>
+      <Card>
+        <Title order={4} mb="sm">
+          Seen in {e.sightings.length} {e.sightings.length === 1 ? "place" : "places"}
+        </Title>
+        <Stack gap="sm">
           {e.sightings.map((s, n) => (
-            <li key={n}>
-              <span className="tag">{s.source_kind}</span>{" "}
-              <a href={s.source_url} target="_blank" rel="noreferrer noopener">
-                {s.source_url}
-              </a>
-              {s.quote && <blockquote>{s.quote}</blockquote>}
-            </li>
+            <div key={n}>
+              <Group gap={6} wrap="nowrap">
+                <Badge size="xs" variant="outline" color="gray">
+                  {s.source_kind.replaceAll("_", " ")}
+                </Badge>
+                <Anchor href={s.source_url} target="_blank" rel="noreferrer noopener" size="sm" style={{ wordBreak: "break-all" }}>
+                  {s.source_url}
+                </Anchor>
+              </Group>
+              {s.quote && (
+                <Text size="xs" c="dimmed" fs="italic" mt={2}>
+                  "{s.quote}"
+                </Text>
+              )}
+            </div>
           ))}
-        </ul>
-      </Section>
-    </div>
+        </Stack>
+      </Card>
+    </Stack>
   );
 }

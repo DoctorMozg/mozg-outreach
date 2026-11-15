@@ -45,6 +45,7 @@ from mozg_outreach.sources.telegram_discovery import (
     DiscoveryRequest,
     FoundChannel,
 )
+from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import Item, SourceConfig
 from mozg_outreach.storage.repositories import ItemRepository
 
@@ -400,6 +401,10 @@ def listing_of(item: Item) -> tuple[Listing, ListingJudgment | None]:
     return listing, ListingJudgment.model_validate(judged) if judged else None
 
 
+def _blocker(db: Database, project_id: int) -> str | None:
+    return None if ProjectInputs.load(db, project_id).brief else "write the brief first"
+
+
 SEEKER_SEARCH = FlowSpec[SeekerSearchState](
     pipeline="seeker.search",
     state_type=SeekerSearchState,
@@ -417,4 +422,5 @@ SEEKER_SEARCH = FlowSpec[SeekerSearchState](
         Phase("fields", fields),
         Phase("summarize", summarize),
     ),
+    blocker=_blocker,
 )

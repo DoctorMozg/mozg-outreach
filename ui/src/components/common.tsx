@@ -1,55 +1,178 @@
+import { Accordion, Alert, Anchor, Badge, type BadgeProps, Card, Group, List, Text, Tooltip } from "@mantine/core";
+import { IconAlertTriangle, IconExternalLink, IconInfoCircle } from "@tabler/icons-react";
 import type { ReactElement, ReactNode } from "react";
-import type { FieldValue, RunStatus } from "../api";
+import type { FieldValue, Mode, RunStatus } from "../api";
 
 export function ErrorBox({ error }: { error: unknown }): ReactElement | null {
   if (!error) return null;
-  return <div className="error">{error instanceof Error ? error.message : String(error)}</div>;
+  return (
+    <Alert color="red" variant="light" icon={<IconAlertTriangle size={18} />}>
+      {error instanceof Error ? error.message : String(error)}
+    </Alert>
+  );
 }
+
+const STATUS_COLORS: Record<RunStatus, string> = {
+  pending: "gray",
+  running: "blue",
+  awaiting_gate: "yellow",
+  complete: "green",
+  failed: "red",
+  cancelled: "gray",
+};
 
 export function Status({ status }: { status: RunStatus }): ReactElement {
-  return <span className={`status status-${status}`}>{status.replace("_", " ")}</span>;
-}
-
-export function Score({ value }: { value: number | null }): ReactElement {
-  if (value === null) return <span className="score muted">n/a</span>;
-  const band = value >= 70 ? "high" : value >= 45 ? "mid" : "low";
-  return <span className={`score score-${band}`}>{value.toFixed(0)}</span>;
-}
-
-export function Value({ field }: { field: FieldValue | undefined }): ReactElement {
-  if (!field || field.value === null || field.value === undefined) return <span className="muted">-</span>;
-  const shown = Array.isArray(field.value) ? field.value.join(", ") : String(field.value);
   return (
-    <span className={`value confidence-${field.confidence}`} title={field.quote ?? undefined}>
+    <Badge color={STATUS_COLORS[status]} variant="light">
+      {status === "awaiting_gate" ? "needs you" : status}
+    </Badge>
+  );
+}
+
+export function scoreColor(value: number | null): string {
+  if (value === null) return "gray";
+  return value >= 70 ? "teal" : value >= 45 ? "yellow" : "red";
+}
+
+export function Score({ value, size = "md" }: { value: number | null; size?: BadgeProps["size"] }): ReactElement {
+  return (
+    <Badge color={scoreColor(value)} variant="light" size={size} miw={42} style={{ fontVariantNumeric: "tabular-nums" }}>
+      {value === null ? "n/a" : value.toFixed(0)}
+    </Badge>
+  );
+}
+
+export function ModeBadge({ mode }: { mode: Mode }): ReactElement {
+  return (
+    <Badge size="xs" variant="light" color={mode === "biz" ? "indigo" : "grape"}>
+      {mode}
+    </Badge>
+  );
+}
+
+/** A researched value with its evidence: the quote on hover and a link to the page it came from. */
+export function Value({ field }: { field: FieldValue | undefined }): ReactElement {
+  if (!field || field.value === null || field.value === undefined || field.value === "") {
+    return <Text span c="dimmed">-</Text>;
+  }
+  const shown = Array.isArray(field.value) ? field.value.join(", ") : String(field.value);
+  const guessed = field.confidence === "guessed";
+  const text = (
+    <Text span inherit fs={guessed ? "italic" : undefined} c={guessed ? "dimmed" : undefined}>
       {shown}
+    </Text>
+  );
+  return (
+    <span>
+      {field.quote ? <Tooltip label={`"${field.quote}"`}>{text}</Tooltip> : text}
+      {guessed && (
+        <Badge size="xs" variant="outline" color="orange" ml={6}>
+          guessed
+        </Badge>
+      )}
       {field.source_url && (
-        <a className="source" href={field.source_url} target="_blank" rel="noreferrer noopener">
-          src
-        </a>
+        <Anchor href={field.source_url} target="_blank" rel="noreferrer noopener" ml={4} aria-label="Source" style={{ verticalAlign: "-2px" }}>
+          <IconExternalLink size={14} />
+        </Anchor>
       )}
     </span>
   );
 }
 
-export function Section({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }): ReactElement {
+// Agents prefix a note with the source it is about ("Bayut: ..."), which is what groups them.
+const PREFIX = /^([^:]{3,240}):\s+(.+)$/s;
+
+export function groupConcerns(items: string[]): [string, string[]][] {
+  const groups = new Map<string, string[]>();
+  const keyed = items.map((item) => PREFIX.exec(item));
+  const counts = new Map<string, number>();
+  for (const match of keyed) if (match) counts.set(match[1]!, (counts.get(match[1]!) ?? 0) + 1);
+  items.forEach((item, n) => {
+    const match = keyed[n];
+    const shared = match && (counts.get(match[1]!) ?? 0) > 1;
+    const group = shared ? match[1]! : "General";
+    groups.set(group, [...(groups.get(group) ?? []), shared ? match[2]! : item]);
+  });
+  // General notes first: they are about the run as a whole.
+  return [...groups.entries()].sort(([a], [b]) => (a === "General" ? -1 : b === "General" ? 1 : 0));
+}
+
+/** Notes the agents flagged; a few show as a list, many collapse into groups by source. */
+export function Concerns({ items, title = "Notes from the agents" }: { items: string[] | undefined; title?: string }): ReactElement | null {
+  if (!items?.length) return null;
+  if (items.length <= 4) {
+    return (
+      <Alert variant="light" color="yellow" icon={<IconInfoCircle size={18} />} title={title}>
+        <List size="sm" spacing={4}>
+          {items.map((c, n) => (
+            <List.Item key={n}>{c}</List.Item>
+          ))}
+        </List>
+      </Alert>
+    );
+  }
+  const groups = groupConcerns(items);
   return (
-    <section className="card">
-      <header>
-        <h3>{title}</h3>
-        {actions}
-      </header>
-      {children}
-    </section>
+    <div>
+      <Group gap={6} mb={6}>
+        <IconInfoCircle size={16} color="var(--mantine-color-yellow-filled)" />
+        <Text size="sm" fw={600}>
+          {title} ({items.length})
+        </Text>
+      </Group>
+      <Accordion variant="contained" multiple chevronPosition="left">
+        {groups.map(([group, notes]) => (
+          <Accordion.Item key={group} value={group}>
+            <Accordion.Control>
+              <Group justify="space-between" wrap="nowrap" pr="sm">
+                <Text size="sm" lineClamp={1}>
+                  {group}
+                </Text>
+                <Badge size="sm" variant="light" color="gray">
+                  {notes.length}
+                </Badge>
+              </Group>
+            </Accordion.Control>
+            <Accordion.Panel>
+              <List size="sm" spacing={6}>
+                {notes.map((note, n) => (
+                  <List.Item key={n}>{note}</List.Item>
+                ))}
+              </List>
+            </Accordion.Panel>
+          </Accordion.Item>
+        ))}
+      </Accordion>
+    </div>
   );
 }
 
-export function Concerns({ items }: { items: string[] | undefined }): ReactElement | null {
-  if (!items?.length) return null;
+export function Empty({ icon, title, children }: { icon: ReactNode; title: string; children?: ReactNode }): ReactElement {
   return (
-    <ul className="concerns">
-      {items.map((c, n) => (
-        <li key={n}>{c}</li>
-      ))}
-    </ul>
+    <Card withBorder={false} bg="var(--mantine-color-default-hover)" py="xl">
+      <Group justify="center" mb="xs" c="dimmed">
+        {icon}
+      </Group>
+      <Text ta="center" fw={600}>
+        {title}
+      </Text>
+      {children && (
+        <Text ta="center" size="sm" c="dimmed" mt={4}>
+          {children}
+        </Text>
+      )}
+    </Card>
   );
+}
+
+const PIPELINE_LABELS: Record<string, string> = {
+  search: "Search",
+  fields: "Field proposal",
+  enrich: "Enrich lead",
+  letters: "Write letters",
+};
+
+export function pipelineLabel(pipeline: string): string {
+  const step = pipeline.split(".").pop() ?? pipeline;
+  return PIPELINE_LABELS[step] ?? pipeline;
 }

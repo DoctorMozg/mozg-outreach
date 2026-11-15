@@ -40,6 +40,11 @@ class ProjectOut(Row):
     created_at: datetime
 
 
+class SearchReadiness(BaseModel):
+    pipeline: str
+    blocker: str | None
+
+
 class FieldSpecOut(Row):
     version: int
     spec: JsonObject
