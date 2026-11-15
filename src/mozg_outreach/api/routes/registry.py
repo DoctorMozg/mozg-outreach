@@ -130,7 +130,9 @@ class GraphBuilder:
 
     def add_entities(self, ids: set[int]) -> None:
         room = MAX_GRAPH_NODES - len(self.nodes)
-        for e in self._session.scalars(select(Entity).where(Entity.id.in_(ids)).limit(room)):
+        # Over the cap, the most recently updated entities stay.
+        latest = select(Entity).where(Entity.id.in_(ids)).order_by(Entity.updated_at.desc())
+        for e in self._session.scalars(latest.limit(room)):
             kind: Literal["person", "company"] = (
                 "company" if e.kind == EntityKind.COMPANY else "person"
             )
@@ -177,10 +179,22 @@ def _entity_graph(session: Session, entity_id: int, depth: int) -> GraphOut:
         found = graph.relations_among(frontier)
         frontier = ({r.from_id for r in found} | {r.to_id for r in found}) - ids
         ids |= frontier
+    return _with_leads(session, graph, ids)
+
+
+def _registry_graph(session: Session) -> GraphOut:
+    graph = GraphBuilder(session)
+    latest = select(Entity.id).order_by(Entity.updated_at.desc()).limit(MAX_GRAPH_NODES)
+    return _with_leads(session, graph, set(session.scalars(latest)))
+
+
+def _with_leads(session: Session, graph: GraphBuilder, ids: set[int]) -> GraphOut:
+    """The entities, then the leads they belong to while room is left."""
     graph.add_entities(ids)
     links = list(session.scalars(select(ItemLink).where(ItemLink.entity_id.in_(ids))))
     item_ids = {link.item_id for link in links}
-    graph.add_items(list(session.scalars(select(Item).where(Item.id.in_(item_ids)))))
+    leads = select(Item).where(Item.id.in_(item_ids)).order_by(Item.created_at.desc())
+    graph.add_items(list(session.scalars(leads)))
     return _connect(graph, links, ids)
 
 
@@ -201,14 +215,16 @@ async def graph(
     since: date | None = None,
     until: date | None = None,
 ) -> GraphOut:
-    """Leads of a project dated in the window, with their people and companies; or an
-    entity's neighbourhood."""
+    """Leads of a project dated in the window, with their people and companies; an entity's
+    neighbourhood; or, given neither, the whole registry."""
+    if project_id is not None and entity_id is not None:
+        raise HTTPException(422, "pass project_id or entity_id, not both")
     with svc.db.session() as session:
-        if project_id is not None and entity_id is None:
+        if project_id is not None:
             return _project_graph(session, project_id, ReportFilter(since=since, until=until))
-        if entity_id is not None and project_id is None:
+        if entity_id is not None:
             return _entity_graph(session, entity_id, depth)
-    raise HTTPException(422, "pass exactly one of project_id or entity_id")
+        return _registry_graph(session)
 
 
 @router.get("/merge-suggestions")

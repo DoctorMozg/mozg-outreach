@@ -1,8 +1,10 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from sqlalchemy.orm import Session
 
+from mozg_outreach.api.routes import registry as registry_routes
 from mozg_outreach.api.schemas import EntityDetail, EntityOut, GraphOut, ItemOut
 from mozg_outreach.domain import EntityKind, ItemKind, SourceKind
 from mozg_outreach.naturalize.voice import VoiceNotes
@@ -204,7 +206,7 @@ async def test_voice_profile_needs_samples_then_builds(api: Api) -> None:
 
 
 class TestRegistry:
-    def seed(self, session: Session, project_id: int) -> tuple[int, int, int]:
+    def seed(self, session: Session, project_id: int) -> tuple[int, int, int, int]:
         acme = Entity(kind=EntityKind.COMPANY, name="Acme GmbH")
         twin = Entity(kind=EntityKind.COMPANY, name="Acme Gmbh.")
         jane = Entity(kind=EntityKind.PERSON, name="Jane Example")
@@ -218,12 +220,12 @@ class TestRegistry:
                 MergeSuggestion(entity_a_id=acme.id, entity_b_id=twin.id, reason="similar names"),
             ]
         )
-        return acme.id, jane.id, item.id
+        return acme.id, jane.id, twin.id, item.id
 
     async def test_profile_graph_and_merge(self, api: Api) -> None:
         project_id = await api.project(brief=biz_brief())
         with api.services.db.session() as session:
-            acme, jane, item = self.seed(session, project_id)
+            acme, jane, twin, item = self.seed(session, project_id)
 
         profile = await api.get(f"/api/entities/{acme}", EntityDetail)
         [works_at] = profile.relations
@@ -235,12 +237,27 @@ class TestRegistry:
         assert {e.label for e in by_project.edges} == {"target"}
         around_jane = await api.get(f"/api/graph?entity_id={jane}", GraphOut)
         assert {n.id for n in around_jane.nodes} == {f"e{jane}", f"e{acme}", f"i{item}"}
-        assert (await api.client.get("/api/graph")).status_code == 422
+        everything = await api.get("/api/graph", GraphOut)
+        assert {n.id for n in everything.nodes} == {f"e{acme}", f"e{jane}", f"e{twin}", f"i{item}"}
+        assert {e.label for e in everything.edges} == {"target", "works_at"}
+        both = await api.client.get(f"/api/graph?project_id={project_id}&entity_id={jane}")
+        assert both.status_code == 422
 
         [suggestion] = await api.ok_list("/api/merge-suggestions")
         kept = await api.ok("POST", f"/api/merge-suggestions/{suggestion['id']}/accept")
         assert kept["id"] == acme
         assert await api.ok_list("/api/merge-suggestions") == []
+
+    async def test_full_graph_keeps_the_latest_entities_over_the_cap(
+        self, api: Api, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(registry_routes, "MAX_GRAPH_NODES", 2)
+        with api.services.db.session() as session:
+            for day, name in [(1, "Oldest"), (3, "Newest"), (2, "Middle")]:
+                updated = datetime(2026, 11, day, tzinfo=UTC)
+                session.add(Entity(kind=EntityKind.COMPANY, name=name, updated_at=updated))
+        graph = await api.get("/api/graph", GraphOut)
+        assert {n.label for n in graph.nodes} == {"Newest", "Middle"}
 
 
 class TestDates:

@@ -16,6 +16,45 @@ function KindBadge({ kind }: { kind: Entity["kind"] }): ReactElement {
 }
 
 export function Registry(): ReactElement {
+  const [view, setView] = useState<"list" | "graph">("list");
+  return (
+    <Stack maw={1200} mx="auto">
+      <Group justify="space-between" align="flex-end">
+        <div>
+          <Title order={2}>People and companies</Title>
+          <Text size="sm" c="dimmed">
+            One registry for every project. Each profile lists every place it was seen.
+          </Text>
+        </div>
+        <SegmentedControl
+          value={view}
+          onChange={(v) => setView(v === "graph" ? "graph" : "list")}
+          data={[
+            { value: "list", label: "List" },
+            { value: "graph", label: "Graph" },
+          ]}
+        />
+      </Group>
+      <Merges />
+      {view === "list" ? <EntityList /> : <RegistryGraph />}
+    </Stack>
+  );
+}
+
+function RegistryGraph(): ReactElement {
+  const graph = useQuery({ queryKey: ["graph", "registry"], queryFn: () => get<Graph>("/api/graph") });
+  return (
+    <Card>
+      <Text size="sm" c="dimmed" mb="sm">
+        Every person and company with the leads they belong to, the most recently updated first when there are too many to draw.
+      </Text>
+      <ErrorBox error={graph.error} />
+      {graph.data && <GraphView graph={graph.data} />}
+    </Card>
+  );
+}
+
+function EntityList(): ReactElement {
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("");
   const [seenSince, setSeenSince] = useState("");
@@ -27,66 +66,57 @@ export function Registry(): ReactElement {
       ),
   });
   return (
-    <Stack maw={1200} mx="auto">
-      <div>
-        <Title order={2}>People and companies</Title>
-        <Text size="sm" c="dimmed">
-          One registry for every project. Each profile lists every place it was seen.
-        </Text>
-      </div>
-      <Merges />
-      <Card>
-        <Group mb="md" gap="sm">
-          <TextInput placeholder="Search names" leftSection={<IconSearch size={14} />} value={q} onChange={(e) => setQ(e.currentTarget.value)} w={260} />
-          <SegmentedControl
-            value={kind}
-            onChange={setKind}
-            data={[
-              { value: "", label: "All" },
-              { value: "company", label: "Companies" },
-              { value: "person", label: "People" },
-            ]}
-          />
-          <TextInput
-            type="date"
-            aria-label="Seen since"
-            leftSection={<Text size="xs">seen since</Text>}
-            leftSectionWidth={78}
-            value={seenSince}
-            onChange={(e) => setSeenSince(e.currentTarget.value)}
-          />
-        </Group>
-        <ErrorBox error={entities.error} />
-        {entities.data?.length === 0 ? (
-          <Empty icon={<IconUser size={32} />} title="Nobody here yet">
-            Enrich a lead and the people and companies it finds land here.
-          </Empty>
-        ) : (
-          <Table highlightOnHover verticalSpacing="xs">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Name</Table.Th>
-                <Table.Th w={130}>Kind</Table.Th>
-                <Table.Th w={180}>Updated</Table.Th>
+    <Card>
+      <Group mb="md" gap="sm">
+        <TextInput placeholder="Search names" leftSection={<IconSearch size={14} />} value={q} onChange={(e) => setQ(e.currentTarget.value)} w={260} />
+        <SegmentedControl
+          value={kind}
+          onChange={setKind}
+          data={[
+            { value: "", label: "All" },
+            { value: "company", label: "Companies" },
+            { value: "person", label: "People" },
+          ]}
+        />
+        <TextInput
+          type="date"
+          aria-label="Seen since"
+          leftSection={<Text size="xs">seen since</Text>}
+          leftSectionWidth={78}
+          value={seenSince}
+          onChange={(e) => setSeenSince(e.currentTarget.value)}
+        />
+      </Group>
+      <ErrorBox error={entities.error} />
+      {entities.data?.length === 0 ? (
+        <Empty icon={<IconUser size={32} />} title="Nobody here yet">
+          Enrich a lead and the people and companies it finds land here.
+        </Empty>
+      ) : (
+        <Table highlightOnHover verticalSpacing="xs">
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Name</Table.Th>
+              <Table.Th w={130}>Kind</Table.Th>
+              <Table.Th w={180}>Updated</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {entities.data?.map((e) => (
+              <Table.Tr key={e.id} style={{ cursor: "pointer" }} onClick={() => (window.location.hash = href.entity(e.id))}>
+                <Table.Td fw={500}>{e.name}</Table.Td>
+                <Table.Td>
+                  <KindBadge kind={e.kind} />
+                </Table.Td>
+                <Table.Td c="dimmed" fz="sm">
+                  {new Date(e.updated_at).toLocaleDateString()}
+                </Table.Td>
               </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {entities.data?.map((e) => (
-                <Table.Tr key={e.id} style={{ cursor: "pointer" }} onClick={() => (window.location.hash = href.entity(e.id))}>
-                  <Table.Td fw={500}>{e.name}</Table.Td>
-                  <Table.Td>
-                    <KindBadge kind={e.kind} />
-                  </Table.Td>
-                  <Table.Td c="dimmed" fz="sm">
-                    {new Date(e.updated_at).toLocaleDateString()}
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        )}
-      </Card>
-    </Stack>
+            ))}
+          </Table.Tbody>
+        </Table>
+      )}
+    </Card>
   );
 }
 
