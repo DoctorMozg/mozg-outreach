@@ -22,7 +22,7 @@ import { notifications } from "@mantine/notifications";
 import { IconArrowLeft, IconCheck, IconHandStop, IconPlayerPlay, IconPlayerStop, IconX } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useEffect, useRef, useState } from "react";
-import { call, get, type Json, type Project, type Run, type RunEvent } from "../api";
+import { call, get, type Json, type Project, type Run, type RunEvent, type RunStatus } from "../api";
 import { Concerns, ErrorBox, pipelineLabel, Status } from "../components/common";
 import { href } from "../router";
 
@@ -51,6 +51,8 @@ const EVENT_KINDS = [
   "fields_researched",
 ];
 
+const ACTIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(["pending", "running"]);
+
 function useRunEvents(runId: number, onEvent: () => void): RunEvent[] {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const notify = useRef(onEvent);
@@ -77,7 +79,12 @@ function words(name: string): string {
 
 export function RunView({ id }: { id: number }): ReactElement {
   const client = useQueryClient();
-  const run = useQuery({ queryKey: ["run", id], queryFn: () => get<Run>(`/api/runs/${id}`) });
+  const run = useQuery({
+    queryKey: ["run", id],
+    queryFn: () => get<Run>(`/api/runs/${id}`),
+    // The event stream drives updates; polling covers a stream the browser silently stalls.
+    refetchInterval: (query) => (ACTIVE.has(query.state.data?.status ?? "pending") ? 5000 : false),
+  });
   const pipelines = useQuery({ queryKey: ["pipelines"], queryFn: () => get<Record<string, string[]>>("/api/pipelines"), staleTime: Infinity });
   const projectId = run.data?.project_id;
   const project = useQuery({
