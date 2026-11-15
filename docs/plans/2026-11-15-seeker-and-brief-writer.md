@@ -71,12 +71,16 @@ Today freelance already reuses most job code: a gig is a `Listing` plus `GigTerm
 - One live seeker run with both scopes on the current boards and channels (about $4), to check the merged prompts.
 - verify: both kinds are scored in one report, each with a sensible judgment, and a letter is drafted for each kind.
 
+Done, M26: one run, CV plus preferences, jobs (14 days, limit 6) and gigs (30 days, limit 6), two Greenhouse boards, Telegram discovery (6 channels approved), two web boards per kind. $7.45, not $4: the lead identifier took $4.34 for 12 items, 7 of them already capped at 40 by a deal-breaker. 5 jobs and 7 gigs scored; a cover letter (Orion soft, $0.17) and a proposal (arc.dev gig, $0.10) were drafted, both citing only the CV. Open: the judge hit "projects shorter than 1 month or longer than 6 months" on three gigs that state no duration, and "not fully remote" on a job that states no location; 13 of 16 must-have exclusions were Wellfound and arc.dev snippets or a truncated Greenhouse posting that name no stack; arc.dev's "Arc Exclusive" label shows as the client.
+
 **M27 Brief writer**
 
 - A `shared/brief-writer` agent takes `{mode, site_url | cv_text, note}` and returns `{brief, facts, concerns}`. Python validates the brief against the mode's model. A biz fact must cite a page the agent fetched.
 - Briefs in both modes gain `facts: [{label, value, source_url}]`, which the strategists, field proposer and letter writers receive.
 - `POST /api/projects/{id}/brief/generate` returns the draft, then runs the field proposer on it and saves the result as an unaccepted field version.
 - verify: offline tests with recorded outputs; one live call per mode (about $0.30 each).
+
+Done, M27 (two commits): briefs gain `facts`, passed to strategists, the field proposer and letters as sender background. `POST /api/projects/{id}/brief/generate` drafts the brief and saves a drafted field spec. Two prompts, `biz-brief-writer` (web) and `seeker-brief-writer` (no tools), instead of one, since tools are per prompt. Facts citing a page the agent never fetched are dropped; WebFetch URLs ride on tool events. Live: basecamp.com gave a full brief with 9 facts, all on fetched pages; the seeker writer set no salary and flagged every guess.
 
 **M28 Brief writer UI**
 
