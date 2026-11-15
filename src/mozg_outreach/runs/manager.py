@@ -212,8 +212,13 @@ class RunManager:
         # A finished run resumes from its last phase, so a gate left open is dropped.
         run.pending_gate = None
 
+    def blocker(self, project_id: int, pipeline: str) -> str | None:
+        """Why `pipeline` can't run for the project yet, or None when it can."""
+        flow = self._flow(pipeline)
+        return flow.blocker(self._env.db, project_id) if flow.blocker else None
+
     def _check_ready(self, flow: AnyFlow, project_id: int) -> None:
-        reason = flow.blocker(self._env.db, project_id) if flow.blocker else None
+        reason = self.blocker(project_id, flow.pipeline)
         if reason is not None:
             logger.info("%s refused for project %d: %s", flow.pipeline, project_id, reason)
             raise RunStateError(reason)

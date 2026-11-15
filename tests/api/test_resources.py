@@ -53,6 +53,30 @@ class TestRuns:
         ).status_code == 409
 
 
+class TestSearchReadiness:
+    """The setup checklist shows what blocks a search, from the same check that refuses it."""
+
+    async def blocker(self, api: Api, project_id: int) -> object:
+        return (await api.ok("GET", f"/api/projects/{project_id}/search"))["blocker"]
+
+    async def test_biz_needs_a_brief_then_accepted_fields(self, api: Api) -> None:
+        bare = await api.project()
+        assert "brief" in str(await self.blocker(api, bare))
+        briefed = await api.project(brief=biz_brief())
+        assert "Fields tab" in str(await self.blocker(api, briefed))
+        ready = await api.biz_project()
+        assert await api.ok("GET", f"/api/projects/{ready}/search") == {
+            "pipeline": "biz.search",
+            "blocker": None,
+        }
+
+    async def test_seeker_needs_only_a_brief(self, api: Api) -> None:
+        bare = await api.project("seeker")
+        assert "brief" in str(await self.blocker(api, bare))
+        ready = await api.project("seeker", {"cv_text": CV_TEXT, "preferences": "Remote EU"})
+        assert await self.blocker(api, ready) is None
+
+
 class TestProjects:
     async def test_brief_is_validated_against_the_mode(self, api: Api) -> None:
         bad = await api.client.post(

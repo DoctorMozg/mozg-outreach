@@ -119,8 +119,11 @@ async def scout(ctx: Ctx) -> PhaseResult:
     return None
 
 
-def _missing_fields(db: Database, project_id: int) -> str | None:
-    if ProjectInputs.load(db, project_id).spec is None:
+def _blocker(db: Database, project_id: int) -> str | None:
+    inputs = ProjectInputs.load(db, project_id)
+    if not inputs.brief:
+        return "write the brief first"
+    if inputs.spec is None:
         return "accept the report fields on the Fields tab before running the search"
     return None
 
@@ -196,5 +199,5 @@ BIZ_SEARCH = FlowSpec[BizSearchState](
         Phase("assess", assess),
         Phase("summarize", summarize),
     ),
-    blocker=_missing_fields,
+    blocker=_blocker,
 )

@@ -22,11 +22,7 @@ const client = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchO
 function Page({ route }: { route: Route }): ReactElement {
   switch (route.page) {
     case "project":
-      return (
-        <div className="legacy">
-          <Project id={route.id} tab={route.tab} />
-        </div>
-      );
+      return <Project id={route.id} tab={route.tab} />;
     case "run":
       return (
         <div className="legacy">

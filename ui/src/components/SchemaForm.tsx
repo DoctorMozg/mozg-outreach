@@ -1,4 +1,6 @@
-import type { ReactElement } from "react";
+import { ActionIcon, Button, Card, Fieldset, Group, NumberInput, Select, Stack, Switch, Text, Textarea, TextInput, Tooltip } from "@mantine/core";
+import { IconPlus, IconTrash } from "@tabler/icons-react";
+import { type ReactElement, useEffect, useState } from "react";
 import type { Json } from "../api";
 
 // Renders the pydantic JSON schemas from /api/modes/{mode}/schemas; covers what briefs and options use.
@@ -48,107 +50,166 @@ export function SchemaForm({ schema, value, onChange }: Props): ReactElement {
   return <ObjectFields schema={schema as Schema} root={schema} value={value} onChange={onChange} />;
 }
 
-function ObjectFields({ schema, root, value, onChange }: { schema: Schema; root: Json; value: Json; onChange: (v: Json) => void }): ReactElement {
+interface ObjectProps {
+  schema: Schema;
+  root: Json;
+  value: Json;
+  onChange: (v: Json) => void;
+}
+
+function ObjectFields({ schema, root, value, onChange }: ObjectProps): ReactElement {
   const required = new Set(schema.required ?? []);
   return (
-    <div className="form-grid">
+    <Stack gap="md">
       {Object.entries(schema.properties ?? {}).map(([name, raw]) => {
         const field = resolve(raw, root);
         // A $ref'd field would otherwise show its model's class name, so prefer the property's own.
-        const label = `${raw.title ?? humanize(name)}${required.has(name) ? " *" : ""}`;
+        const label = raw.title ?? humanize(name);
         const current = value[name] ?? field.default;
-        const set = (v: unknown) => onChange({ ...value, [name]: v });
+        const set = (v: unknown): void => onChange({ ...value, [name]: v });
         if (field.type === "object") {
           // A nullable section can be switched off, which sends null rather than its defaults.
           const optional = raw.anyOf?.some((s) => s.type === "null") ?? false;
           const on = !(optional && name in value && value[name] === null);
           return (
-            <fieldset key={name}>
-              <legend>
-                {optional ? (
-                  <label>
-                    <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked ? (field.default ?? {}) : null)} /> {label}
-                  </label>
+            <Fieldset
+              key={name}
+              legend={
+                optional ? (
+                  <Switch label={label} checked={on} onChange={(e) => set(e.currentTarget.checked ? (field.default ?? {}) : null)} />
                 ) : (
-                  label
-                )}
-              </legend>
-              {field.description && <p className="hint">{field.description}</p>}
+                  <Text fw={600} size="sm">
+                    {label}
+                  </Text>
+                )
+              }
+            >
+              {field.description && (
+                <Text size="xs" c="dimmed" mb="sm">
+                  {field.description}
+                </Text>
+              )}
               {on && <ObjectFields schema={field} root={root} value={(current as Json) ?? {}} onChange={set} />}
-            </fieldset>
+            </Fieldset>
           );
         }
         const row = field.type === "array" && field.items ? resolve(field.items, root) : null;
         if (row?.type === "object") {
           const rows = Array.isArray(current) ? (current as Json[]) : [];
           return (
-            <fieldset key={name}>
-              <legend>{label}</legend>
-              {field.description && <p className="hint">{field.description}</p>}
-              {rows.map((entry, index) => (
-                <div key={index} className="stack">
-                  <ObjectFields schema={row} root={root} value={entry} onChange={(v) => set(rows.map((r, i) => (i === index ? v : r)))} />
-                  <button className="secondary" onClick={() => set(rows.filter((_, i) => i !== index))}>
-                    Remove
-                  </button>
-                </div>
-              ))}
-              <button className="secondary" onClick={() => set([...rows, {}])}>
-                Add
-              </button>
-            </fieldset>
+            <Fieldset key={name} legend={<Text fw={600} size="sm">{label}</Text>}>
+              {field.description && (
+                <Text size="xs" c="dimmed" mb="sm">
+                  {field.description}
+                </Text>
+              )}
+              <Stack gap="sm">
+                {rows.map((entry, index) => (
+                  <Card key={index} padding="sm" bg="var(--mantine-color-default-hover)">
+                    <Group justify="flex-end" mb={-8}>
+                      <Tooltip label="Remove">
+                        <ActionIcon variant="subtle" color="red" onClick={() => set(rows.filter((_, i) => i !== index))} aria-label="Remove">
+                          <IconTrash size={16} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Group>
+                    <ObjectFields schema={row} root={root} value={entry} onChange={(v) => set(rows.map((r, i) => (i === index ? v : r)))} />
+                  </Card>
+                ))}
+                <Group>
+                  <Button variant="light" size="xs" leftSection={<IconPlus size={14} />} onClick={() => set([...rows, {}])}>
+                    Add {label.toLowerCase().replace(/s$/, "")}
+                  </Button>
+                </Group>
+              </Stack>
+            </Fieldset>
           );
         }
-        return (
-          <label key={name} className="field">
-            <span>{label}</span>
-            <Input name={name} field={field} value={current} onChange={set} />
-            {field.description && <small className="hint">{field.description}</small>}
-          </label>
-        );
+        return <Input key={name} name={name} label={label} required={required.has(name)} field={field} value={current} onChange={set} />;
       })}
-    </div>
+    </Stack>
   );
 }
 
-function Input({ name, field, value, onChange }: { name: string; field: Schema; value: unknown; onChange: (v: unknown) => void }): ReactElement {
+interface InputProps {
+  name: string;
+  label: string;
+  required: boolean;
+  field: Schema;
+  value: unknown;
+  onChange: (v: unknown) => void;
+}
+
+function Input({ name, label, required, field, value, onChange }: InputProps): ReactElement {
+  const common = { label, description: field.description, withAsterisk: required };
   if (field.enum) {
-    return (
-      <select value={String(value ?? "")} onChange={(e) => onChange(e.target.value)}>
-        {field.enum.map((option) => (
-          <option key={option}>{option}</option>
-        ))}
-      </select>
-    );
+    return <Select {...common} data={field.enum} value={value === undefined || value === null ? null : String(value)} onChange={onChange} />;
   }
   switch (field.type) {
     case "boolean":
-      return <input type="checkbox" checked={Boolean(value)} onChange={(e) => onChange(e.target.checked)} />;
+      return <Switch label={label} description={field.description} checked={Boolean(value)} onChange={(e) => onChange(e.currentTarget.checked)} />;
     case "integer":
     case "number":
       return (
-        <input
-          type="number"
-          value={value === undefined || value === null ? "" : String(value)}
+        <NumberInput
+          {...common}
+          maw={260}
+          value={typeof value === "number" ? value : ""}
           min={field.minimum}
           max={field.maximum}
-          onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+          allowDecimal={field.type === "number"}
+          onChange={(v) => onChange(v === "" ? null : Number(v))}
         />
       );
     case "array":
-      return (
-        <textarea
-          rows={3}
-          placeholder="One per line"
-          value={Array.isArray(value) ? value.join("\n") : ""}
-          onChange={(e) => onChange(e.target.value.split("\n").filter((line) => line.trim() !== ""))}
-        />
-      );
+      return <LinesInput label={label} required={required} description={field.description} value={value} onChange={onChange} />;
     default:
       return LONG_TEXT.test(name) ? (
-        <textarea rows={name.endsWith("_text") ? 10 : 3} value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />
+        <Textarea
+          {...common}
+          autosize
+          minRows={name.endsWith("_text") ? 8 : 3}
+          maxRows={name.endsWith("_text") ? 24 : 10}
+          value={String(value ?? "")}
+          onChange={(e) => onChange(e.currentTarget.value)}
+        />
       ) : (
-        <input value={String(value ?? "")} onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)} />
+        <TextInput {...common} value={String(value ?? "")} onChange={(e) => onChange(e.currentTarget.value === "" ? null : e.currentTarget.value)} />
       );
   }
+}
+
+const lines = (text: string): string[] => text.split("\n").filter((line) => line.trim() !== "");
+
+interface LinesProps {
+  label: string;
+  required: boolean;
+  description: string | undefined;
+  value: unknown;
+  onChange: (v: string[]) => void;
+}
+
+/** One entry per line; keeps the raw text so Enter can start a new line before it has content. */
+function LinesInput({ label, required, description, value, onChange }: LinesProps): ReactElement {
+  const joined = Array.isArray(value) ? value.map(String).join("\n") : "";
+  const [text, setText] = useState(joined);
+  // Take outside changes (a drafted brief) but not our own echo, which would eat the open line.
+  useEffect(() => {
+    setText((current) => (lines(current).join("\n") === joined ? current : joined));
+  }, [joined]);
+  return (
+    <Textarea
+      label={label}
+      withAsterisk={required}
+      description={[description, "One per line."].filter(Boolean).join(" ")}
+      autosize
+      minRows={2}
+      maxRows={10}
+      value={text}
+      onChange={(e) => {
+        setText(e.currentTarget.value);
+        onChange(lines(e.currentTarget.value));
+      }}
+    />
+  );
 }

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from mozg_outreach.api.schemas import RunEventOut, RunOut, RunStart
+from mozg_outreach.api.schemas import RunEventOut, RunOut, RunStart, SearchReadiness
 from mozg_outreach.api.services import Services, get_or_404, services
 from mozg_outreach.runs.catalog import SEARCH_PIPELINES
 from mozg_outreach.runs.flow import GateAnswer
@@ -41,13 +41,20 @@ def ensure_idle(svc: Services, project_id: int, pipeline: str, item_id: int | No
 
 @router.post("/projects/{project_id}/runs", status_code=202)
 async def start_search(project_id: int, body: RunStart, svc: Svc) -> RunOut:
-    with svc.db.session() as session:
-        project = get_or_404(session, Project, project_id)
-        if not project.brief:
-            raise HTTPException(409, "write the brief first")
-        pipeline = SEARCH_PIPELINES[project.mode]
+    pipeline = search_pipeline(svc, project_id)
     ensure_idle(svc, project_id, pipeline)
     return run_out(svc, svc.runs.start(project_id, pipeline, {"options": body.options}))
+
+
+@router.get("/projects/{project_id}/search")
+async def search_readiness(project_id: int, svc: Svc) -> SearchReadiness:
+    pipeline = search_pipeline(svc, project_id)
+    return SearchReadiness(pipeline=pipeline, blocker=svc.runs.blocker(project_id, pipeline))
+
+
+def search_pipeline(svc: Services, project_id: int) -> str:
+    with svc.db.session() as session:
+        return SEARCH_PIPELINES[get_or_404(session, Project, project_id).mode]
 
 
 @router.get("/projects/{project_id}/runs")

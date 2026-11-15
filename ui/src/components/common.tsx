@@ -176,3 +176,15 @@ export function Empty({ icon, title, children }: { icon: ReactNode; title: strin
     </Card>
   );
 }
+
+const PIPELINE_LABELS: Record<string, string> = {
+  search: "Search",
+  fields: "Field proposal",
+  enrich: "Enrich lead",
+  letters: "Write letters",
+};
+
+export function pipelineLabel(pipeline: string): string {
+  const step = pipeline.split(".").pop() ?? pipeline;
+  return PIPELINE_LABELS[step] ?? pipeline;
+}
