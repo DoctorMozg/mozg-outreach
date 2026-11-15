@@ -1,6 +1,5 @@
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
-import "./legacy.css";
 import "./app.css";
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
@@ -28,23 +27,11 @@ function Page({ route }: { route: Route }): ReactElement {
     case "item":
       return <ItemView id={route.id} />;
     case "voice":
-      return (
-        <div className="legacy">
-          <Voice />
-        </div>
-      );
+      return <Voice />;
     case "registry":
-      return (
-        <div className="legacy">
-          <Registry />
-        </div>
-      );
+      return <Registry />;
     case "entity":
-      return (
-        <div className="legacy">
-          <EntityView id={route.id} />
-        </div>
-      );
+      return <EntityView id={route.id} />;
     case "projects":
       return <Projects />;
   }

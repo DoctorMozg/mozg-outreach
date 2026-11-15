@@ -1,4 +1,4 @@
-import { Accordion, Alert, Anchor, Badge, type BadgeProps, Card, Group, List, Text, Title, Tooltip } from "@mantine/core";
+import { Accordion, Alert, Anchor, Badge, type BadgeProps, Card, Group, List, Text, Tooltip } from "@mantine/core";
 import { IconAlertTriangle, IconExternalLink, IconInfoCircle } from "@tabler/icons-react";
 import type { ReactElement, ReactNode } from "react";
 import type { FieldValue, Mode, RunStatus } from "../api";
@@ -76,18 +76,6 @@ export function Value({ field }: { field: FieldValue | undefined }): ReactElemen
         </Anchor>
       )}
     </span>
-  );
-}
-
-export function Section({ title, children, actions }: { title: ReactNode; children: ReactNode; actions?: ReactNode }): ReactElement {
-  return (
-    <Card>
-      <Group justify="space-between" mb="md" wrap="wrap" gap="sm">
-        <Title order={4}>{title}</Title>
-        {actions}
-      </Group>
-      {children}
-    </Card>
   );
 }
 
