@@ -137,6 +137,10 @@ class DraftOut(Row):
     created_at: datetime
 
 
+class DraftRevisionIn(BaseModel):
+    suggestion: str = Field(min_length=1, max_length=2000)
+
+
 class DraftEdit(BaseModel):
     subject: str | None = Field(default=None, max_length=200)
     body: str = Field(min_length=1)

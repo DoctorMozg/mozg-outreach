@@ -11,6 +11,7 @@ from mozg_outreach.naturalize.voice import VoiceNotes
 from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.sources.factory import DEFAULT_SOURCES
 from mozg_outreach.storage.models import (
+    Draft,
     Entity,
     Item,
     ItemLink,
@@ -243,6 +244,29 @@ async def test_voice_profile_needs_samples_then_builds(api: Api) -> None:
     assert "No jargon." in str(built["rendered"])
     stored = await api.ok("GET", "/api/voice/email/profile")
     assert stored["profile"] == built["profile"]
+
+
+async def test_a_draft_revision_starts_the_items_letter_run(api: Api) -> None:
+    project_id = await api.project("seeker")
+    with api.services.db.session() as session:
+        job = Item(project_id=project_id, kind=ItemKind.JOB, dedup_key="j", title="Job")
+        session.add(job)
+        session.flush()
+        draft = Draft(item_id=job.id, channel="cover_letter", recipient="Hiring Team", version=1)
+        draft.body, draft.review = "Dear Hiring Team,\n\nBody.\n\nThanks,\nStan", {}
+        session.add(draft)
+        session.flush()
+        draft_id = draft.id
+    ask = {"suggestion": "Write it in Russian."}
+    run = await api.ok("POST", f"/api/drafts/{draft_id}/revise", ask)
+    assert run["pipeline"] == "seeker.letters"
+    with api.services.db.session() as session:
+        stored = session.get(Run, run["id"])
+        assert stored is not None
+        assert stored.state["revision"] == {"draft_id": draft_id, "suggestion": ask["suggestion"]}
+    await api.settle(int(str(run["id"])))
+    missing = await api.client.post("/api/drafts/999/revise", json=ask)
+    assert missing.status_code == 404
 
 
 async def test_logged_activity_shows_in_every_list(api: Api) -> None:

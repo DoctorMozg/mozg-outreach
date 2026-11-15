@@ -6,7 +6,7 @@ from typing import get_args
 from sqlalchemy.orm import Session
 
 from mozg_outreach.domain import FieldSpec, FieldValue, ItemCandidate
-from mozg_outreach.letters.models import SenderSettings
+from mozg_outreach.letters.models import RevisionTarget, SenderSettings
 from mozg_outreach.naturalize.models import Channel
 from mozg_outreach.naturalize.naturalizer import Naturalizer, VoiceContext
 from mozg_outreach.naturalize.voice import VoiceProfile
@@ -67,8 +67,10 @@ class BizOutreach:
         logger.info("enriched %s: %d concerns", item.title, len(dossier.concerns))
         return dossier
 
-    async def write_letters(self, item: Item, strategy: Strategy) -> LetterBatch:
-        """Draft one naturalized letter per reachable contact and store each as a new version."""
+    async def write_letters(
+        self, item: Item, strategy: Strategy, revision: RevisionTarget | None = None
+    ) -> LetterBatch:
+        """Draft one letter per reachable contact, or rewrite one, each stored as a new version."""
         if DOSSIER not in item.details:
             raise ValueError(
                 f"item {item.id} is not enriched yet; enrich it before writing letters"
@@ -92,6 +94,7 @@ class BizOutreach:
             if project.brief
             else None,
             voices={channel: self._voice(channel) for channel in get_args(Channel)},
+            revision=revision,
         )
         writer = BizLetterWriter(self._steps, Naturalizer(self._steps))
         batch = await writer.write(request)

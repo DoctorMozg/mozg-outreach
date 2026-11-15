@@ -3,7 +3,7 @@ from sqlalchemy import select
 
 from mozg_outreach.cvs.models import CV_CHOICE, CvChoice, CvRating, CvRatings, CvSummary
 from mozg_outreach.domain import BriefFact, FieldValue, ItemKind, RunStatus
-from mozg_outreach.letters.models import LetterBrief, LetterDraft
+from mozg_outreach.letters.models import LetterBrief, LetterDraft, Revision
 from mozg_outreach.naturalize.models import NaturalizeResult
 from mozg_outreach.pipelines.seeker.models import (
     BoardPlan,
@@ -319,6 +319,36 @@ async def search_one_job(harness: Harness, strategy: SeekerStrategy) -> tuple[in
         job = session.scalars(select(Item)).one()
         job.selected = True
         return project_id, job.id
+
+
+async def test_a_draft_is_rewritten_with_the_users_suggestion(
+    harness: Harness, strategy: SeekerStrategy
+) -> None:
+    project_id, job_id = await search_one_job(harness, strategy)
+    harness.script(letter("Dear Hiring Team,", BODY))
+    first = harness.manager.start(project_id, "seeker.letters", {"item_id": job_id})
+    assert (await finish(harness, first)).status == RunStatus.COMPLETE
+    with harness.db.session() as session:
+        draft = session.scalars(select(Draft)).one()
+        draft_id, written = draft.id, draft.body
+
+    harness.script(letter("Dear Hiring Team,", BODY))
+    ask = {"draft_id": draft_id, "suggestion": "Mention the notice period."}
+    second = harness.manager.start(
+        project_id, "seeker.letters", {"item_id": job_id, "revision": ask}
+    )
+    assert (await finish(harness, second)).status == RunStatus.COMPLETE
+
+    first_brief, revised_brief = harness.runner.payloads["expert-copywriter"]
+    assert isinstance(first_brief, LetterBrief)
+    assert isinstance(revised_brief, LetterBrief)
+    assert first_brief.revision is None
+    assert revised_brief.revision == Revision(
+        previous_text=written, suggestion="Mention the notice period."
+    )
+    with harness.db.session() as session:
+        versions = [d.version for d in session.scalars(select(Draft).order_by(Draft.id))]
+    assert versions == [1, 2]
 
 
 class TestCvChoice:

@@ -1,6 +1,6 @@
 """Work on one selected item: enrich it, or draft its letters, cover letter or proposal."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from mozg_outreach.cvs.library import CvLibrary
@@ -8,7 +8,7 @@ from mozg_outreach.cvs.models import CV_CHOICE, CvChoice
 from mozg_outreach.cvs.picker import CvPicker
 from mozg_outreach.domain import ItemKind
 from mozg_outreach.letters.composer import WrittenLetter
-from mozg_outreach.letters.models import Skipped
+from mozg_outreach.letters.models import Revision, RevisionTarget, Skipped
 from mozg_outreach.naturalize.naturalizer import Naturalizer
 from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.biz.outreach import BizOutreach
@@ -28,12 +28,20 @@ from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs, load_voice, search_state
 from mozg_outreach.runs.seeker import CONTACTS, listing_of
-from mozg_outreach.storage.models import Item
+from mozg_outreach.storage.models import Draft, Item
 from mozg_outreach.storage.repositories import DraftRepository, ItemRepository, NewDraft
+
+
+class RevisionAsk(BaseModel):
+    """Rewrite one draft with the user's suggestion instead of writing every letter afresh."""
+
+    draft_id: int
+    suggestion: str = Field(min_length=1)
 
 
 class ItemState(RunState):
     item_id: int
+    revision: RevisionAsk | None = None
 
 
 type Ctx = FlowContext[ItemState]
@@ -48,6 +56,24 @@ def _row(session: Session, item_id: int) -> Item:
     if item is None:
         raise LookupError(f"item {item_id} was deleted during the run")
     return item
+
+
+def _revision(ctx: Ctx) -> RevisionTarget | None:
+    ask = ctx.state.revision
+    if ask is None:
+        return None
+    with ctx.db.session() as session:
+        draft = session.get(Draft, ask.draft_id)
+        if draft is None or draft.item_id != ctx.state.item_id:
+            raise LookupError(f"draft {ask.draft_id} of item {ctx.state.item_id} was deleted")
+        # Validating the stored channel string checks it is still a known one.
+        return RevisionTarget.model_validate(
+            {
+                "recipient": draft.recipient,
+                "channel": draft.channel,
+                "revision": Revision(previous_text=draft.body, suggestion=ask.suggestion),
+            }
+        )
 
 
 def _store(ctx: Ctx, letter: WrittenLetter | Skipped) -> None:
@@ -82,10 +108,11 @@ async def biz_enrich(ctx: Ctx) -> PhaseResult:
 
 async def biz_letters(ctx: Ctx) -> PhaseResult:
     _, state = _item(ctx)
+    target = _revision(ctx)
     strategy = Strategy.model_validate(state["strategy"])
     with ctx.db.session() as session:
         item = _row(session, ctx.state.item_id)
-        batch = await BizOutreach(session, ctx.steps).write_letters(item, strategy)
+        batch = await BizOutreach(session, ctx.steps).write_letters(item, strategy, target)
     for skipped in batch.skipped:
         ctx.state.concerns.append(f"No letter for {skipped.contact}: {skipped.reason}")
     ctx.emit("drafts", {"written": len(batch.letters), "skipped": len(batch.skipped)})
@@ -138,6 +165,8 @@ async def seeker_letter(ctx: Ctx) -> PhaseResult:
     background = SeekerBrief.model_validate(inputs.require_brief()).background(cv_text)
     skills = SkillMatcher(strategy).match(listing_text(listing))
     naturalizer = Naturalizer(ctx.steps)
+    target = _revision(ctx)
+    revision = target.revision if target else None
     if listing.kind == "gig":
         letter = await ProposalWriter(ctx.steps, naturalizer).write(
             ProposalRequest(
@@ -147,6 +176,7 @@ async def seeker_letter(ctx: Ctx) -> PhaseResult:
                 background=background,
                 sender=inputs.sender(),
                 voice=load_voice(ctx.db, "proposal"),
+                revision=revision,
             )
         )
     else:
@@ -160,6 +190,7 @@ async def seeker_letter(ctx: Ctx) -> PhaseResult:
                 background=background,
                 sender=inputs.sender(),
                 voice=load_voice(ctx.db, "cover_letter"),
+                revision=revision,
             )
         )
     _store(ctx, letter)

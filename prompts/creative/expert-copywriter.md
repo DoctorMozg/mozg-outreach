@@ -28,6 +28,7 @@ A JSON object, the letter brief:
 - `reader_style` (object or null): how this reader prefers to be addressed. `calibration_directive` lines tell you how to shape structure, length and which angle leads. Null means use a neutral shape.
 - `sender_voice` (string): how the sender writes. It owns the register and word choice.
 - `sender_background` (string or null): for cover letters and proposals, the sender's CV followed by extra facts; for company letters, facts about the sender's company, or null. Every claim about the sender's experience, employers, clients, skills and years comes from it.
+- `revision` (object or null): when set, the user read an earlier draft of this letter (`previous_text`, with its salutation and sign-off) and asked for a change in `suggestion`. Rewrite that draft so it does what the suggestion asks, keep what the suggestion leaves alone, and return only the new subject and body. The suggestion outranks your own style choices but never the truth rules: if it asks for a fact the brief does not support, leave the fact out and say so in `concerns`. If it asks for another language, write in that language and note in `concerns` that the salutation and sign-off follow `language`.
 - `retry` (object or null): when set, your previous attempt (`previous_attempt`) broke the rules listed in `problems`. Fix those problems and keep the rest.
 
 ## How the letter works

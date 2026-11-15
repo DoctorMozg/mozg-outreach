@@ -60,6 +60,21 @@ class LetterRecipient(BaseModel):
     relevance: str = Field(default="", description="Why this person is the right reader.")
 
 
+class Revision(BaseModel):
+    """The user's change request on an earlier draft of the same letter."""
+
+    previous_text: str = Field(min_length=1, description="That draft, salutation and sign-off too.")
+    suggestion: str = Field(min_length=1, description="What the user wants changed, as written.")
+
+
+class RevisionTarget(BaseModel):
+    """Which of a company's letters to rewrite, and how."""
+
+    recipient: str
+    channel: Channel
+    revision: Revision
+
+
 class LetterBrief(BaseModel):
     channel: Channel
     language: str = Field(
@@ -82,6 +97,7 @@ class LetterBrief(BaseModel):
         default=None,
         description="The sender's CV or company facts; every claim about the sender comes from it.",
     )
+    revision: Revision | None = None
     retry: RetryFeedback | None = None
 
 

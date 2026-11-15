@@ -12,6 +12,7 @@ from mozg_outreach.letters.models import (
     Hook,
     LetterBrief,
     LetterRecipient,
+    Revision,
     SenderSettings,
     Skipped,
 )
@@ -36,6 +37,7 @@ class CoverLetterRequest(BaseModel):
     )
     sender: SenderSettings
     voice: VoiceContext = Field(default_factory=lambda: VoiceContext(profile=None, samples=[]))
+    revision: Revision | None = None
 
 
 class JobLetterWriter:
@@ -70,6 +72,7 @@ class JobLetterWriter:
             reader_style=None,
             sender_voice=request.sender.voice,
             sender_background=request.background,
+            revision=request.revision,
         )
         party = LetterParty(recipient=named.name if named else None, sender=request.sender.name)
         logger.info("cover letter for %s to %s", listing.key, recipient.name)

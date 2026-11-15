@@ -3,7 +3,13 @@ from pathlib import Path
 import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
-from mozg_outreach.letters.models import LetterBrief, LetterDraft, SenderSettings
+from mozg_outreach.letters.models import (
+    LetterBrief,
+    LetterDraft,
+    Revision,
+    RevisionTarget,
+    SenderSettings,
+)
 from mozg_outreach.naturalize.models import NaturalizeResult
 from mozg_outreach.naturalize.naturalizer import Naturalizer
 from mozg_outreach.naturalize.validation import body_word_count
@@ -163,3 +169,39 @@ async def test_no_verified_hook_means_no_agent_calls(
     assert batch.letters == []
     assert [s.reason for s in batch.skipped] == ["no verified fact about the company to open with"]
     assert runner.payloads == {}
+
+
+class TestRevision:
+    REVISION = Revision(
+        previous_text="Hi Jane,\n\nOld body.\n\nThanks,\nStan", suggestion="Shorter."
+    )
+
+    async def test_rewrites_the_one_letter_with_the_suggestion(
+        self, request_: LetterRequest, tmp_path: Path
+    ) -> None:
+        target = RevisionTarget(recipient="Jane Example", channel="email", revision=self.REVISION)
+        final = f"Hi Jane,\n\n{BODY}\n\nThanks,\nStan"
+        batch, runner = await write(
+            request_.model_copy(update={"revision": target}),
+            {
+                "outreach-personality-profiler": [STYLE],
+                "expert-copywriter": [draft()],
+                "expert-naturalizer": [naturalized(final)],
+            },
+            tmp_path,
+        )
+        assert [letter.recipient for letter in batch.letters] == ["Jane Example"]
+        [brief] = runner.payloads["expert-copywriter"]
+        assert isinstance(brief, LetterBrief)
+        assert brief.revision == self.REVISION
+
+    async def test_a_contact_no_longer_reachable_is_skipped(
+        self, request_: LetterRequest, tmp_path: Path
+    ) -> None:
+        target = RevisionTarget(recipient="Gone Person", channel="email", revision=self.REVISION)
+        batch, runner = await write(request_.model_copy(update={"revision": target}), {}, tmp_path)
+        assert batch.letters == []
+        assert [(s.contact, s.reason) for s in batch.skipped] == [
+            ("Gone Person", "no email route to them in the dossier any more")
+        ]
+        assert runner.payloads == {}

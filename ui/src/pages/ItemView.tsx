@@ -320,6 +320,12 @@ function DraftThread({ versions, onSaved }: { versions: Draft[]; onSaved: () => 
       onSaved();
     },
   });
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestion, setSuggestion] = useState("");
+  const revise = useMutation({
+    mutationFn: () => call<Run>("POST", `/api/drafts/${draft.id}/revise`, { suggestion }),
+    onSuccess: (run) => (window.location.hash = href.run(run.id)),
+  });
   const r = draft.review;
   // A hand edit keeps no address of its own; it goes to whoever the version it was based on addressed.
   const addressed = versions.filter((v) => v.version <= draft.version && v.review.address).at(-1)?.review;
@@ -356,6 +362,9 @@ function DraftThread({ versions, onSaved }: { versions: Draft[]; onSaved: () => 
         </Group>
         {!editing && (
           <Group gap="xs">
+            <Button size="xs" variant={suggesting ? "light" : "default"} leftSection={<IconSparkles size={14} />} onClick={() => setSuggesting(!suggesting)}>
+              Suggest a change
+            </Button>
             <Button size="xs" variant="default" leftSection={<IconEdit size={14} />} onClick={startEdit}>
               Edit
             </Button>
@@ -369,6 +378,27 @@ function DraftThread({ versions, onSaved }: { versions: Draft[]; onSaved: () => 
           </Group>
         )}
       </Group>
+      {suggesting && !editing && (
+        <Stack gap="xs">
+          <Textarea
+            autosize
+            minRows={2}
+            maxRows={8}
+            placeholder="What should change? For example: shorter, mention the notice period, write it in Russian."
+            value={suggestion}
+            onChange={(e) => setSuggestion(e.currentTarget.value)}
+          />
+          <Group>
+            <Button size="xs" leftSection={<IconSparkles size={14} />} disabled={!suggestion.trim()} loading={revise.isPending} onClick={() => revise.mutate()}>
+              Rewrite v{draft.version} as v{latest.version + 1}
+            </Button>
+            <Text size="xs" c="dimmed">
+              Runs the copywriter and naturalizer again with your note.
+            </Text>
+          </Group>
+          <ErrorBox error={revise.error} />
+        </Stack>
+      )}
       {addressed && (
         <Text size="sm">
           To <b>{addressed.address}</b>{" "}

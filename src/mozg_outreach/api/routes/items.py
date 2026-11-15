@@ -11,6 +11,7 @@ from mozg_outreach.api.routes.runs import ensure_idle, run_out
 from mozg_outreach.api.schemas import (
     DraftEdit,
     DraftOut,
+    DraftRevisionIn,
     InteractionIn,
     InteractionOut,
     ItemDetail,
@@ -21,7 +22,15 @@ from mozg_outreach.api.schemas import (
 )
 from mozg_outreach.api.services import Services, get_or_404, services
 from mozg_outreach.runs.items import ITEM_ACTIONS
-from mozg_outreach.storage.models import Draft, Entity, Interaction, Item, ItemLink, Project
+from mozg_outreach.storage.models import (
+    Draft,
+    Entity,
+    Interaction,
+    Item,
+    ItemLink,
+    JsonObject,
+    Project,
+)
 from mozg_outreach.storage.repositories import (
     DraftRepository,
     InteractionRepository,
@@ -130,6 +139,20 @@ async def edit_draft(draft_id: int, body: DraftEdit, svc: Svc) -> DraftOut:
             ),
         )
         return DraftOut.model_validate(edited)
+
+
+@router.post("/drafts/{draft_id}/revise", status_code=202)
+async def revise_draft(draft_id: int, body: DraftRevisionIn, svc: Svc) -> RunOut:
+    """Rewrite one draft with the user's suggestion; the result is its next version."""
+    with svc.db.session() as session:
+        draft = get_or_404(session, Draft, draft_id)
+        item = get_or_404(session, Item, draft.item_id)
+        project_id, item_id = item.project_id, item.id
+    pipeline = ITEM_ACTIONS[item.kind].letters
+    ensure_idle(svc, project_id, pipeline, item_id)
+    revision: JsonObject = {"draft_id": draft_id, "suggestion": body.suggestion}
+    state: JsonObject = {"item_id": item_id, "revision": revision}
+    return run_out(svc, svc.runs.start(project_id, pipeline, state))
 
 
 @router.post("/items/{item_id}/interactions", status_code=201)

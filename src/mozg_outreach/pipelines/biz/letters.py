@@ -15,6 +15,7 @@ from mozg_outreach.letters.models import (
     LetterRecipient,
     ProfilerInput,
     ReaderStyle,
+    RevisionTarget,
     SenderSettings,
     Skipped,
 )
@@ -44,6 +45,7 @@ class LetterRequest(BaseModel):
     sender: SenderSettings
     background: str | None = Field(default=None, description="Facts about the sender's company.")
     voices: dict[Channel, VoiceContext] = Field(default_factory=dict)
+    revision: RevisionTarget | None = Field(default=None, description="Rewrite only this letter.")
 
 
 class LetterBatch(BaseModel):
@@ -60,6 +62,19 @@ class BizLetterWriter:
         builder = LetterBriefBuilder(request.company, request.dossier)
         evidence = builder.evidence(request.fields)
         recipients = builder.recipients()
+        target = request.revision
+        if target is not None:
+            addressees = [
+                a
+                for a in recipients.addressees
+                if (a.contact.name, a.route.channel) == (target.recipient, target.channel)
+            ]
+            if not addressees:
+                reason = f"no {target.channel} route to them in the dossier any more"
+                return LetterBatch(
+                    letters=[], skipped=[Skipped(contact=target.recipient, reason=reason)]
+                )
+            recipients = recipients.model_copy(update={"addressees": addressees, "skipped": []})
         if not evidence.hooks:
             # A cold letter without a verified opener is the generic kind nobody answers.
             reason = "no verified fact about the company to open with"
@@ -100,6 +115,7 @@ class BizLetterWriter:
             reader_style=style,
             sender_voice=request.sender.voice,
             sender_background=request.background,
+            revision=request.revision.revision if request.revision else None,
         )
         party = LetterParty(recipient=contact.name, sender=request.sender.name)
         guessed = route.confidence == "guessed"
