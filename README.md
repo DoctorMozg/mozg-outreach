@@ -120,4 +120,4 @@ Run the Python service in another terminal for the dev server. Agent prompts liv
 
 ## License and origin
 
-GPL-3.0-or-later, see `LICENSE`. The agent prompts come from the `mz-biz-outreach`, `mz-job-outreach` and `mz-creative` plugins in [claude-pipelines](https://github.com/DoctorMozg/claude-pipelines), relicensed here by the same author. Details are in `PROVENANCE.md`.
+GPL-3.0-or-later, see `LICENSE`. The agent prompts were first written for the `mz-biz-outreach`, `mz-job-outreach` and `mz-creative` plugins in [claude-pipelines](https://github.com/DoctorMozg/claude-pipelines), and are relicensed here by the same author. Details are in `PROVENANCE.md`.
