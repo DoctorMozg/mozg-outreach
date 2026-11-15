@@ -5,14 +5,11 @@ from mozg_outreach.pipelines.freelance.models import (
     FreelancePreferences,
     FreelanceScoringWeights,
     FreelanceStrategy,
-    Gig,
-    GigBudget,
     GigJudgment,
-    GigTerms,
     ScoutedGig,
 )
 from mozg_outreach.pipelines.freelance.search import SourcedGig
-from mozg_outreach.pipelines.seeker.models import CvProfile, Money
+from mozg_outreach.pipelines.seeker.models import CvProfile, GigTerms, Listing, Money, Pay
 from tests.pipelines.seeker.conftest import CV_TEXT, listing
 
 GIG_URL = "https://www.malt.com/projects/acme-payments"
@@ -39,12 +36,17 @@ def scouted_gig(**fields: object) -> SourcedGig:
     return SourcedGig(source="Malt", gig=ScoutedGig.model_validate(values | fields))
 
 
-def gig(budget: GigBudget | None = None, company: str = "AcmeCo") -> Gig:
-    return Gig(
-        listing=listing(key=GIG_URL, url=GIG_URL, company=company, summary=SCOPE, sources=["Malt"]),
-        terms=GigTerms(
-            budget=budget, duration_raw="8 weeks", scope=SCOPE, application_method="Apply via Malt."
-        ),
+def gig(budget: Pay | None = None, company: str = "AcmeCo") -> Listing:
+    terms = GigTerms(duration_raw="8 weeks", application_method="Apply via Malt.")
+    return listing(
+        key=GIG_URL,
+        kind="gig",
+        url=GIG_URL,
+        company=company,
+        summary=SCOPE,
+        sources=["Malt"],
+        pay=budget,
+        terms=terms,
     )
 
 

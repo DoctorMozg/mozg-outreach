@@ -167,7 +167,7 @@ class TelegramPosts:
                     continue
                 scouted = to_scouted(item, parsed, concerns)
                 if scouted:
-                    listings.append(SourcedListing(source=item.source, listing=scouted))
+                    listings.append(SourcedListing(source=item.source, kind="job", listing=scouted))
         return listings
 
     async def _parse_batch(

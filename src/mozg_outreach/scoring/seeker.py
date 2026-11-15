@@ -11,7 +11,7 @@ from mozg_outreach.pipelines.seeker.models import (
     ListingJudgment,
     Seniority,
 )
-from mozg_outreach.pipelines.seeker.salary import annual_usd
+from mozg_outreach.pipelines.seeker.pay import HOURS_PER, hourly_usd
 from mozg_outreach.pipelines.seeker.skills import SkillMatch
 from mozg_outreach.scoring.axes import AxisValue, weighted_axes, weighted_total
 
@@ -102,14 +102,15 @@ class JobScorer:
     @staticmethod
     def salary_fit(listing: Listing, strategy: JobStrategy) -> AxisValue:
         floor_money = strategy.preferences.salary_floor
-        floor = annual_usd(floor_money) if floor_money else None
-        salary = listing.salary
+        floor = hourly_usd(floor_money) if floor_money else None
+        pay = listing.pay
         if floor is None:
             return AxisValue(NEUTRAL, "no salary floor set")
-        if salary is None or salary.annual_max_usd is None or salary.annual_min_usd is None:
+        if pay is None or pay.hourly_max_usd is None or pay.hourly_min_usd is None:
             return AxisValue(NEUTRAL, "salary not disclosed or currency unknown")
-        low, high = salary.annual_min_usd, salary.annual_max_usd
-        band = f"band ${low / 1000:.0f}k-${high / 1000:.0f}k vs floor ${floor / 1000:.0f}k"
+        low, high = pay.hourly_min_usd, pay.hourly_max_usd
+        year = HOURS_PER["year"] / 1000
+        band = f"band ${low * year:.0f}k-${high * year:.0f}k vs floor ${floor * year:.0f}k"
         return band_fit(low, high, floor, band)
 
     @staticmethod

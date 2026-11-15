@@ -30,7 +30,8 @@ def scouted(source: str = "Remotive", **fields: object) -> SourcedListing:
         "salary_string": "EUR 80,000 - 95,000",
         "summary_snippet": "Python and PostgreSQL services on Kubernetes. Remote within the EU.",
     }
-    return SourcedListing(source=source, listing=ScoutedListing.model_validate(values | fields))
+    listing = ScoutedListing.model_validate(values | fields)
+    return SourcedListing(source=source, kind="job", listing=listing)
 
 
 # Greenhouse postings open with about 3,000 characters of company text before the requirements.
@@ -44,6 +45,7 @@ LONG_POSTING = f"{BOILERPLATE}\n{REQUIREMENTS}\n- Remote within the EU"
 def listing(**fields: object) -> Listing:
     values: dict[str, object] = {
         "key": "https://jobs.acme.example/backend",
+        "kind": "job",
         "title": "Senior Backend Engineer",
         "company": "Acme GmbH",
         "location_string": "Remote (EU)",
@@ -51,7 +53,7 @@ def listing(**fields: object) -> Listing:
         "url": "https://jobs.acme.example/backend",
         "sources": ["Remotive"],
         "posted_on": date(2026, 11, 12),
-        "salary": None,
+        "pay": None,
         "summary": "Python and PostgreSQL services on Kubernetes.",
     }
     return Listing.model_validate(values | fields)

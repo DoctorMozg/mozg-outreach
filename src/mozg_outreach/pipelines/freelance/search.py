@@ -10,24 +10,26 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
 from mozg_outreach.domain import FieldValue, ItemCandidate, ItemKind, ItemScore
-from mozg_outreach.pipelines.freelance.budget import BudgetParser
 from mozg_outreach.pipelines.freelance.models import (
     FreelanceBrief,
     FreelanceStrategy,
     FreelanceStrategyInput,
-    Gig,
     GigJudgeInput,
     GigJudgeResult,
     GigJudgment,
     GigScoutInput,
     GigScoutResult,
     GigSourceResearchInput,
-    GigTerms,
     ScoutedGig,
 )
-from mozg_outreach.pipelines.seeker.listings import SourcedListing, canonical_url
-from mozg_outreach.pipelines.seeker.models import Excluded, JobSource, ScoutedListing, SourcePlan
-from mozg_outreach.pipelines.seeker.screening import ListingScreener, ScreenRules, listing_text
+from mozg_outreach.pipelines.seeker.listings import SourcedListing
+from mozg_outreach.pipelines.seeker.models import JobSource, Listing, ScoutedListing, SourcePlan
+from mozg_outreach.pipelines.seeker.screening import (
+    ListingScreener,
+    Screening,
+    ScreenRules,
+    listing_text,
+)
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.scoring.freelance import FreelanceScorer, GigScoreInput
@@ -54,18 +56,13 @@ class GigScoutOutcome(BaseModel):
     concerns: list[str]
 
 
-class GigScreening(BaseModel):
-    kept: list[Gig]
-    excluded: list[Excluded]
-
-
 class GigJudgments(BaseModel):
     by_key: dict[str, GigJudgment]
     concerns: list[str]
 
 
 class RankedGig(BaseModel):
-    gig: Gig
+    gig: Listing
     score: ItemScore
     judgment: GigJudgment | None
 
@@ -74,7 +71,6 @@ class FreelanceSearch:
     def __init__(self, steps: PipelineSteps, catalog: FreelanceCatalog) -> None:
         self._steps = steps
         self._catalog = catalog
-        self._budgets = BudgetParser()
 
     async def plan(self, brief: FreelanceBrief, feedback: str | None = None) -> FreelanceStrategy:
         payload = FreelanceStrategyInput(
@@ -159,15 +155,15 @@ class FreelanceSearch:
         strategy: FreelanceStrategy,
         brief: FreelanceBrief,
         today: date,
-    ) -> GigScreening:
-        terms = {canonical_url(s.gig.url): self._terms(s.gig) for s in scouted}
-        screening = ListingScreener(gig_rules(strategy, brief), today).screen(
-            [SourcedListing(source=s.source, listing=_as_listing(s.gig)) for s in scouted]
+    ) -> Screening:
+        return ListingScreener(gig_rules(strategy, brief), today).screen(
+            [
+                SourcedListing(source=s.source, kind="gig", listing=_as_listing(s.gig))
+                for s in scouted
+            ]
         )
-        kept = [Gig(listing=listing, terms=terms[listing.key]) for listing in screening.kept]
-        return GigScreening(kept=kept, excluded=screening.excluded)
 
-    async def judge(self, gigs: list[Gig], strategy: FreelanceStrategy) -> GigJudgments:
+    async def judge(self, gigs: list[Listing], strategy: FreelanceStrategy) -> GigJudgments:
         batches = [gigs[i : i + JUDGE_BATCH] for i in range(0, len(gigs), JUDGE_BATCH)]
         results = await asyncio.gather(
             *(
@@ -194,17 +190,17 @@ class FreelanceSearch:
                 continue
             if isinstance(result, BaseException):
                 raise result
-            wanted = {gig.listing.key for gig in batch}
+            wanted = {gig.key for gig in batch}
             judgments.by_key |= {j.key: j for j in result.judgments if j.key in wanted}
             judgments.concerns += result.concerns
-        missing = [g.listing.title for g in gigs if g.listing.key not in judgments.by_key]
+        missing = [g.title for g in gigs if g.key not in judgments.by_key]
         if missing:
             judgments.concerns.append(f"No judgment for: {', '.join(missing)}")
         return judgments
 
     def rank(
         self,
-        gigs: list[Gig],
+        gigs: list[Listing],
         judgments: GigJudgments,
         strategy: FreelanceStrategy,
         today: date,
@@ -213,12 +209,12 @@ class FreelanceSearch:
         ranked = [
             RankedGig(
                 gig=gig,
-                judgment=judgments.by_key.get(gig.listing.key),
+                judgment=judgments.by_key.get(gig.key),
                 score=scorer.score(
                     GigScoreInput(
                         gig=gig,
-                        skills=skills.match(listing_text(gig.listing)),
-                        judgment=judgments.by_key.get(gig.listing.key),
+                        skills=skills.match(listing_text(gig)),
+                        judgment=judgments.by_key.get(gig.key),
                         strategy=strategy,
                         today=today,
                     )
@@ -227,14 +223,6 @@ class FreelanceSearch:
             for gig in gigs
         ]
         return sorted(ranked, key=lambda r: r.score.total or 0.0, reverse=True)
-
-    def _terms(self, gig: ScoutedGig) -> GigTerms:
-        return GigTerms(
-            budget=self._budgets.parse(gig.budget_raw, gig.duration_raw),
-            duration_raw=gig.duration_raw,
-            scope=gig.scope_raw,
-            application_method=gig.application_method_raw,
-        )
 
 
 def gig_rules(strategy: FreelanceStrategy, brief: FreelanceBrief) -> ScreenRules:
@@ -255,9 +243,7 @@ def gig_rules(strategy: FreelanceStrategy, brief: FreelanceBrief) -> ScreenRules
 COLUMNS = ("client", "gig", "location", "budget", "duration", "posted_on", "url")
 
 
-def to_candidate(gig: Gig) -> ItemCandidate:
-    listing = gig.listing
-
+def to_candidate(listing: Listing) -> ItemCandidate:
     def field(value: str | None) -> FieldValue:
         return FieldValue(value=value, source_url=listing.url)
 
@@ -269,8 +255,8 @@ def to_candidate(gig: Gig) -> ItemCandidate:
             "client": field(listing.company),
             "gig": field(listing.title),
             "location": field(listing.location_string),
-            "budget": field(gig.terms.budget.raw if gig.terms.budget else None),
-            "duration": field(gig.terms.duration_raw),
+            "budget": field(listing.pay.raw if listing.pay else None),
+            "duration": field(listing.terms.duration_raw if listing.terms else None),
             "posted_on": field(listing.posted_on.isoformat() if listing.posted_on else None),
             "url": field(listing.url),
         },
@@ -301,6 +287,8 @@ def _as_listing(gig: ScoutedGig) -> ScoutedListing:
         remote_status_raw=gig.remote_status_raw,
         url=gig.url,
         posted_date=gig.posted_date,
-        salary_string=None,
+        salary_string=gig.budget_raw,
         summary_snippet=gig.scope_raw,
+        duration_raw=gig.duration_raw,
+        application_method_raw=gig.application_method_raw,
     )

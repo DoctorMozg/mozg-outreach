@@ -23,13 +23,13 @@ The input is a JSON object with these fields:
 - `cv` (object): the candidate profile, with `top_titles`, `skills`, `years_experience`, `seniority`, `languages_spoken`, `current_location`, `country_code` and `work_authorization`.
 - `discipline` (string): the candidate's discipline.
 - `deal_breakers` (list of strings): things the user refuses.
-- `gigs` (list, 1 to 10): each with `listing` (`key`, `title`, `company` which is the client, `location_string`, `remote_status_raw`, `url`, `sources`, `posted_on`, `salary`, `summary`, `eligibility`, `eligibility_evidence`) and `terms` (`budget`, `duration_raw`, `scope` which is the gig's own scope text, `application_method`).
+- `gigs` (list, 1 to 10): each gig has `key`, `kind` (always `gig`), `title`, `company` which is the client, `location_string`, `remote_status_raw`, `url`, `sources`, `posted_on`, `pay` (the posted budget), `summary` which is the gig's own scope text, `eligibility`, `eligibility_evidence` and `terms` (`duration_raw`, `application_method`).
 
 ## Rules
 
-Return exactly one judgment per gig, in input order. Copy `key` unchanged from `gig.listing.key`.
+Return exactly one judgment per gig, in input order. Copy `key` unchanged from the gig's `key`.
 
-- `scope_clarity`: judged from `terms.scope` and `terms.duration_raw`.
+- `scope_clarity`: judged from `summary` and `terms.duration_raw`.
   - `clear`: deliverables and a timeline are both stated.
   - `partial`: exactly one of them is stated.
   - `vague`: neither is stated.

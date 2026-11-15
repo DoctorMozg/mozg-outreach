@@ -8,7 +8,6 @@ from mozg_outreach.domain import FieldSpec
 from mozg_outreach.pipelines.freelance.models import (
     FreelanceBrief,
     FreelanceStrategy,
-    Gig,
     GigJudgment,
 )
 from mozg_outreach.pipelines.freelance.search import (
@@ -22,7 +21,7 @@ from mozg_outreach.pipelines.leads.enrichment import IDENTITY, LeadEnrichment, L
 from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, field_task
 from mozg_outreach.pipelines.leads.identify import lead_input
 from mozg_outreach.pipelines.leads.models import LeadIdentity
-from mozg_outreach.pipelines.seeker.models import Excluded, JobSource
+from mozg_outreach.pipelines.seeker.models import Excluded, JobSource, Listing
 from mozg_outreach.pipelines.summary import (
     RunSummary,
     SeekerRunSummarizer,
@@ -52,7 +51,7 @@ class FreelanceSearchState(RunState):
     strategy: FreelanceStrategy | None = None
     boards: list[JobSource] = Field(default_factory=list)
     scouted: list[SourcedGig] = Field(default_factory=list)
-    kept: list[Gig] = Field(default_factory=list)
+    kept: list[Listing] = Field(default_factory=list)
     excluded: list[Excluded] = Field(default_factory=list)
     judgments: GigJudgments | None = None
     item_ids: list[int] = Field(default_factory=list)
@@ -199,15 +198,15 @@ def _board_names() -> frozenset[str]:
 
 def _gig_task(item: Item, boards: frozenset[str]) -> LeadTask:
     gig, _ = gig_of(item)
-    hidden = boards | {s.casefold() for s in gig.listing.sources}
-    lead = lead_input(gig.listing, "freelance", gig.terms.scope, hidden)
-    return LeadTask(item_id=item.id, listing=gig.listing, lead=lead)
+    hidden = boards | {s.casefold() for s in gig.sources}
+    lead = lead_input(gig, "freelance", gig.summary, hidden)
+    return LeadTask(item_id=item.id, listing=gig, lead=lead)
 
 
-def gig_of(item: Item) -> tuple[Gig, GigJudgment | None]:
+def gig_of(item: Item) -> tuple[Listing, GigJudgment | None]:
     judged = item.details.get(GIG_JUDGMENT)
     return (
-        Gig.model_validate(item.details[GIG]),
+        Listing.model_validate(item.details[GIG]),
         GigJudgment.model_validate(judged) if judged else None,
     )
 

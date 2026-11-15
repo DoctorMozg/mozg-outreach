@@ -22,7 +22,7 @@ The input is a JSON object with these fields:
 
 - `cv` (object): the candidate profile, with `top_titles`, `skills`, `years_experience`, `seniority`, `languages_spoken`, `current_location`, `country_code` and `work_authorization`.
 - `deal_breakers` (list of strings): things the user refuses.
-- `listings` (list, 1 to 10): normalized listings, each with `key`, `title`, `company`, `location_string`, `remote_status_raw`, `url`, `sources`, `posted_on`, `salary`, `summary`, `eligibility` and `eligibility_evidence`.
+- `listings` (list, 1 to 10): normalized listings, each with `key`, `title`, `company`, `location_string`, `remote_status_raw`, `url`, `sources`, `posted_on`, `pay` (the salary as posted), `summary`, `eligibility` and `eligibility_evidence`.
 
 ## Rules
 

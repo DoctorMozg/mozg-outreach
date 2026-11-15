@@ -8,8 +8,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel
 
-from mozg_outreach.pipelines.seeker.models import Listing, ScoutedListing
-from mozg_outreach.pipelines.seeker.salary import SalaryParser
+from mozg_outreach.pipelines.seeker.models import GigTerms, Listing, ListingKind, ScoutedListing
+from mozg_outreach.pipelines.seeker.pay import PayParser
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +26,14 @@ Merge = Callable[[Listing, Listing], Listing]
 
 class SourcedListing(BaseModel):
     source: str
+    kind: ListingKind
     listing: ScoutedListing
 
 
 class ListingNormalizer:
     def __init__(self, today: date) -> None:
         self._today = today
-        self._salary = SalaryParser()
+        self._pay = PayParser()
 
     def normalize(self, scouted: list[SourcedListing]) -> list[Listing]:
         """URL dedup first, then the same posting on other hosts or channels, oldest kept."""
@@ -69,8 +70,14 @@ class ListingNormalizer:
 
     def _listing(self, item: SourcedListing) -> Listing:
         raw = item.listing
+        terms = (
+            GigTerms(duration_raw=raw.duration_raw, application_method=raw.application_method_raw)
+            if item.kind == "gig"
+            else None
+        )
         return Listing(
             key=canonical_url(raw.url),
+            kind=item.kind,
             title=raw.title.strip(),
             company=raw.company.strip(),
             location_string=raw.location_string,
@@ -78,10 +85,11 @@ class ListingNormalizer:
             url=raw.url,
             sources=[item.source],
             posted_on=self.posted_on(raw.posted_date),
-            salary=self._salary.parse(raw.salary_string),
+            pay=self._pay.parse(raw.salary_string, item.kind, raw.duration_raw),
             summary=raw.summary_snippet,
             apply_url=raw.apply_url,
             telegram_contact=raw.telegram_contact,
+            terms=terms,
         )
 
 
@@ -142,7 +150,7 @@ def _merge_posting(kept: Listing, other: Listing) -> Listing:
     return first.model_copy(
         update={
             "sources": list(dict.fromkeys([*first.sources, *second.sources])),
-            "salary": first.salary or second.salary,
+            "pay": first.pay or second.pay,
             "telegram_contact": first.telegram_contact or second.telegram_contact,
             "merged_urls": [*first.merged_urls, second.url, *second.merged_urls],
         }

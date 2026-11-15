@@ -5,8 +5,9 @@ from datetime import date
 from pydantic import BaseModel
 
 from mozg_outreach.domain import ItemScore
-from mozg_outreach.pipelines.freelance.budget import hourly_usd
-from mozg_outreach.pipelines.freelance.models import FreelanceStrategy, Gig, GigJudgment
+from mozg_outreach.pipelines.freelance.models import FreelanceStrategy, GigJudgment
+from mozg_outreach.pipelines.seeker.models import Listing
+from mozg_outreach.pipelines.seeker.pay import hourly_usd
 from mozg_outreach.pipelines.seeker.skills import SkillMatch
 from mozg_outreach.scoring.axes import AxisValue, weighted_axes, weighted_total
 from mozg_outreach.scoring.seeker import DEAL_BREAKER_CAP, NOT_JUDGED, UNKNOWN, JobScorer, band_fit
@@ -21,7 +22,7 @@ VETTING_POINTS = {
 
 
 class GigScoreInput(BaseModel):
-    gig: Gig
+    gig: Listing
     skills: SkillMatch
     judgment: GigJudgment | None
     strategy: FreelanceStrategy
@@ -30,7 +31,7 @@ class GigScoreInput(BaseModel):
 
 class FreelanceScorer:
     def score(self, data: GigScoreInput) -> ItemScore:
-        listing, judgment = data.gig.listing, data.judgment
+        listing, judgment = data.gig, data.judgment
         values = {
             "skill_match": JobScorer.skill_match(data.skills),
             "location_eligibility": JobScorer.location(listing),
@@ -58,13 +59,13 @@ class FreelanceScorer:
         return blockers
 
     @staticmethod
-    def budget_fit(gig: Gig, strategy: FreelanceStrategy) -> AxisValue:
+    def budget_fit(gig: Listing, strategy: FreelanceStrategy) -> AxisValue:
         floor_money = strategy.preferences.rate_floor
         floor = hourly_usd(floor_money) if floor_money else None
         if floor is None:
             # Without a floor the axis is left out, and its weight spreads over the rest.
             return AxisValue(None, "no rate floor set")
-        budget = gig.terms.budget
+        budget = gig.pay
         if budget is None or budget.hourly_min_usd is None or budget.hourly_max_usd is None:
             return AxisValue(UNKNOWN, "budget not stated or currency unknown")
         low, high = budget.hourly_min_usd, budget.hourly_max_usd

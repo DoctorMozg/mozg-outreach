@@ -1,8 +1,8 @@
-"""Parse salary strings and compare them in USD per year."""
+"""Parse salaries and gig budgets, and compare them as an hourly rate in USD."""
 
 import re
 
-from mozg_outreach.pipelines.seeker.models import Money, Period, Salary
+from mozg_outreach.pipelines.seeker.models import ListingKind, Money, Pay, PayBasis, Period
 
 # Reference rates (USD per unit) from the legacy pipeline; good to about 5%, which is
 # enough to compare a band with a floor. Unknown currencies stay unconverted.
@@ -20,7 +20,12 @@ USD_PER_UNIT: dict[str, float] = {
     "INR": 0.012,
     "JPY": 0.0066,
 }
-ANNUAL_FACTOR: dict[Period, int] = {"year": 1, "month": 12, "day": 240, "hour": 2080}
+# One convention for jobs and gigs: a 2080-hour year, 12 months and 8-hour days.
+HOURS_PER: dict[Period, float] = {"hour": 1.0, "day": 8.0, "month": 2080 / 12, "year": 2080.0}
+DEFAULT_PROJECT_HOURS = 320.0
+_PROJECT = re.compile(r"\b(?:fixed|project|total|flat|lump)\b", re.IGNORECASE)
+_DURATION = re.compile(r"(\d+(?:\.\d+)?)\s*(week|month|day)s?", re.IGNORECASE)
+_HOURS_PER_DURATION_UNIT = {"day": 8.0, "week": 40.0, "month": 2080 / 12}
 
 _SYMBOLS = {"$": "USD", "\u20ac": "EUR", "\u00a3": "GBP", "\u20b9": "INR", "\u00a5": "JPY"}
 _CODES = re.compile(r"\b(" + "|".join(USD_PER_UNIT) + r"|[A-Z]{3}(?=\s*\d))\b")
@@ -36,9 +41,11 @@ _PERIODS: list[tuple[Period, re.Pattern[str]]] = [
 ]
 
 
-class SalaryParser:
-    def parse(self, raw: str | None) -> Salary | None:
-        """None when the text holds no amount; an unknown currency keeps USD fields empty."""
+class PayParser:
+    def parse(
+        self, raw: str | None, kind: ListingKind, duration_raw: str | None = None
+    ) -> Pay | None:
+        """None when the text holds no amount; only a gig budget can be for the whole project."""
         if not raw or not raw.strip():
             return None
         found = list(_AMOUNT.finditer(raw))
@@ -53,22 +60,31 @@ class SalaryParser:
         low, high = min(low, high), max(low, high)
         currency = _currency(raw)
         period: Period = next((p for p, rx in _PERIODS if rx.search(raw)), "year")
+        # "Total compensation" on a job is a salary; "total budget" on a gig is the project.
+        basis: PayBasis = "project" if kind == "gig" and _PROJECT.search(raw) else period
+        hours = project_hours(duration_raw) if basis == "project" else HOURS_PER[period]
         rate = USD_PER_UNIT.get(currency) if currency else None
-        factor = ANNUAL_FACTOR[period]
-        return Salary(
+        return Pay(
             raw=raw,
             currency=currency,
             min=low,
             max=high,
-            period=period,
-            annual_min_usd=round(low * factor * rate) if rate else None,
-            annual_max_usd=round(high * factor * rate) if rate else None,
+            basis=basis,
+            hourly_min_usd=round(low * rate / hours, 2) if rate else None,
+            hourly_max_usd=round(high * rate / hours, 2) if rate else None,
         )
 
 
-def annual_usd(money: Money) -> float | None:
+def project_hours(duration_raw: str | None) -> float:
+    found = _DURATION.search(duration_raw or "")
+    if not found:
+        return DEFAULT_PROJECT_HOURS
+    return float(found[1]) * _HOURS_PER_DURATION_UNIT[found[2].lower()]
+
+
+def hourly_usd(money: Money) -> float | None:
     rate = USD_PER_UNIT.get(money.currency.upper())
-    return money.amount * ANNUAL_FACTOR[money.period] * rate if rate else None
+    return round(money.amount * rate / HOURS_PER[money.period], 2) if rate else None
 
 
 def _currency(raw: str) -> str | None:

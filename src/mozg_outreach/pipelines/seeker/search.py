@@ -131,7 +131,8 @@ class JobSearch:
                 raise result
             else:
                 outcome.listings += [
-                    SourcedListing(source=source.name, listing=item) for item in result.listings
+                    SourcedListing(source=source.name, kind="job", listing=item)
+                    for item in result.listings
                 ]
                 if not result.listings and result.zero_results_verified:
                     outcome.empty_sources.append(source.name)
@@ -224,7 +225,7 @@ def to_candidate(listing: Listing) -> ItemCandidate:
             "company": field(listing.company),
             "role": field(listing.title),
             "location": field(listing.location_string),
-            "salary": field(listing.salary.raw if listing.salary else None),
+            "salary": field(listing.pay.raw if listing.pay else None),
             "posted_on": field(listing.posted_on.isoformat() if listing.posted_on else None),
             "url": field(listing.url),
             "apply_url": field(listing.apply_url),

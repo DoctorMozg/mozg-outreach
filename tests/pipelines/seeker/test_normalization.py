@@ -4,14 +4,16 @@ import pytest
 
 from mozg_outreach.pipelines.seeker.listings import ListingNormalizer, canonical_url
 from mozg_outreach.pipelines.seeker.models import Money
-from mozg_outreach.pipelines.seeker.salary import USD_PER_UNIT, SalaryParser, annual_usd
+from mozg_outreach.pipelines.seeker.pay import USD_PER_UNIT, PayParser, hourly_usd, project_hours
 
 from .conftest import TODAY, scouted
 
+EUR = USD_PER_UNIT["EUR"]
 
-class TestSalary:
+
+class TestPay:
     @pytest.mark.parametrize(
-        ("raw", "low", "high", "period", "currency"),
+        ("raw", "low", "high", "basis", "currency"),
         [
             ("$120,000 - $150,000", 120000, 150000, "year", "USD"),
             ("EUR 60-80k", 60000, 80000, "year", "EUR"),
@@ -20,35 +22,59 @@ class TestSalary:
             ("4,500 EUR per month", 4500, 4500, "month", "EUR"),
         ],
     )
-    def test_parses_range_currency_and_period(
-        self, raw: str, low: float, high: float, period: str, currency: str
+    def test_parses_range_currency_and_basis(
+        self, raw: str, low: float, high: float, basis: str, currency: str
     ) -> None:
-        salary = SalaryParser().parse(raw)
-        assert salary is not None
-        assert (salary.min, salary.max, salary.period, salary.currency) == (
-            low,
-            high,
-            period,
-            currency,
-        )
+        pay = PayParser().parse(raw, "job")
+        assert pay is not None
+        assert (pay.min, pay.max, pay.basis, pay.currency) == (low, high, basis, currency)
 
-    def test_hourly_rate_is_annualized(self) -> None:
-        salary = SalaryParser().parse("$50/hour")
-        assert salary is not None
-        assert salary.annual_min_usd == 50 * 2080
+    @pytest.mark.parametrize(
+        ("raw", "duration", "basis", "hourly"),
+        [
+            ("$104,000 per year", None, "year", 50.0),
+            ("EUR 800/day", None, "day", 100 * EUR),
+            ("$60-80/hr", None, "hour", 60.0),
+            ("$6,400 fixed price", "4 weeks", "project", 40.0),
+            ("$9,600 project", None, "project", 30.0),
+        ],
+    )
+    def test_hourly_usd_for_every_basis(
+        self, raw: str, duration: str | None, basis: str, hourly: float
+    ) -> None:
+        pay = PayParser().parse(raw, "gig", duration)
+        assert pay is not None
+        assert pay.basis == basis
+        assert pay.hourly_min_usd == pytest.approx(hourly, abs=0.01)
+
+    def test_only_a_gig_budget_covers_a_project(self) -> None:
+        pay = PayParser().parse("$150,000 total compensation", "job")
+        assert pay is not None
+        assert pay.basis == "year"
+        assert pay.hourly_min_usd == pytest.approx(150000 / 2080, abs=0.01)
 
     def test_unknown_currency_keeps_usd_empty(self) -> None:
-        salary = SalaryParser().parse("80,000 - 90,000")
-        assert salary is not None
-        assert salary.annual_min_usd is None
+        pay = PayParser().parse("80,000 - 90,000", "job")
+        assert pay is not None
+        assert pay.hourly_min_usd is None
 
-    @pytest.mark.parametrize("raw", [None, "", "Competitive", "DOE"])
+    @pytest.mark.parametrize("raw", [None, "", "Competitive", "DOE", "Negotiable"])
     def test_no_amount_is_none(self, raw: str | None) -> None:
-        assert SalaryParser().parse(raw) is None
+        assert PayParser().parse(raw, "gig") is None
 
-    def test_floor_converts_by_currency_and_period(self) -> None:
-        floor = annual_usd(Money(amount=6000, currency="EUR", period="month"))
-        assert floor == pytest.approx(6000 * 12 * USD_PER_UNIT["EUR"])
+    @pytest.mark.parametrize(
+        ("raw", "hours"), [("3 months", 520), ("2 weeks", 80), ("10 days", 80), (None, 320)]
+    )
+    def test_project_hours(self, raw: str | None, hours: float) -> None:
+        assert project_hours(raw) == pytest.approx(hours)
+
+    @pytest.mark.parametrize(
+        ("amount", "period", "hourly"),
+        [(160, "day", 20.0), (104000, "year", 50.0), (52000 / 12, "month", 25.0)],
+    )
+    def test_floor_per_period(self, amount: float, period: str, hourly: float) -> None:
+        money = Money.model_validate({"amount": amount, "currency": "USD", "period": period})
+        assert hourly_usd(money) == pytest.approx(hourly, abs=0.01)
 
 
 class TestListings:

@@ -58,7 +58,7 @@ class JobFeeds:
                 continue
             listing = to_listing(item)
             if listing:
-                listings.append(SourcedListing(source=item.source, listing=listing))
+                listings.append(SourcedListing(source=item.source, kind="job", listing=listing))
         return listings
 
 

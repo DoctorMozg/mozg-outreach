@@ -2,18 +2,18 @@ from datetime import date
 
 import pytest
 
-from mozg_outreach.pipelines.seeker.models import JobStrategy, Money, Salary
-from mozg_outreach.pipelines.seeker.salary import SalaryParser
+from mozg_outreach.pipelines.seeker.models import JobStrategy, Money, Pay
+from mozg_outreach.pipelines.seeker.pay import PayParser
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.scoring.seeker import JobScoreInput, JobScorer
 
 from .conftest import TODAY, judgment, listing
 
 
-def usd_salary(low: float, high: float) -> Salary:
-    salary = SalaryParser().parse(f"${low:,.0f} - ${high:,.0f}")
-    assert salary is not None
-    return salary
+def usd_salary(low: float, high: float) -> Pay:
+    pay = PayParser().parse(f"${low:,.0f} - ${high:,.0f}", "job")
+    assert pay is not None
+    return pay
 
 
 @pytest.fixture
@@ -76,7 +76,7 @@ class TestAxes:
     def test_salary_bands_against_floor(
         self, usd_strategy: JobStrategy, low: float, high: float, points: float
     ) -> None:
-        item = listing(salary=usd_salary(low, high))
+        item = listing(pay=usd_salary(low, high))
         assert JobScorer.salary_fit(item, usd_strategy).value == points
 
     def test_undisclosed_salary_is_neutral(self, usd_strategy: JobStrategy) -> None:

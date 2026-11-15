@@ -43,7 +43,7 @@ Today freelance already reuses most job code: a gig is a `Listing` plus `GigTerm
 
 **M21 One listing and pay model**
 
-- `Listing.kind`, `Pay` and its parser, optional gig terms on the listing, one `ScoutedListing`. `Gig`, `GigBudget`, `Salary` and `BudgetParser` go. The job and freelance flows run on the new model.
+- `Listing.kind`, `Pay` and its parser, and optional gig terms on the listing. `Gig`, `GigBudget`, `Salary` and `BudgetParser` go. The job and freelance flows run on the new model. The scouted shapes merge with the scout prompts in M23.
 - verify: pay parsing tests for every basis; `uv run pytest`.
 
 **M22 One judge and scorer**

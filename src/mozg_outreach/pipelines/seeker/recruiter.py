@@ -26,6 +26,7 @@ class RecruiterLookup:
         url = target.listing_url or ""
         listing = Listing(
             key=canonical_url(url) if url else f"company:{target.company.casefold()}",
+            kind="job",
             title=target.role or "",
             company=target.company,
             location_string=target.region,
@@ -33,7 +34,7 @@ class RecruiterLookup:
             url=url,
             sources=["user"],
             posted_on=None,
-            salary=None,
+            pay=None,
             summary="",
         )
         logger.info("recruiter lookup for %s", target.company)

@@ -126,7 +126,7 @@ async def freelance_proposal(ctx: Ctx) -> PhaseResult:
     letter = await ProposalWriter(ctx.steps, Naturalizer(ctx.steps)).write(
         ProposalRequest(
             gig=gig,
-            skills=SkillMatcher(strategy).match(listing_text(gig.listing)),
+            skills=SkillMatcher(strategy).match(listing_text(gig)),
             rate=strategy.preferences.rate_floor,
             cv_text=FreelanceBrief.model_validate(inputs.require_brief()).cv_text,
             sender=inputs.sender(),

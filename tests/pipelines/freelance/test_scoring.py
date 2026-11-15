@@ -2,10 +2,9 @@ from datetime import date
 
 import pytest
 
-from mozg_outreach.pipelines.freelance.budget import BudgetParser, hourly_usd, project_hours
-from mozg_outreach.pipelines.freelance.models import FreelanceStrategy, GigBudget
-from mozg_outreach.pipelines.seeker.models import Money
-from mozg_outreach.pipelines.seeker.salary import USD_PER_UNIT
+from mozg_outreach.pipelines.freelance.models import FreelanceStrategy
+from mozg_outreach.pipelines.seeker.models import Pay
+from mozg_outreach.pipelines.seeker.pay import USD_PER_UNIT
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.scoring.freelance import FreelanceScorer, GigScoreInput
 
@@ -14,37 +13,8 @@ from .conftest import SCOPE, gig, gig_judgment
 EUR = USD_PER_UNIT["EUR"]
 
 
-class TestBudget:
-    @pytest.mark.parametrize(
-        ("raw", "duration", "basis", "hourly"),
-        [
-            ("EUR 800/day", None, "day", 100 * EUR),
-            ("$60-80/hr", None, "hour", 60.0),
-            ("$6,400 fixed price", "4 weeks", "project", 40.0),
-            ("$9,600 project", None, "project", 30.0),
-        ],
-    )
-    def test_hourly_equivalent(
-        self, raw: str, duration: str | None, basis: str, hourly: float
-    ) -> None:
-        budget = BudgetParser().parse(raw, duration)
-        assert budget is not None
-        assert budget.basis == basis
-        assert budget.hourly_min_usd == pytest.approx(hourly, abs=0.01)
-
-    def test_no_amount_is_none(self) -> None:
-        assert BudgetParser().parse("Negotiable", None) is None
-
-    @pytest.mark.parametrize(("raw", "hours"), [("3 months", 480), ("2 weeks", 80), (None, 320)])
-    def test_project_hours(self, raw: str | None, hours: float) -> None:
-        assert project_hours(raw) == hours
-
-    def test_floor_per_period(self) -> None:
-        assert hourly_usd(Money(amount=160, currency="USD", period="day")) == 20.0
-
-
-def budget(hourly_low: float, hourly_high: float) -> GigBudget:
-    return GigBudget(
+def budget(hourly_low: float, hourly_high: float) -> Pay:
+    return Pay(
         raw="x", currency="USD", min=1, max=1, basis="hour",
         hourly_min_usd=hourly_low, hourly_max_usd=hourly_high,
     )  # fmt: skip

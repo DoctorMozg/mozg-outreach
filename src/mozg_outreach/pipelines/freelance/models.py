@@ -1,4 +1,4 @@
-"""Contracts between the freelance pipeline and its agents. Gigs reuse the job `Listing`."""
+"""Contracts between the freelance pipeline and its agents. A gig is a `Listing` of kind gig."""
 
 from typing import Literal
 
@@ -16,7 +16,6 @@ from mozg_outreach.pipelines.seeker.models import (
 
 Discipline = Literal["engineering", "design", "marketing", "product", "data", "ops", "founder"]
 EngagementType = Literal["project_gig", "contractor_placement", "consulting_advisory"]
-BudgetBasis = Literal["hour", "day", "month", "year", "project"]
 
 
 class FreelanceBrief(BaseModel):
@@ -105,30 +104,6 @@ class GigScoutResult(BaseModel):
     concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
 
 
-class GigBudget(BaseModel):
-    raw: str
-    currency: str | None
-    min: float
-    max: float
-    basis: BudgetBasis
-    hourly_min_usd: float | None
-    hourly_max_usd: float | None
-
-
-class GigTerms(BaseModel):
-    """What a gig adds to a listing; joined back by the listing key after screening."""
-
-    budget: GigBudget | None
-    duration_raw: str | None
-    scope: str
-    application_method: str | None
-
-
-class Gig(BaseModel):
-    listing: Listing
-    terms: GigTerms
-
-
 ScopeClarity = Literal["clear", "partial", "vague"]
 ClientVetting = Literal["vetted_platform", "verified_client", "unverified", "red_flags"]
 
@@ -149,7 +124,7 @@ class GigJudgeInput(BaseModel):
     cv: CvProfile
     discipline: Discipline
     deal_breakers: list[str]
-    gigs: list[Gig] = Field(min_length=1, max_length=10)
+    gigs: list[Listing] = Field(min_length=1, max_length=10)
 
 
 class GigJudgeResult(BaseModel):

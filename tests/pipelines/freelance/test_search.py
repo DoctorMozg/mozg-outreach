@@ -6,11 +6,11 @@ from mozg_outreach.letters.composer import WrittenLetter
 from mozg_outreach.letters.models import LetterBrief, LetterDraft, SenderSettings
 from mozg_outreach.naturalize.models import NaturalizeResult
 from mozg_outreach.naturalize.naturalizer import Naturalizer
-from mozg_outreach.pipelines.freelance.budget import BudgetParser
 from mozg_outreach.pipelines.freelance.models import FreelanceBrief, FreelanceStrategy
 from mozg_outreach.pipelines.freelance.proposals import ProposalRequest, ProposalWriter
 from mozg_outreach.pipelines.freelance.search import FreelanceSearch, load_catalog
 from mozg_outreach.pipelines.seeker.models import SourcePlan
+from mozg_outreach.pipelines.seeker.pay import PayParser
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.steps import PipelineSteps
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner
@@ -52,9 +52,11 @@ def test_screening_joins_terms_back_and_applies_gates(
         TODAY,
     )
     [kept] = screening.kept
-    assert kept.listing.key == GIG_URL
-    assert kept.terms.budget is not None
-    assert kept.terms.budget.basis == "day"
+    assert (kept.key, kept.kind) == (GIG_URL, "gig")
+    assert kept.pay is not None
+    assert kept.pay.basis == "day"
+    assert kept.terms is not None
+    assert kept.terms.application_method == "Apply via Malt."
     assert sorted(e.reason for e in screening.excluded) == [
         "attribute_blocklist",
         "missing_must_have",
@@ -77,7 +79,7 @@ async def test_proposal_quotes_scope_and_only_supplied_prices(
         }
     )
     steps = PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path)
-    hidden = gig(BudgetParser().parse("EUR 700/day", None), company="Malt")
+    hidden = gig(PayParser().parse("EUR 700/day", "gig"), company="Malt")
     letter = await ProposalWriter(steps, Naturalizer(steps)).write(
         ProposalRequest(
             gig=hidden,

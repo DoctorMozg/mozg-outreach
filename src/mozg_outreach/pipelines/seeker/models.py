@@ -11,6 +11,8 @@ from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
 Seniority = Literal["intern", "junior", "mid", "senior", "staff", "principal", "executive"]
 RemotePreference = Literal["required", "preferred", "no"]
 Period = Literal["year", "month", "day", "hour"]
+PayBasis = Literal["year", "month", "day", "hour", "project"]
+ListingKind = Literal["job", "gig"]
 # One vocabulary for every excluded job or gig, so the report can explain each exclusion.
 ExcludedReason = Literal[
     "stale",
@@ -166,6 +168,8 @@ class ScoutedListing(BaseModel):
     summary_snippet: str
     apply_url: str | None = Field(default=None, description="Vacancy page a post links to.")
     telegram_contact: TelegramContact | None = None
+    duration_raw: str | None = None
+    application_method_raw: str | None = None
 
 
 class JobScoutResult(BaseModel):
@@ -177,20 +181,28 @@ class JobScoutResult(BaseModel):
     concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)
 
 
-class Salary(BaseModel):
+class Pay(BaseModel):
+    """A salary or a gig budget; USD fields stay empty for an unknown currency."""
+
     raw: str
     currency: str | None
-    min: float | None
-    max: float | None
-    period: Period
-    annual_min_usd: float | None
-    annual_max_usd: float | None
+    min: float
+    max: float
+    basis: PayBasis
+    hourly_min_usd: float | None
+    hourly_max_usd: float | None
+
+
+class GigTerms(BaseModel):
+    duration_raw: str | None
+    application_method: str | None
 
 
 class Listing(BaseModel):
     """A scouted or fed listing after dedup and Python normalization."""
 
     key: str = Field(description="Canonical URL; the item's dedup key.")
+    kind: ListingKind
     title: str
     company: str
     location_string: str | None
@@ -199,11 +211,12 @@ class Listing(BaseModel):
     sources: list[str]
     merged_urls: list[str] = Field(default_factory=list)
     posted_on: date | None
-    salary: Salary | None
-    # The whole description, so Python screening sees requirements that follow long boilerplate.
+    pay: Pay | None
+    # The whole description (a gig's scope), so screening sees requirements after long boilerplate.
     summary: str
     apply_url: str | None = None
     telegram_contact: TelegramContact | None = None
+    terms: GigTerms | None = Field(default=None, description="Set for gigs only.")
     eligibility: Literal["yes", "no", "unknown"] = "unknown"
     eligibility_evidence: str | None = None
 
