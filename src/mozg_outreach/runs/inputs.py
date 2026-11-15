@@ -65,8 +65,6 @@ def search_state(db: Database, item_id: int) -> tuple[Item, JsonObject]:
         item = session.get(Item, item_id)
         if item is None:
             raise LookupError(f"no item {item_id}")
-        if not item.selected:
-            raise ValueError(f"item {item_id} is not selected; select it first")
         run = session.get(Run, item.last_run_id) if item.last_run_id else None
         if run is None or "strategy" not in run.state:
             raise ValueError(f"item {item_id} has no search run with a strategy")

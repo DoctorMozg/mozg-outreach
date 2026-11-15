@@ -50,7 +50,6 @@ class BizOutreach:
         self, item: Item, strategy: Strategy, run_id: int | None = None
     ) -> CompanyDossier:
         """Run the five enrichment agents, then rescore with the dossier and register its people."""
-        _require_selected(item)
         candidate = stored_candidate(item)
         dossier = await BizEnrichment(self._steps).enrich(brief_from_candidate(candidate, strategy))
         self._items.set_detail(item, DOSSIER, dossier)
@@ -64,7 +63,6 @@ class BizOutreach:
 
     async def write_letters(self, item: Item, strategy: Strategy) -> LetterBatch:
         """Draft one naturalized letter per reachable contact and store each as a new version."""
-        _require_selected(item)
         if DOSSIER not in item.details:
             raise ValueError(
                 f"item {item.id} is not enriched yet; enrich it before writing letters"
@@ -124,11 +122,6 @@ class BizOutreach:
         stored = voices.profile(channel)
         profile = VoiceProfile.model_validate(stored) if stored else None
         return VoiceContext(profile=profile, samples=voices.samples(channel))
-
-
-def _require_selected(item: Item) -> None:
-    if not item.selected:
-        raise ValueError(f"item {item.id} is not selected; only selected leads are enriched")
 
 
 def _fields(item: Item) -> dict[str, FieldValue]:

@@ -102,13 +102,6 @@ async def test_selected_item_becomes_enriched_scored_and_drafted(
 
 
 class TestPreconditions:
-    async def test_only_selected_items(
-        self, item: Item, strategy: Strategy, outreach: tuple[BizOutreach, RecordedRunner]
-    ) -> None:
-        item.selected = False
-        with pytest.raises(ValueError, match="not selected"):
-            await outreach[0].enrich(item, strategy)
-
     async def test_letters_need_enrichment_first(
         self, item: Item, strategy: Strategy, outreach: tuple[BizOutreach, RecordedRunner]
     ) -> None:

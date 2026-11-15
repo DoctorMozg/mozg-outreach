@@ -5,9 +5,9 @@ from sqlalchemy import select
 from mozg_outreach.agents import AgentRunError
 from mozg_outreach.domain import RunStatus
 from mozg_outreach.pipelines.leads.enrichment import IDENTITY
-from mozg_outreach.pipelines.seeker.models import SeekerStrategy
+from mozg_outreach.pipelines.seeker.models import JobContacts, SeekerStrategy
 from mozg_outreach.runs.flow import GateAnswer
-from mozg_outreach.runs.seeker import JUDGMENT, LISTING
+from mozg_outreach.runs.seeker import CONTACTS, JUDGMENT, LISTING
 from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import Entity, Item, ItemLink, Run, SourceConfig
 from mozg_outreach.storage.repositories import ItemRepository
@@ -134,19 +134,42 @@ class TestLifecycle:
         assert stale.error == "interrupted: the server stopped mid-run"
 
 
-async def test_item_flow_needs_a_selected_item(harness: Harness, strategy: SeekerStrategy) -> None:
+async def test_item_run_survives_its_item_being_unselected(
+    harness: Harness, strategy: SeekerStrategy
+) -> None:
+    """Selection gates starting a run; unticking the lead while it is queued must not fail it."""
+    contacts = JobContacts(
+        named_contact=None,
+        careers_email="jobs@acme.example",
+        careers_email_source="https://acme.example/careers",
+        linkedin_company=None,
+        pattern_guesses=[],
+        apply_url=None,
+        concerns=[],
+    )
     project_id = harness.seeker_project()
-    harness.script({"seeker-strategist": [strategy], "seeker-judge": [judged()]})
+    harness.script(
+        {
+            "seeker-strategist": [strategy],
+            "seeker-judge": [judged()],
+            "job-contact-finder": [contacts],
+        }
+    )
     search = harness.manager.start(project_id, "seeker.search", {})
     await harness.manager.wait(search)
     harness.manager.answer_gate(search, GateAnswer(approve=True))
     await harness.manager.wait(search)
     with harness.db.session() as session:
-        item_id = session.query(Item.id).scalar()
+        item = session.scalars(select(Item)).one()
+        assert not item.selected
+        item_id = item.id
 
-    letters = harness.manager.start(project_id, "seeker.letters", {"item_id": item_id})
-    await harness.manager.wait(letters)
-    refused = run_row(harness, letters)
-    assert refused.status == RunStatus.FAILED
-    assert refused.error is not None
-    assert "not selected" in refused.error
+    enrich = harness.manager.start(project_id, "seeker.enrich", {"item_id": item_id})
+    await harness.manager.wait(enrich)
+    done = run_row(harness, enrich)
+    assert done.status == RunStatus.COMPLETE, done.error
+    with harness.db.session() as session:
+        enriched = session.get(Item, item_id)
+        assert enriched is not None
+        stored = JobContacts.model_validate(enriched.details[CONTACTS])
+        assert stored.careers_email == "jobs@acme.example"
