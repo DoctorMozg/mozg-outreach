@@ -5,9 +5,15 @@ from pydantic import BaseModel
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
 from mozg_outreach.domain import FieldValue, ItemCandidate, ItemKind
-from mozg_outreach.pipelines.biz.enrichment import BizEnrichment, brief_from_candidate
+from mozg_outreach.pipelines.biz.enrichment import (
+    BizEnrichment,
+    CompanyDomain,
+    brief_from_candidate,
+)
 from mozg_outreach.pipelines.biz.enrichment_models import (
     CompanyBrief,
+    CompanyDossier,
+    CompanyWebsite,
     ContactsResult,
     GrowthResult,
     NewsResult,
@@ -137,3 +143,82 @@ def test_brief_from_candidate(strategy: Strategy) -> None:
     assert brief.sector is None
     assert brief.target_profile == strategy.target_profile
     assert brief.outreach_angles == strategy.outreach_angles
+
+
+def test_brief_carries_what_search_already_knew(strategy: Strategy) -> None:
+    candidate = ItemCandidate(
+        kind=ItemKind.COMPANY,
+        dedup_key="katana",
+        title="Katana",
+        fields={
+            "decision_maker": FieldValue(value="Jane Example, CTO"),
+            "preferred_channel": FieldValue(value="LinkedIn"),
+            "recent_trigger": FieldValue(value="Series B in October"),
+            "source_urls": FieldValue(value=["https://estonia.ee/x", "https://katanamrp.com"]),
+        },
+    )
+    brief = brief_from_candidate(candidate, strategy)
+    assert brief.decision_maker == "Jane Example, CTO"
+    assert brief.preferred_channel == "LinkedIn"
+    assert brief.recent_trigger == "Series B in October"
+    assert brief.source_urls == ["https://estonia.ee/x", "https://katanamrp.com"]
+
+
+def test_listing_site_domain_is_not_a_company_domain(strategy: Strategy) -> None:
+    candidate = ItemCandidate(
+        kind=ItemKind.COMPANY,
+        dedup_key="katana",
+        title="Katana",
+        fields={"domain": FieldValue(value="https://www.trustpilot.com/review/katanamrp.com")},
+    )
+    assert brief_from_candidate(candidate, strategy).domain is None
+
+
+class TestCompanyDomain:
+    @staticmethod
+    def with_website(url: str, source: str = "https://katanamrp.com/about/") -> CompanyDossier:
+        contacts = load("contacts", ContactsResult)
+        contacts.website = CompanyWebsite(url=url, source_url=source, quote="Katana")
+        return CompanyDossier(contacts=contacts)
+
+    def test_taken_from_the_contact_finders_website(self) -> None:
+        found = CompanyDomain.from_dossier(self.with_website("https://www.katanamrp.com/en"))
+        assert found is not None
+        assert (found.value, found.source_url) == ("katanamrp.com", "https://katanamrp.com/about/")
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://www.trustpilot.com/review/katanamrp.com",
+            "https://uk.linkedin.com/company/katana",
+            "https://chambers.com/firm/katana",
+            "https://www.legal500.com/firms/katana",
+        ],
+    )
+    def test_listing_sites_never_qualify(self, url: str) -> None:
+        assert CompanyDomain.from_dossier(self.with_website(url)) is None
+
+    def test_website_without_a_source_is_ignored(self) -> None:
+        assert CompanyDomain.from_dossier(self.with_website("https://katanamrp.com", "")) is None
+
+
+async def test_people_without_a_quote_are_dropped(
+    tmp_path: Path, company: CompanyBrief, script: dict[str, list[Scripted]]
+) -> None:
+    contacts = load("contacts", ContactsResult)
+    jane = contacts.key_people[0]
+    contacts.key_people.append(jane.model_copy(update={"name": "Ghost", "quote": " "}))
+    tech = load("tech", TechResult)
+    maker = tech.tech_decision_makers[0]
+    tech.tech_decision_makers.append(maker.model_copy(update={"name": "Phantom", "quote": ""}))
+    script["outreach-contact-finder"] = [contacts]
+    script["outreach-tech-analyst"] = [tech]
+
+    dossier = await enrichment(RecordedRunner(script), tmp_path).enrich(company)
+
+    assert dossier.contacts is not None
+    assert dossier.tech is not None
+    assert [p.name for p in dossier.contacts.key_people] == ["Jane Example"]
+    assert [p.name for p in dossier.tech.tech_decision_makers] == ["Jane Example"]
+    assert any("Ghost" in c for c in dossier.concerns)
+    assert any("Phantom" in c for c in dossier.concerns)

@@ -6,8 +6,9 @@ from pydantic import BaseModel, Field
 
 from mozg_outreach.domain import FieldSpec, FieldValue, ItemScore
 from mozg_outreach.pipelines.biz.assessment_models import FitVerdict, SignalCheck, SignalKind
-from mozg_outreach.pipelines.biz.enrichment_models import CompanyDossier
+from mozg_outreach.pipelines.biz.enrichment_models import CompanyDossier, KeyPerson
 from mozg_outreach.pipelines.biz.models import ScoringWeights, SearchSignals
+from mozg_outreach.registry.identifiers import looks_personal
 from mozg_outreach.scoring.axes import AxisValue, weighted_axes, weighted_total
 
 NO_DATA = 20.0
@@ -25,6 +26,49 @@ ENRICHMENT_SECTIONS = ("reputation", "contacts", "news", "growth", "tech")
 
 
 NOT_ENRICHED = AxisValue(None, "not enriched yet")
+MAX_SCORED_PEOPLE = 5
+UNREACHABLE_POINTS = 3.0
+EMAIL_POINTS, LINKEDIN_POINTS, PHONE_POINTS, PERSON_CAP = 35.0, 25.0, 25.0, 45.0
+
+
+class PersonRoutes(BaseModel):
+    """Which ways of reaching one named person were actually found."""
+
+    own_email: bool
+    linkedin: bool
+    phone: bool
+
+    @classmethod
+    def of(cls, person: KeyPerson) -> "PersonRoutes":
+        email = person.email
+        return cls(
+            own_email=bool(
+                email and email.kind == "published" and looks_personal(email.address, person.name)
+            ),
+            linkedin=bool(person.linkedin),
+            phone=person.phone is not None,
+        )
+
+    @property
+    def points(self) -> float:
+        total = (
+            EMAIL_POINTS * self.own_email
+            + LINKEDIN_POINTS * self.linkedin
+            + PHONE_POINTS * self.phone
+        )
+        return min(PERSON_CAP, total)
+
+    def describe(self) -> str:
+        found = [
+            n
+            for n, ok in (
+                ("email", self.own_email),
+                ("LinkedIn", self.linkedin),
+                ("phone", self.phone),
+            )
+            if ok
+        ]
+        return "person via " + "+".join(found)
 
 
 class BizScoreInput(BaseModel):
@@ -102,21 +146,28 @@ class BizScorer:
         contacts = dossier.contacts
         if contacts is None:
             return AxisValue(0.0, "no contact data")
-        # Every key person carries a source page, so a named person counts even without LinkedIn.
-        named = contacts.key_people[:2]
-        linked = sum(1 for p in named if p.linkedin)
-        emails = contacts.emails + [p.email for p in contacts.key_people if p.email]
-        published = any(e.kind == "published" for e in emails)
-        guessed = not published and any(e.kind == "pattern_guess" for e in emails)
+        # A name alone is no route, so only email, LinkedIn or a direct phone make a person count.
+        routes = [PersonRoutes.of(p) for p in contacts.key_people[:MAX_SCORED_PEOPLE]]
+        reachable = sorted((r for r in routes if r.points), key=lambda r: -r.points)[:2]
+        unreachable = len(routes) - len([r for r in routes if r.points])
+        people_points = sum(r.points for r in reachable) + UNREACHABLE_POINTS * min(unreachable, 2)
+        office = contacts.emails
+        published = any(e.kind == "published" for e in office)
+        guessed = not published and any(e.kind == "pattern_guess" for e in office)
         social = contacts.social.linkedin_company or contacts.social.twitter
+        reachable_text = ", ".join(r.describe() for r in reachable) or "no reachable person"
         parts = [
-            (25.0 * len(named) + 5.0 * linked, f"{len(named)} named people, {linked} on LinkedIn"),
+            (people_points, f"{reachable_text}; {unreachable} named without a route"),
             (
                 20.0 if published else 5.0 if guessed else 0.0,
-                "published email" if published else "guessed email only" if guessed else "no email",
+                "published office email"
+                if published
+                else "guessed office email only"
+                if guessed
+                else "no office email",
             ),
             (10.0 if contacts.phones else 0.0, "phone" if contacts.phones else "no phone"),
-            (10.0 if social else 0.0, "company social" if social else "no social"),
+            (5.0 if social else 0.0, "company social" if social else "no social"),
         ]
         return AxisValue(min(100.0, sum(p for p, _ in parts)), ", ".join(r for _, r in parts))
 

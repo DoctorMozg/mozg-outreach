@@ -18,6 +18,10 @@ class CompanyBrief(BaseModel):
     location: str | None = None
     sector: str | None = None
     description: str | None = None
+    decision_maker: str | None = Field(default=None, description="Who search named, with role.")
+    preferred_channel: str | None = None
+    recent_trigger: str | None = None
+    source_urls: list[str] = Field(default_factory=list, description="Pages search found it on.")
     target_profile: TargetProfile | None = None
     outreach_angles: list[OutreachAngle] = Field(default_factory=list)
 
@@ -53,6 +57,12 @@ class PhoneContact(BaseModel):
     source_url: str
 
 
+class CompanyWebsite(BaseModel):
+    url: str = Field(description="The company's own website.")
+    source_url: str = Field(description="Page that shows this is the company's website.")
+    quote: str
+
+
 class SocialLinks(BaseModel):
     linkedin_company: str | None
     twitter: str | None
@@ -63,11 +73,15 @@ class KeyPerson(BaseModel):
     title: str
     linkedin: str | None
     email: EmailContact | None
+    phone: PhoneContact | None = None
     relevance: str
     source_url: str = Field(description="Page where this person was seen.")
+    quote: str = Field(default="", description="Exact sentence on that page naming the person.")
+    confidence: Confidence = "low"
 
 
 class ContactsResult(BaseModel):
+    website: CompanyWebsite | None = None
     emails: list[EmailContact]
     phones: list[PhoneContact]
     whatsapp: str | None
@@ -140,6 +154,8 @@ class TechDecisionMaker(BaseModel):
     title: str
     likely_priorities: str
     source_url: str = Field(description="Page where this person was seen.")
+    quote: str = Field(default="", description="Exact sentence on that page naming the person.")
+    confidence: Confidence = "low"
 
 
 class TechResult(BaseModel):

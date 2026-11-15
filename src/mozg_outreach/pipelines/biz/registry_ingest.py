@@ -5,6 +5,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from mozg_outreach.domain import IdentifierKind, ItemCandidate
+from mozg_outreach.pipelines.biz.enrichment import CompanyDomain
 from mozg_outreach.pipelines.biz.enrichment_models import CompanyDossier, EmailContact
 from mozg_outreach.registry.identifiers import normalize
 from mozg_outreach.registry.ingest import (
@@ -31,7 +32,7 @@ class BizRegistryIngest:
         fields = {k: v for k, v in candidate.fields.items() if k in COMPANY_FIELDS}
         domain = candidate.fields.get("domain")
         raw_domain = domain.value if domain and isinstance(domain.value, str) else None
-        found = normalize(IdentifierKind.DOMAIN, raw_domain)
+        found = normalize(IdentifierKind.DOMAIN, CompanyDomain.usable(raw_domain))
         quote = next((v.quote for v in fields.values() if v.quote), "") or ""
         urls = candidate.fields.get("source_urls")
         pages = urls.value if urls and isinstance(urls.value, list) else []
@@ -49,6 +50,7 @@ class BizRegistryIngest:
         self, company: Entity, dossier: CompanyDossier, context: IngestContext
     ) -> list[Entity]:
         """People from enrichment become registry entries that work at the company."""
+        self._attach_domain(company, dossier)
         people: list[PersonSeen] = []
         if dossier.contacts:
             people += [
@@ -56,6 +58,7 @@ class BizRegistryIngest:
                     name=p.name,
                     title=p.title,
                     source_url=p.source_url,
+                    quote=p.quote,
                     linkedin=p.linkedin,
                     email=_seen(p.email),
                 )
@@ -65,12 +68,21 @@ class BizRegistryIngest:
             self._leads.attach(company, [linkedin])
         if dossier.tech:
             people += [
-                PersonSeen(name=p.name, title=p.title, source_url=p.source_url)
+                PersonSeen(name=p.name, title=p.title, source_url=p.source_url, quote=p.quote)
                 for p in dossier.tech.tech_decision_makers
             ]
         entities = [self._leads.person(person, company, context) for person in people]
         logger.info("registry: %d people ingested for %s", len(people), company.name)
         return list({e.id: e for e in entities}.values())
+
+    def _attach_domain(self, company: Entity, dossier: CompanyDossier) -> None:
+        """Record the enrichment-found website as the domain, so people key on it."""
+        found = CompanyDomain.from_dossier(dossier)
+        if found is None or not self._leads.employer_key(company).startswith("entity-"):
+            return
+        identifier = normalize(IdentifierKind.DOMAIN, str(found.value))
+        self._leads.attach(company, [identifier])
+        logger.info("registry: domain %s found for %s", found.value, company.name)
 
 
 def _seen(email: EmailContact | None) -> SeenEmail | None:

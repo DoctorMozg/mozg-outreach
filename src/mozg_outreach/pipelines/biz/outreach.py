@@ -11,7 +11,11 @@ from mozg_outreach.naturalize.models import Channel
 from mozg_outreach.naturalize.naturalizer import Naturalizer, VoiceContext
 from mozg_outreach.naturalize.voice import VoiceProfile
 from mozg_outreach.pipelines.biz.assessment_models import CompanyAssessment
-from mozg_outreach.pipelines.biz.enrichment import BizEnrichment, brief_from_candidate
+from mozg_outreach.pipelines.biz.enrichment import (
+    BizEnrichment,
+    CompanyDomain,
+    brief_from_candidate,
+)
 from mozg_outreach.pipelines.biz.enrichment_models import CompanyDossier
 from mozg_outreach.pipelines.biz.letter_briefs import angles_from
 from mozg_outreach.pipelines.biz.letters import (
@@ -24,7 +28,7 @@ from mozg_outreach.pipelines.biz.registry_ingest import BizRegistryIngest
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.scoring.biz import BizScoreInput, BizScorer
-from mozg_outreach.storage.models import Item, Project
+from mozg_outreach.storage.models import ENRICHED_AT, Item, Project, utcnow
 from mozg_outreach.storage.repositories import (
     DraftRepository,
     FieldSpecRepository,
@@ -53,10 +57,12 @@ class BizOutreach:
         candidate = stored_candidate(item)
         dossier = await BizEnrichment(self._steps).enrich(brief_from_candidate(candidate, strategy))
         self._items.set_detail(item, DOSSIER, dossier)
+        item.details = {**item.details, ENRICHED_AT: utcnow().isoformat()}
         ingest = BizRegistryIngest(self._session)
         context = IngestContext(project_id=item.project_id, run_id=run_id, item_id=item.id)
         company = ingest.company(candidate, context)
         ingest.dossier(company, dossier, context)
+        self._remember_domain(item, candidate, dossier)
         self._rescore(item, strategy, dossier)
         logger.info("enriched %s: %d concerns", item.title, len(dossier.concerns))
         return dossier
@@ -102,6 +108,17 @@ class BizOutreach:
                 ),
             )
         return batch
+
+    def _remember_domain(
+        self, item: Item, candidate: ItemCandidate, dossier: CompanyDossier
+    ) -> None:
+        """Store a domain enrichment found, so a re-run and the report start from it."""
+        known = candidate.fields.get("domain")
+        if known is not None and CompanyDomain.usable(str(known.value)):
+            return
+        found = CompanyDomain.from_dossier(dossier)
+        if found is not None:
+            self._items.merge_fields(item, {"domain": found})
 
     def _rescore(self, item: Item, strategy: Strategy, dossier: CompanyDossier) -> None:
         assessment = item.details.get(ASSESSMENT)

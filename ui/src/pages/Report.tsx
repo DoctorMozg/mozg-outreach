@@ -26,7 +26,7 @@ import { notifications } from "@mantine/notifications";
 import { IconColumns3, IconExternalLink, IconMail, IconSearch, IconSparkles, IconTable } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
-import { call, get, type Graph, type Item, type Project, type Run } from "../api";
+import { call, enrichHint, get, type Graph, type Item, type Project, type Run } from "../api";
 import { Empty, ErrorBox, Score, Value } from "../components/common";
 import { GraphView } from "../components/GraphView";
 import { href } from "../router";
@@ -236,8 +236,8 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
                 </Table.Td>
                 <Table.Td onClick={(e) => e.stopPropagation()}>
                   {item.kind !== "gig" && (
-                    <Tooltip label="Enrich: find people, contacts and signals">
-                      <ActionIcon variant="subtle" loading={enriching(item)} onClick={() => enrich.mutate(item)} aria-label={`Enrich ${item.title}`}>
+                    <Tooltip label={enrichHint(item).note ?? "Enrich: find people, contacts and signals"}>
+                      <ActionIcon variant="subtle" loading={enriching(item)} onClick={() => enrich.mutate(item)} aria-label={`${enrichHint(item).label} ${item.title}`}>
                         <IconSparkles size={16} />
                       </ActionIcon>
                     </Tooltip>
@@ -386,7 +386,7 @@ function LeadPreview({ item, onToggle, onEnrich, enriching }: PreviewProps): Rea
           <Switch label="Selected" checked={item.selected} onChange={onToggle} />
           {item.kind !== "gig" && (
             <Button size="xs" variant="default" leftSection={<IconSparkles size={14} />} loading={enriching} onClick={onEnrich}>
-              Enrich
+              {enrichHint(item).label}
             </Button>
           )}
           <Button size="xs" variant="light" component="a" href={href.item(item.id)} rightSection={<IconExternalLink size={14} />}>

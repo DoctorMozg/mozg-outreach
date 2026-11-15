@@ -6,6 +6,7 @@ from mozg_outreach.domain import EntityKind, FieldValue, IdentifierKind, ItemCan
 from mozg_outreach.pipelines.biz.discovery import dedup_companies
 from mozg_outreach.pipelines.biz.enrichment_models import (
     CompanyDossier,
+    CompanyWebsite,
     ContactsResult,
     EmailContact,
     TechResult,
@@ -100,3 +101,94 @@ def test_ingesting_twice_changes_nothing(
         len(rows(session, m)) for m in (Entity, EntityIdentifier, Sighting, Relation, ItemLink)
     ]
     assert after == before
+
+
+def undomained(candidate: ItemCandidate) -> ItemCandidate:
+    fields = {k: v for k, v in candidate.fields.items() if k != "domain"}
+    return candidate.model_copy(update={"fields": fields})
+
+
+def domains(session: Session) -> set[str]:
+    return {i.value for i in rows(session, EntityIdentifier) if i.kind == IdentifierKind.DOMAIN}
+
+
+def test_domain_found_by_enrichment_becomes_the_company_identifier(
+    session: Session, katana: ItemCandidate, dossier: CompanyDossier, context: IngestContext
+) -> None:
+    assert dossier.contacts is not None
+    dossier.contacts.website = CompanyWebsite(
+        url="https://www.katanamrp.com/", source_url="https://katanamrp.com/about/", quote="Katana"
+    )
+    ingest(session, undomained(katana), dossier, context)
+
+    assert domains(session) == {"katanamrp.com"}
+    keys = {i.value for i in rows(session, EntityIdentifier) if i.kind == "name_at_company"}
+    assert keys == {"jane example@katanamrp.com"}
+
+
+def test_listing_site_never_becomes_the_company_domain(
+    session: Session, katana: ItemCandidate, dossier: CompanyDossier, context: IngestContext
+) -> None:
+    assert dossier.contacts is not None
+    dossier.contacts.website = CompanyWebsite(
+        url="https://www.trustpilot.com/review/katana",
+        source_url="https://www.trustpilot.com/review/katana",
+        quote="Katana",
+    )
+    ingest(session, undomained(katana), dossier, context)
+    assert domains(session) == set()
+
+
+def test_scouted_listing_domain_is_not_stored(
+    session: Session, katana: ItemCandidate, dossier: CompanyDossier, context: IngestContext
+) -> None:
+    listed = katana.model_copy(
+        update={"fields": {**katana.fields, "domain": FieldValue(value="legal500.com")}}
+    )
+    ingest(session, listed, dossier, context)
+    assert "legal500.com" not in domains(session)
+
+
+def test_person_quote_reaches_sighting_and_relation(
+    session: Session, katana: ItemCandidate, dossier: CompanyDossier, context: IngestContext
+) -> None:
+    ingest(session, katana, dossier, context)
+
+    jane = next(e for e in rows(session, Entity) if e.kind == EntityKind.PERSON)
+    quotes = {s.quote for s in rows(session, Sighting) if s.entity_id == jane.id}
+    assert "Jane Example, CTO. Jane leads engineering and infrastructure at Katana." in quotes
+    assert "" not in quotes
+    [works_at] = rows(session, Relation)
+    assert (
+        works_at.quote == "Jane Example, CTO. Jane leads engineering and infrastructure at Katana."
+    )
+
+
+@pytest.mark.parametrize("address", ["info@katanamrp.com", "dubai@katanamrp.com"])
+def test_office_address_on_a_person_is_not_an_identifier(
+    session: Session,
+    katana: ItemCandidate,
+    dossier: CompanyDossier,
+    context: IngestContext,
+    address: str,
+) -> None:
+    assert dossier.contacts is not None
+    dossier.contacts.key_people[0].email = EmailContact(
+        address=address, kind="published", source_url="https://katanamrp.com/contact/"
+    )
+    ingest(session, katana, dossier, context)
+    assert not [i for i in rows(session, EntityIdentifier) if i.kind == IdentifierKind.EMAIL]
+
+
+def test_personal_published_address_is_an_identifier(
+    session: Session, katana: ItemCandidate, dossier: CompanyDossier, context: IngestContext
+) -> None:
+    assert dossier.contacts is not None
+    dossier.contacts.key_people[0].email = EmailContact(
+        address="jane.example@katanamrp.com",
+        kind="published",
+        source_url="https://katanamrp.com/contact/",
+    )
+    ingest(session, katana, dossier, context)
+    emails = {i.value for i in rows(session, EntityIdentifier) if i.kind == IdentifierKind.EMAIL}
+    assert emails == {"jane.example@katanamrp.com"}

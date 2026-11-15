@@ -17,6 +17,13 @@ _LEGAL_SUFFIXES = frozenset(
 _TELEGRAM = re.compile(r"^(?:@|t\.me/|telegram\.me/)?([a-z][a-z0-9_]{4,31})$")
 
 
+_SHARED_LOCALS = frozenset(
+    {"info", "office", "contact", "hello", "hi", "mail", "admin", "support", "sales"}
+    | {"enquiries", "enquiry", "inquiries", "team", "reception", "hr", "careers", "press"}
+    | {"marketing", "general", "service", "help", "partnerships", "legal", "pr", "media"}
+)
+
+
 class Identifier(BaseModel, frozen=True):
     kind: IdentifierKind
     value: str
@@ -50,6 +57,18 @@ def normalize(kind: IdentifierKind, raw: str | None) -> Identifier | None:
             name, _, employer = raw.rpartition("@")
             value = f"{name_key(name)}@{employer.strip().lower()}" if name_key(name) else None
     return Identifier(kind=kind, value=value) if value else None
+
+
+def looks_personal(address: str, person: str) -> bool:
+    """True when the local part belongs to the person, not to a shared office inbox."""
+    local = address.strip().lower().partition("@")[0]
+    flat = re.sub(r"[^a-z0-9]", "", local)
+    if not flat or flat in _SHARED_LOCALS:
+        return False
+    words = [w for w in re.sub(r"[^\w\s]", " ", person.casefold()).split() if w.isascii()]
+    if any(len(w) >= 3 and w in flat for w in words):
+        return True
+    return len(words) >= 2 and words[0][0] + words[-1] in flat
 
 
 def name_key(name: str) -> str:

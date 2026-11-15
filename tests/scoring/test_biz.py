@@ -7,6 +7,8 @@ from mozg_outreach.pipelines.biz.enrichment_models import (
     ContactsResult,
     EmailContact,
     GrowthResult,
+    KeyPerson,
+    PhoneContact,
     PlatformReview,
     ReputationResult,
 )
@@ -157,22 +159,78 @@ class TestReputation:
 
 
 class TestContacts:
-    def test_named_people_count_without_linkedin(self, dossier: CompanyDossier) -> None:
+    @staticmethod
+    def contacts_with(dossier: CompanyDossier, **update: object) -> CompanyDossier:
         assert dossier.contacts is not None
-        person = dossier.contacts.key_people[0].model_copy(update={"linkedin": None, "email": None})
-        people = [person, person.model_copy(update={"name": "Second Person"})]
         bare = dossier.contacts.model_copy(
             update={
-                "key_people": people,
                 "emails": [],
                 "phones": [],
                 "social": dossier.contacts.social.model_copy(
                     update={"linkedin_company": None, "twitter": None}
                 ),
+                **update,
             }
         )
-        data = score_input(dossier.model_copy(update={"contacts": bare}), None)
-        assert axis(data, "contact_availability") == 50.0
+        return dossier.model_copy(update={"contacts": bare})
+
+    @staticmethod
+    def person(dossier: CompanyDossier, **update: object) -> KeyPerson:
+        assert dossier.contacts is not None
+        base = {"linkedin": None, "email": None, "phone": None}
+        return dossier.contacts.key_people[0].model_copy(update={**base, **update})
+
+    def test_named_people_without_a_route_count_little(self, dossier: CompanyDossier) -> None:
+        person = self.person(dossier)
+        people = [person, person.model_copy(update={"name": "Second Person"})]
+        data = score_input(self.contacts_with(dossier, key_people=people), None)
+        assert axis(data, "contact_availability") == 6.0
+
+    def test_office_emails_alone_do_not_score_high(self, dossier: CompanyDossier) -> None:
+        office = EmailContact(
+            address="info@acme.io", kind="published", source_url="https://acme.io/contact"
+        )
+        people = [self.person(dossier)]
+        data = score_input(self.contacts_with(dossier, key_people=people, emails=[office]), None)
+        assert axis(data, "contact_availability") == 23.0
+
+    def test_personal_email_and_linkedin_make_a_person_reachable(
+        self, dossier: CompanyDossier
+    ) -> None:
+        own = EmailContact(
+            address="jane.example@acme.io", kind="published", source_url="https://acme.io/team"
+        )
+        by_email = self.person(dossier, email=own)
+        by_linkedin = self.person(dossier, linkedin="https://linkedin.com/in/jane")
+        assert (
+            axis(
+                score_input(self.contacts_with(dossier, key_people=[by_email]), None),
+                "contact_availability",
+            )
+            == 35.0
+        )
+        assert (
+            axis(
+                score_input(self.contacts_with(dossier, key_people=[by_linkedin]), None),
+                "contact_availability",
+            )
+            == 25.0
+        )
+
+    def test_guessed_and_office_person_emails_are_not_routes(self, dossier: CompanyDossier) -> None:
+        guess = EmailContact(
+            address="jane.example@acme.io", kind="pattern_guess", source_url="https://acme.io"
+        )
+        office = guess.model_copy(update={"address": "info@acme.io", "kind": "published"})
+        people = [self.person(dossier, email=guess), self.person(dossier, email=office)]
+        data = score_input(self.contacts_with(dossier, key_people=people), None)
+        assert axis(data, "contact_availability") == 6.0
+
+    def test_direct_phone_is_a_route(self, dossier: CompanyDossier) -> None:
+        phone = PhoneContact(number="+372 5555 0100", source_url="https://acme.io/team")
+        people = [self.person(dossier, phone=phone)]
+        data = score_input(self.contacts_with(dossier, key_people=people), None)
+        assert axis(data, "contact_availability") == 25.0
 
     def test_guessed_email_counts_less_than_published(self, dossier: CompanyDossier) -> None:
         assert dossier.contacts is not None

@@ -22,7 +22,7 @@ The input is a JSON object with these fields:
 
 - `source` (object): the data source to scout, with `name`, `url`, `type`, `estimated_count`, `relevance`, `access_notes` and `search_queries_used`.
 - `target_profile` (object): the target company profile (`sectors`, `geography`, `company_stage`, `size_range`, `tech_indicators`, `maturity_signals`).
-- `sector` (string or null, optional): target industry or sector filter.
+- `sector` (string or null, optional): target sectors, separated by `;`. Search only the ones this source plausibly covers; if none fit, use the first.
 - `region` (string or null, optional): a hard filter. When set, keep only companies located inside it. When null, use `target_profile.geography` as a search hint and drop nothing on location.
 - `count_limit` (integer, at least 1): maximum companies to extract from this source.
 

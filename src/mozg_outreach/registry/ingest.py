@@ -8,7 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mozg_outreach.domain import EntityKind, FieldValue, IdentifierKind, SourceKind
-from mozg_outreach.registry.identifiers import Identifier, name_key, normalize, person_at_company
+from mozg_outreach.registry.identifiers import (
+    Identifier,
+    looks_personal,
+    name_key,
+    normalize,
+    person_at_company,
+)
 from mozg_outreach.registry.registry import (
     EntityRegistry,
     Observation,
@@ -84,13 +90,15 @@ class LeadIngest:
                 normalize(IdentifierKind.LINKEDIN, seen.linkedin),
                 normalize(IdentifierKind.TELEGRAM, seen.telegram),
                 normalize(IdentifierKind.EMAIL, email.address)
-                if email and email.published
+                if email and email.published and looks_personal(email.address, seen.name)
                 else None,
             ]
         )
         fields: dict[str, FieldValue] = {}
         if seen.title:
-            fields["title"] = FieldValue(value=seen.title, source_url=seen.source_url)
+            fields["title"] = FieldValue(
+                value=seen.title, source_url=seen.source_url, quote=seen.quote or None
+            )
         if email:
             fields["email"] = FieldValue(
                 value=email.address,
@@ -120,6 +128,7 @@ class LeadIngest:
                     type="works_at",
                     detail=seen.title,
                     source_url=seen.source_url,
+                    quote=seen.quote,
                 )
             )
         self._registry.link(context.item_id, entity, CONTACT)

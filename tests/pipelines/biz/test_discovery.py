@@ -161,6 +161,17 @@ class TestScout:
             20,
         ]
 
+    async def test_every_scout_sees_all_target_sectors(
+        self, tmp_path: Path, strategy: Strategy, scout_results: list[ScoutResult]
+    ) -> None:
+        strategy.target_profile.sectors = ["Law firms", "Fintech"]
+        runner = RecordedRunner({"outreach-scout": [*scout_results[:2]]})
+        await discovery(runner, tmp_path).scout(
+            strategy, [source("a", 8), source("b", 8)], region=None, limit=10
+        )
+        sectors = [p.model_dump()["sector"] for p in runner.payloads["outreach-scout"]]
+        assert sectors == ["Law firms; Fintech"] * 2
+
     async def test_all_scouts_failing_stops(self, tmp_path: Path, strategy: Strategy) -> None:
         failure = AgentRunError("outreach-scout", "error_during_execution", "crash")
         runner = RecordedRunner({"outreach-scout": [failure, failure]})

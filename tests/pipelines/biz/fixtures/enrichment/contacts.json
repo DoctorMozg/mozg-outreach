@@ -18,9 +18,11 @@
   ],
   "key_people": [
     {
+      "confidence": "high",
       "email": null,
       "linkedin": null,
       "name": "Jane Example",
+      "quote": "Jane Example, CTO. Jane leads engineering and infrastructure at Katana.",
       "relevance": "Owns infrastructure and cloud spend, matching the cost-reduction angle.",
       "source_url": "https://katanamrp.com/about/",
       "title": "CTO"
@@ -30,6 +32,11 @@
   "social": {
     "linkedin_company": "https://www.linkedin.com/company/katanamrp",
     "twitter": null
+  },
+  "website": {
+    "quote": "Katana, katanamrp.com",
+    "source_url": "https://katanamrp.com/about/",
+    "url": "https://katanamrp.com"
   },
   "whatsapp": null
 }

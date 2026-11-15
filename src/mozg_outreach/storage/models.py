@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 type JsonObject = dict[str, object]
 
+# Key in `Item.details` holding the ISO time of the last enrichment.
+ENRICHED_AT = "enriched_at"
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
@@ -124,6 +127,16 @@ class Item(Base):
     selected: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+    @property
+    def enriched(self) -> bool:
+        return "dossier" in self.details
+
+    @property
+    def enriched_at(self) -> datetime | None:
+        """When the dossier was last built; None for no dossier or one stored before timestamps."""
+        stamp = self.details.get(ENRICHED_AT)
+        return datetime.fromisoformat(stamp) if isinstance(stamp, str) else None
 
     @property
     def dated(self) -> date:

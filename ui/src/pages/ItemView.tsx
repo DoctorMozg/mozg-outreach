@@ -24,7 +24,7 @@ import {
 import { IconArrowLeft, IconCheck, IconCopy, IconEdit, IconMail, IconSparkles } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
-import { call, type Draft, get, type ItemDetail, type Run } from "../api";
+import { call, type Draft, enrichHint, get, type ItemDetail, type Run } from "../api";
 import { Empty, ErrorBox, Score } from "../components/common";
 import { Diff } from "../components/Diff";
 import { href } from "../router";
@@ -148,6 +148,7 @@ function Actions({ item, onChange }: { item: ItemDetail; onChange: () => void })
     mutationFn: (action: "enrich" | "letters") => call<Run>("POST", `/api/items/${item.id}/${action}`),
     onSuccess: (run) => (window.location.hash = href.run(run.id)),
   });
+  const enrich = enrichHint(item);
   return (
     <Card>
       <Group justify="space-between">
@@ -161,7 +162,7 @@ function Actions({ item, onChange }: { item: ItemDetail; onChange: () => void })
               loading={start.isPending && start.variables === "enrich"}
               onClick={() => start.mutate("enrich")}
             >
-              Enrich
+              {enrich.label}
             </Button>
           )}
           <Button
@@ -177,6 +178,11 @@ function Actions({ item, onChange }: { item: ItemDetail; onChange: () => void })
       {!item.selected && (
         <Text size="sm" c="dimmed" mt="xs">
           Select the lead to enrich it or draft letters.
+        </Text>
+      )}
+      {enrich.note && item.kind !== "gig" && (
+        <Text size="sm" c="dimmed" mt="xs">
+          {enrich.note}
         </Text>
       )}
       <ErrorBox error={select.error ?? start.error} />

@@ -90,9 +90,19 @@ export interface Item {
   score_total: number | null;
   score: { total: number | null; axes: ScoreAxis[]; blockers: string[] } | null;
   selected: boolean;
+  enriched: boolean;
+  /** Null for a lead never enriched, or enriched before timestamps were kept. */
+  enriched_at: string | null;
   /** Posted on, or the day a run first found the lead (YYYY-MM-DD). */
   dated: string;
   updated_at: string;
+}
+
+/** Label and cost note for a lead's enrich action; running it again repeats paid searches. */
+export function enrichHint(item: Item): { label: string; note: string | null } {
+  if (!item.enriched) return { label: "Enrich", note: null };
+  const when = item.enriched_at ? ` on ${new Date(item.enriched_at).toLocaleDateString()}` : "";
+  return { label: "Enrich again", note: `Already enriched${when}; running it again repeats the paid searches.` };
 }
 
 export interface DraftReview {

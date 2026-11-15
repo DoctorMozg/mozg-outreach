@@ -104,13 +104,13 @@ class BizDiscovery:
         if not sources:
             raise DiscoveryError("scout needs at least one source")
         per_source = max(MIN_SCOUT_COUNT, math.ceil(limit / len(sources)))
+        # Sources carry no sector tag, so each scout gets every sector and its prompt picks the fit.
+        sectors = "; ".join(strategy.target_profile.sectors) or None
         payloads = [
             ScoutInput(
                 source=s,
                 target_profile=strategy.target_profile,
-                sector=strategy.target_profile.sectors[0]
-                if strategy.target_profile.sectors
-                else None,
+                sector=sectors,
                 region=region,
                 count_limit=per_source,
             )

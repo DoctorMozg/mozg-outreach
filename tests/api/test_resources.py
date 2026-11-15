@@ -209,6 +209,26 @@ class TestProjects:
         assert detail["selected"] is True
         assert detail["drafts"] == []
 
+    async def test_item_reports_when_it_was_last_enriched(self, api: Api) -> None:
+        project_id = await api.biz_project()
+        with api.services.db.session() as session:
+            fresh = Item(project_id=project_id, kind=ItemKind.COMPANY, dedup_key="a", title="A")
+            done = Item(
+                project_id=project_id,
+                kind=ItemKind.COMPANY,
+                dedup_key="b",
+                title="B",
+                details={"dossier": {}, "enriched_at": "2026-11-10T09:30:00+00:00"},
+            )
+            session.add_all([fresh, done])
+            session.flush()
+            fresh_id, done_id = fresh.id, done.id
+        assert (await api.ok("GET", f"/api/items/{fresh_id}"))["enriched_at"] is None
+        enriched = await api.ok("GET", f"/api/items/{done_id}")
+        assert enriched["enriched"] is True
+        assert str(enriched["enriched_at"]).startswith("2026-11-10T09:30:00")
+        assert (await api.ok("GET", f"/api/items/{fresh_id}"))["enriched"] is False
+
 
 async def test_voice_profile_needs_samples_then_builds(api: Api) -> None:
     sample = "Hi Anna, thanks for the quick reply. Tuesday works, I will send the agenda tonight."

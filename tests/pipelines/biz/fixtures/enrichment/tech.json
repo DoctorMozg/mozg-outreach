@@ -36,8 +36,10 @@
   "tech_blog": null,
   "tech_decision_makers": [
     {
+      "confidence": "medium",
       "likely_priorities": "Platform reliability while scaling the team",
       "name": "Jane Example",
+      "quote": "Jane Example, CTO",
       "source_url": "https://katanamrp.com/about/",
       "title": "CTO"
     }

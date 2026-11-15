@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mozg_outreach.agents import PromptLibrary
-from mozg_outreach.domain import BriefFact
+from mozg_outreach.domain import BriefFact, FieldValue
 from mozg_outreach.letters.models import LetterBrief, LetterDraft
 from mozg_outreach.naturalize.models import NaturalizeResult
 from mozg_outreach.naturalize.punctuation import PunctuationChecker
@@ -82,6 +82,8 @@ async def test_selected_item_becomes_enriched_scored_and_drafted(
     batch = await service.write_letters(item, strategy)
 
     assert CompanyDossier.model_validate(item.details[DOSSIER]) == dossier
+    assert item.enriched
+    assert item.enriched_at is not None
     assert item.score_total is not None
     assert {e.name for e in session.scalars(select(Entity))} >= {item.title, "Jane Example"}
     assert batch.skipped == []
@@ -121,3 +123,16 @@ class TestPreconditions:
         with pytest.raises(ValueError, match="no sender name"):
             await service.write_letters(item, strategy)
         assert "expert-copywriter" not in runner.payloads
+
+
+async def test_enrichment_stores_the_domain_it_found(
+    item: Item, strategy: Strategy, outreach: tuple[BizOutreach, RecordedRunner]
+) -> None:
+    item.fields = {k: v for k, v in item.fields.items() if k != "domain"}
+    service, _ = outreach
+
+    await service.enrich(item, strategy)
+
+    stored = FieldValue.model_validate(item.fields["domain"])
+    assert stored.value == "katanamrp.com"
+    assert stored.source_url == "https://katanamrp.com/about/"
