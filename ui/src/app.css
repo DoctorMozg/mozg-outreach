@@ -1,0 +1,18 @@
+.hover-card {
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.hover-card:hover {
+  border-color: var(--mantine-primary-color-filled);
+  box-shadow: var(--mantine-shadow-sm);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
