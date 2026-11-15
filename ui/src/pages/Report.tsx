@@ -22,6 +22,7 @@ export function Report({ project }: { project: Project }): ReactElement {
   });
   const [open, setOpen] = useState<number | null>(null);
   const [onlySelected, setOnlySelected] = useState(false);
+  const [kind, setKind] = useState<Item["kind"] | "">("");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const toggleColumn = (name: string): void => {
     const next = new Set(hidden);
@@ -46,12 +47,13 @@ export function Report({ project }: { project: Project }): ReactElement {
     onSuccess: () => (window.location.hash = href.project(project.id, "runs")),
   });
 
-  const rows = (items.data ?? []).filter((i) => !onlySelected || i.selected);
+  const rows = (items.data ?? []).filter((i) => (!onlySelected || i.selected) && (!kind || i.kind === kind));
+  const seeker = project.mode === "seeker";
   const allColumns = [...new Set(rows.flatMap((i) => Object.keys(i.fields)))];
   const columns = allColumns.filter((c) => !hidden.has(c));
   const selectedCount = items.data?.filter((i) => i.selected).length ?? 0;
   const enrichable = items.data?.filter((i) => i.selected && i.kind !== "gig").length ?? 0;
-  const letterLabel = { biz: "Write letters", seeker: "Write cover letters and proposals" }[project.mode];
+  const letterLabel = lettersFor(new Set(items.data?.filter((i) => i.selected).map((i) => i.kind)));
 
   return (
     <>
@@ -88,6 +90,16 @@ export function Report({ project }: { project: Project }): ReactElement {
               <option value="date">date, newest first</option>
             </select>
           </label>
+          {seeker && (
+            <label>
+              kind{" "}
+              <select value={kind} onChange={(e) => setKind(e.target.value as Item["kind"] | "")}>
+                <option value="">jobs and gigs</option>
+                <option value="job">jobs</option>
+                <option value="gig">gigs</option>
+              </select>
+            </label>
+          )}
         </div>
         <details className="columns">
           <summary>
@@ -105,6 +117,7 @@ export function Report({ project }: { project: Project }): ReactElement {
               <th />
               <th>Score</th>
               <th title="Posted on, or the day a run found it">Date</th>
+              {seeker && <th>Kind</th>}
               <th>Lead</th>
               {columns.map((c) => (
                 <th key={c}>{c}</th>
@@ -124,6 +137,11 @@ export function Report({ project }: { project: Project }): ReactElement {
                     </button>
                   </td>
                   <td className="muted">{item.dated}</td>
+                  {seeker && (
+                    <td>
+                      <span className="tag">{item.kind}</span>
+                    </td>
+                  )}
                   <td>
                     <a href={href.item(item.id)}>{item.title}</a>
                     {item.score?.blockers.map((b) => (
@@ -141,7 +159,7 @@ export function Report({ project }: { project: Project }): ReactElement {
                 {open === item.id && item.score && (
                   <tr className="axes">
                     <td />
-                    <td colSpan={columns.length + 3}>
+                    <td colSpan={columns.length + (seeker ? 4 : 3)}>
                       <Axes item={item} />
                     </td>
                   </tr>
@@ -154,6 +172,12 @@ export function Report({ project }: { project: Project }): ReactElement {
       <Section title="Connections">{graph.data && <GraphView graph={graph.data} />}</Section>
     </>
   );
+}
+
+/** Names what the letters step writes for the selected kinds. */
+function lettersFor(kinds: Set<Item["kind"]>): string {
+  const names = [kinds.has("company") && "letters", kinds.has("job") && "cover letters", kinds.has("gig") && "proposals"].filter(Boolean);
+  return `Write ${names.length ? names.join(" and ") : "letters"}`;
 }
 
 /** Only the ends the user set, so an empty input means no bound. */

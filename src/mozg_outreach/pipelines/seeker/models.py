@@ -119,8 +119,16 @@ class SeekerBrief(BaseModel):
 
     cv_text: str = Field(min_length=200, description="The CV as plain text or markdown.")
     preferences: str = Field(min_length=1)
-    jobs: SearchScope | None = SearchScope(recency_days=7)
-    gigs: SearchScope | None = SearchScope(recency_days=30)
+    jobs: SearchScope | None = Field(
+        default=SearchScope(recency_days=7),
+        title="Salaried jobs",
+        description="Employed roles, full or part time. Leave off to skip jobs.",
+    )
+    gigs: SearchScope | None = Field(
+        default=SearchScope(recency_days=30),
+        title="Freelance gigs",
+        description="Projects and contracts for a client. Leave off to skip gigs.",
+    )
 
     @model_validator(mode="after")
     def _some_kind(self) -> "SeekerBrief":

@@ -59,11 +59,22 @@ function ObjectFields({ schema, root, value, onChange }: { schema: Schema; root:
         const current = value[name] ?? field.default;
         const set = (v: unknown) => onChange({ ...value, [name]: v });
         if (field.type === "object") {
+          // A nullable section can be switched off, which sends null rather than its defaults.
+          const optional = raw.anyOf?.some((s) => s.type === "null") ?? false;
+          const on = !(optional && name in value && value[name] === null);
           return (
             <fieldset key={name}>
-              <legend>{label}</legend>
+              <legend>
+                {optional ? (
+                  <label>
+                    <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked ? (field.default ?? {}) : null)} /> {label}
+                  </label>
+                ) : (
+                  label
+                )}
+              </legend>
               {field.description && <p className="hint">{field.description}</p>}
-              <ObjectFields schema={field} root={root} value={(current as Json) ?? {}} onChange={set} />
+              {on && <ObjectFields schema={field} root={root} value={(current as Json) ?? {}} onChange={set} />}
             </fieldset>
           );
         }
