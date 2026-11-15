@@ -1,9 +1,9 @@
-"""Telegram job and gig posts as listings: a skill filter, then an agent reads each post."""
+"""Telegram job and gig posts as listings: an agent reads each post."""
 
 import asyncio
 import logging
 import re
-from datetime import date
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -62,7 +62,6 @@ class ParserResult(BaseModel):
 
 
 class TelegramRequest(BaseModel):
-    skills: list[str] = Field(description="Kept posts name at least one; works in any language.")
     kinds: list[ListingKind] = Field(min_length=1, description="Posts of other kinds are dropped.")
     oldest: date
     cursor: str | None
@@ -127,23 +126,23 @@ class TelegramPosts:
         self._steps = steps
 
     async def collect(self, adapter: SourceAdapter, request: TelegramRequest) -> FeedOutcome:
-        query = SourceQuery(keywords=request.skills, limit=POSTS_PER_CHANNEL)
+        # No keyword filter: skills as substrings ("Go", "C") match everything, the parser decides.
+        # since is exclusive, so step back a microsecond to keep the whole first day.
+        since = datetime.combine(request.oldest, time.min, UTC) - timedelta(microseconds=1)
+        query = SourceQuery(limit=POSTS_PER_CHANNEL, total_limit=MAX_POSTS, since=since)
         fetched = await adapter.fetch(query, request.cursor)
         fresh = [
             i
             for i in fetched.items
             if i.published_at is None or i.published_at.date() >= request.oldest
         ]
-        recent = fresh[:MAX_POSTS]
         concerns = [f"{adapter.name}: {e}" for e in fetched.errors]
-        if len(fresh) > MAX_POSTS:
-            concerns.append(f"telegram: parsed the newest {MAX_POSTS} of {len(fresh)} posts.")
         failures = len(concerns)
-        parsed = await self.parse(recent, concerns)
+        parsed = await self.parse(fresh, concerns)
         listings = [p for p in parsed if p.kind in request.kinds]
         parsed_all = not any(c.startswith(UNPARSED) for c in concerns[failures:])
         logger.info(
-            "telegram: %d posts gave %d listings of %s", len(recent), len(listings), request.kinds
+            "telegram: %d posts gave %d listings of %s", len(fresh), len(listings), request.kinds
         )
         # Keeping the old cursor after a failed batch makes the next run read those posts again.
         cursor = fetched.cursor if parsed_all else None

@@ -83,6 +83,22 @@ class TestAxes:
         assert value.value == points
         assert "missing: PostgreSQL or MySQL" in value.reason
 
+    def test_no_required_skill_matched_scores_low(self, strategy: SeekerStrategy) -> None:
+        value = SeekerScorer.skill_match(SkillMatcher(strategy).match("Java and Oracle"))
+        assert value.value == 15.0
+        assert "missing: Python" in value.reason
+
+    def test_either_or_skill_is_satisfied_by_one_side(self, strategy: SeekerStrategy) -> None:
+        either = strategy.model_copy(
+            update={
+                "must_have_skills": ["Python", "C++"],
+                "must_have_or_groups": [["Python", "C++"]],
+            }
+        )
+        value = SeekerScorer.skill_match(SkillMatcher(either).match("Python and REST"))
+        assert value.value == 60.0
+        assert "missing" not in value.reason
+
     def test_skill_match_through_synonyms_only_is_weak(self, strategy: SeekerStrategy) -> None:
         only = strategy.model_copy(update={"must_have_skills": []})
         assert SeekerScorer.skill_match(SkillMatcher(only).match("Postgres")).value == 40.0

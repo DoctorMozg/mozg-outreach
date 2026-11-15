@@ -34,6 +34,7 @@ A JSON object:
 
 ## Rules
 
+- Never fetch `t.me` URLs: Telegram post pages render only the channel header. Work from the listing text and `apply_url`.
 - Start from `apply_url` when it is set, since a post's vacancy page usually names the employer; otherwise start from `url`. Spend at most a few searches; this is a quick identification, not a dossier.
 - Once `company` is confirmed, always confirm its `domain`: find the company's own site (its careers page, a link on the listing, or a search for the company name) and fetch one page on it. Do this even when the other facts are done. The registry merges companies by domain, so a company without one becomes a duplicate entry. Leave `domain` null only when the company has no site you can reach, and say so in `concerns`.
 - `company` is the employer for `job` and the client for `gig`. Return it only when a fetched page ties that company to this listing: the listing names it, or the company's own careers page lists the same role. Otherwise return `company: null` and say why in `concerns`. Never return a recruiting agency or the job board itself as the company unless the listing says the agency is the employer.

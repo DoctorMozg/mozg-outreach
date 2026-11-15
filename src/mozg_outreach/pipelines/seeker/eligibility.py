@@ -45,9 +45,11 @@ COUNTRIES: dict[str, str] = {
 }  # fmt: skip
 ANYWHERE = re.compile(r"\b(?:anywhere|worldwide|world-wide|global(?:ly)?|any location)\b", re.I)
 REMOTE = re.compile(r"\bremote\b", re.I)
+HYBRID = re.compile(r"\bhybrid\b", re.I)
 ON_SITE = re.compile(r"\b(?:on-?site|in[- ]office|hybrid)\b", re.I)
 REQUIRED_PLACE = re.compile(
-    r"\b(?:must be (?:located|based|resident) in|eligible to work in|authori[sz]ed to work in)"
+    r"\b(?:must be (?:located|based|resident) in|eligible to work in|authori[sz]ed to work in"
+    r"|authori[sz]ed (?:to work )?and (?:located|based|resident) in)"
     r"\s+(?:the\s+)?([^.,;()\n]{2,40})",
     re.I,
 )
@@ -93,9 +95,17 @@ class EligibilityChecker:
             if places:
                 verdict: Verdict = "yes" if self._country in places else "no"
                 return Eligibility(verdict=verdict, evidence=required[0])
+        if self._preferences.remote == "required" and self._is_hybrid(listing):
+            return Eligibility(verdict="no", evidence="hybrid, remote is required")
         if REMOTE.search(text):
             return self._remote(listing)
         return self._on_site(listing, text)
+
+    @staticmethod
+    def _is_hybrid(listing: Listing) -> bool:
+        # Only the structured fields: prose may say "not hybrid" next to a fully remote role.
+        fields = f"{listing.location_string or ''} {listing.remote_status_raw or ''}"
+        return HYBRID.search(fields) is not None
 
     def _remote(self, listing: Listing) -> Eligibility:
         # The location fields are the board's structured data; prose only fills their gaps.
@@ -121,18 +131,20 @@ class EligibilityChecker:
                 return Eligibility(verdict=verdict, evidence=_snippet(window, _PLACE))
         return None
 
+    def _in_city(self, location: str) -> bool:
+        return bool(self._city) and self._city in location.lower()
+
     def _on_site(self, listing: Listing, text: str) -> Eligibility:
         location = listing.location_string or ""
         if self._preferences.remote == "required" and ON_SITE.search(text):
             return Eligibility(verdict="no", evidence=_snippet(text, ON_SITE))
-        if self._city and self._city in location.lower():
-            return Eligibility(verdict="yes", evidence=location)
         places = places_in(location)
+        if self._preferences.remote == "required" and (places or self._in_city(location)):
+            return Eligibility(verdict="no", evidence=f"{location}, no remote stated")
+        if self._in_city(location):
+            return Eligibility(verdict="yes", evidence=location)
         if not places:
             return Eligibility(verdict="unknown", evidence=location or "no location given")
-        if self._preferences.remote == "required":
-            # Without the word "remote" a snippet may simply have left it out.
-            return Eligibility(verdict="unknown", evidence=location)
         verdict: Verdict = "yes" if places & self._allowed else "no"
         return Eligibility(verdict=verdict, evidence=location)
 

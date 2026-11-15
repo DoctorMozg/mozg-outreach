@@ -40,7 +40,9 @@ class SkillMatcher:
         self._patterns: dict[str, list[tuple[str, re.Pattern[str]]]] = {}
 
     def match(self, text: str) -> SkillMatch:
-        must = {s: self._hit(s, text) for s in self._rules.must_have_skills}
+        # The strategist sometimes lists an either-or skill as a must-have too; the group wins.
+        grouped = {s for group in self._rules.must_have_or_groups for s in group}
+        must = {s: self._hit(s, text) for s in self._rules.must_have_skills if s not in grouped}
         groups = [
             (group, next((h for s in group if (h := self._hit(s, text))), None))
             for group in self._rules.must_have_or_groups

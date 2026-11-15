@@ -68,7 +68,7 @@ class FakeChannel:
 
 
 def request() -> TelegramRequest:
-    return TelegramRequest(skills=["Python"], kinds=["job"], oldest=date(2026, 11, 1), cursor=None)
+    return TelegramRequest(kinds=["job"], oldest=date(2026, 11, 1), cursor=None)
 
 
 def posts_for(tmp_path: Path, script: list[Scripted]) -> tuple[TelegramPosts, RecordedRunner]:
@@ -176,7 +176,11 @@ class TestCollect:
         ]
         assert len(outcome.listings) == 25
         assert outcome.cursors == {"telegram": '{"py_jobs": 99}'}
-        assert channel.queries[0].keywords == ["Python"]
+        assert channel.queries[0].keywords == [], "matching is left to the parser"
+        assert channel.queries[0].limit == telegram_posts.POSTS_PER_CHANNEL
+        assert channel.queries[0].total_limit == telegram_posts.MAX_POSTS
+        assert channel.queries[0].since is not None
+        assert channel.queries[0].since.date() < request().oldest
 
     async def test_failed_batch_keeps_the_cursor_and_unknown_ids_are_reported(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

@@ -38,6 +38,7 @@ SCOPE_POINTS = {"clear": 100.0, "partial": 60.0, "vague": 20.0}
 NEUTRAL = 70.0
 UNKNOWN = 50.0
 DEAL_BREAKER_CAP = 40.0
+NO_SKILL_POINTS = 15.0
 NOT_JUDGED = AxisValue(None, "not judged yet")
 
 
@@ -103,9 +104,9 @@ class SeekerScorer:
                 *skills.missing_must_haves,
                 *(" or ".join(g) for g in skills.missing_or_groups),
             ]
-            return AxisValue(
-                55.0 if nice >= 2 else 45.0, f"matched: {named}; missing: {', '.join(missing)}"
-            )
+            # Matching no required skill at all must not land near the middle of the scale.
+            points = (55.0 if nice >= 2 else 45.0) if required else NO_SKILL_POINTS
+            return AxisValue(points, f"matched: {named}; missing: {', '.join(missing)}")
         points = 95.0 if nice >= 3 else 80.0 if nice >= 1 else 60.0
         if not required:
             points -= 15.0

@@ -77,8 +77,27 @@ def telegram_config(harness: Harness) -> TelegramConfig:
         return TelegramConfig.model_validate(row.config)
 
 
+def not_a_job(post_id: str) -> ParsedPost:
+    return ParsedPost(
+        id=post_id,
+        kind=None,
+        title=None,
+        company=None,
+        location=None,
+        remote=None,
+        salary=None,
+        apply_url=None,
+        contact_handle=None,
+        contact_name=None,
+        reason="Not a vacancy for this search.",
+    )
+
+
 def script(harness: Harness, strategy: SeekerStrategy) -> None:
+    # Telegram posts reach the parser unfiltered, so it sees the designer posts and rejects them.
+    parsed = ParserResult(posts=[not_a_job("py_jobs/1"), not_a_job("py_jobs/2")], concerns=[])
     runs: dict[str, list[Scripted]] = {
+        "telegram-post-parser": [parsed],
         "seeker-strategist": [strategy],
         "seeker-judge": [JudgeResult(judgments=[judgment(FEED_URL)], concerns=[])],
         "lead-identifier": [identity()],
@@ -168,14 +187,32 @@ class TestChannelDiscovery:
         assert skipped == ["telegram skipped: environment variable TELEGRAM_API_ID is not set"]
 
 
-def test_discovery_searches_cv_skills_when_the_gate_cleared_must_haves(
+def test_discovery_terms_lead_with_must_haves_then_titles_then_nice_to_haves(
+    strategy: SeekerStrategy,
+) -> None:
+    offtarget = strategy.cv.model_copy(update={"skills": ["Rust", "JavaScript", "C#", "Go"]})
+
+    terms = _discovery_terms(strategy.model_copy(update={"cv": offtarget}))
+
+    assert terms == [
+        "Python",
+        "PostgreSQL",
+        "MySQL",
+        "Backend Engineer",
+        "Go",
+        "Kubernetes",
+        "Kafka",
+    ]
+
+
+def test_discovery_terms_skip_cv_skills_the_strategy_never_asked_for(
     strategy: SeekerStrategy,
 ) -> None:
     cleared = strategy.model_copy(update={"must_have_skills": [], "must_have_or_groups": []})
 
     terms = _discovery_terms(cleared)
 
-    assert terms[:4] == ["Python", "Go", "PostgreSQL", "Kubernetes"]
+    assert terms == ["Backend Engineer", "Go", "Kubernetes", "Kafka"]
     assert len(terms) <= telegram_discovery.MAX_QUERIES
 
 

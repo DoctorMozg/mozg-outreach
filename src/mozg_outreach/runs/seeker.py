@@ -6,6 +6,7 @@ import logging
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import unquote
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -70,6 +71,18 @@ BOARDS = Path(__file__).resolve().parents[3] / "prompts" / "seeker" / "sources" 
 WEB_SEARCH = "web_search"
 LISTING, JUDGMENT, CONTACTS = "listing", "judgment", "contacts"
 MAX_EXCLUDED_KEPT = 100
+# Domains a feed source already serves; a web scout of the same board only repeats its listings.
+FEED_DOMAINS: dict[str, tuple[str, ...]] = {
+    "remoteok": ("remoteok.com",),
+    "remotive": ("remotive.com",),
+    "arbeitnow": ("arbeitnow.com",),
+    "hn_whoishiring": ("news.ycombinator.com", "hn.algolia.com"),
+    "greenhouse": ("boards.greenhouse.io",),
+    "lever": ("jobs.lever.co",),
+    "ashby": ("jobs.ashbyhq.com",),
+}
+# Identifying an employer costs about $0.35 a lead, so only promising leads get it.
+IDENTIFY_MIN_SCORE = 60
 
 
 class SeekerOptions(BaseModel):
@@ -195,7 +208,10 @@ async def boards(ctx: Ctx) -> PhaseResult:
     if ctx.state.reused_from is not None:
         return None
     choice = await _search(ctx).boards(_strategy(ctx))
-    ranked = sorted(choice.scouted, key=lambda b: b.relevance_score, reverse=True)
+    covered = _feed_domains(_sources(ctx))
+    uncovered = [b for b in choice.scouted if not _served_by_feed(b, covered)]
+    logger.info("skipping %d boards a feed covers", len(choice.scouted) - len(uncovered))
+    ranked = sorted(uncovered, key=lambda b: b.relevance_score, reverse=True)
     picked: dict[str, Board] = {}
     for kind in KINDS:
         of_kind = [b for b in ranked if kind in b.kinds]
@@ -205,6 +221,15 @@ async def boards(ctx: Ctx) -> PhaseResult:
     guidance = [g.model_dump(mode="json") for g in choice.guidance]
     ctx.emit("sources", {"names": [b.name for b in ctx.state.boards], "guidance": guidance})
     return None
+
+
+def _feed_domains(sources: list[SourceConfig]) -> set[str]:
+    return {d for s in sources for d in FEED_DOMAINS.get(s.kind, ())}
+
+
+def _served_by_feed(board: Board, domains: set[str]) -> bool:
+    url = unquote(board.url).casefold()
+    return any(d in url for d in domains)
 
 
 async def discover_channels(ctx: Ctx) -> PhaseResult:
@@ -251,7 +276,10 @@ async def approve_channels(ctx: Ctx) -> PhaseResult:
 
 
 def _discovery_terms(strategy: SeekerStrategy) -> list[str]:
-    return list(dict.fromkeys([*strategy.skills(), *strategy.cv.top_titles]))[:MAX_QUERIES]
+    """What the user needs, not the CV's whole skill list, which pulls in off-target channels."""
+    required = [*strategy.must_have_skills, *(s for g in strategy.must_have_or_groups for s in g)]
+    terms = [*required, *strategy.cv.top_titles, *strategy.nice_to_have_skills]
+    return list(dict.fromkeys(terms))[:MAX_QUERIES]
 
 
 def _discovering(ctx: Ctx) -> list[SourceConfig]:
@@ -306,7 +334,6 @@ async def collect(ctx: Ctx) -> PhaseResult:
         posts = await TelegramPosts(ctx.steps).collect(
             ctx.adapters(row.kind, row.config),
             TelegramRequest(
-                skills=strategy.skills(),
                 kinds=kinds,
                 oldest=ctx.today - timedelta(days=widest),
                 cursor=row.cursor,
@@ -399,10 +426,13 @@ async def score(ctx: Ctx) -> PhaseResult:
 
 
 async def identify(ctx: Ctx) -> PhaseResult:
-    """Basic enrichment: the employer or client and named people of every scored listing."""
+    """Basic enrichment: the employer or client and named people of the promising listings."""
     hidden = _board_names()
     with ctx.db.session() as session:
-        tasks = [_listing_task(item, hidden) for item in _open(session, ctx.state.item_ids)]
+        open_items = _open(session, ctx.state.item_ids)
+        promising = [i for i in open_items if (i.score_total or 0) >= IDENTIFY_MIN_SCORE]
+        logger.info("identifying %d of %d open items", len(promising), len(open_items))
+        tasks = [_listing_task(item, hidden) for item in promising]
     report = await LeadEnrichment(ctx.db, ctx.steps).run(
         tasks, RunRef(project_id=ctx.project_id, run_id=ctx.run_id)
     )

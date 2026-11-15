@@ -23,7 +23,11 @@ class TestEligibility:
             ("Remote", "Remote", "", "unknown"),
             ("Remote", "Remote", "Must be located in the United Kingdom.", "no"),
             ("Remote", "Remote", "Must be based in Germany.", "yes"),
-            ("Berlin, Germany", None, "", "yes"),
+            ("Berlin, Germany", None, "", "no"),
+            ("Amsterdam, Netherlands", None, "", "no"),
+            ("Moscow", "Hybrid, Moscow office", "", "no"),
+            ("Remote", "Remote", "Must be authorized and based in the United States.", "no"),
+            ("Remote", "Remote", "Authorized to work and based in Germany.", "yes"),
             ("London, UK", None, "Hybrid, 3 days in office.", "no"),
             ("Remote", "Remote", "US citizens only.", "no"),
         ],
@@ -75,8 +79,22 @@ class TestSkills:
     def test_no_required_skill_fails_the_gate(self, strategy: SeekerStrategy) -> None:
         assert not SkillMatcher(strategy).match("Java and Oracle").gate_passed
 
+    def test_a_must_have_inside_an_or_group_is_not_also_required_alone(
+        self, strategy: SeekerStrategy
+    ) -> None:
+        either = strategy.model_copy(
+            update={
+                "must_have_skills": ["Python", "C++"],
+                "must_have_or_groups": [["Python", "C++"]],
+            }
+        )
 
-# Long enough to be a full posting, so naming no required skill excludes it.
+        match = SkillMatcher(either).match("Python services")
+
+        assert match.complete
+        assert match.missing_must_haves == []
+
+
 JAVA_POSTING = "We build our services in Java and Oracle. " * 12
 
 
@@ -91,14 +109,26 @@ class TestScreener:
         )
         assert [item.title for item in screening.kept] == ["New", "Old", "Undated"]
 
-    def test_a_snippet_too_short_to_name_a_stack_goes_on(self, strategy: SeekerStrategy) -> None:
+    def test_a_short_post_naming_no_required_skill_is_excluded(
+        self, strategy: SeekerStrategy
+    ) -> None:
         snippet = scouted(
             url="https://a.example/5", title="Backend", summary_snippet="Remote role."
         )
 
         screening = ListingScreener(ScreenRules.for_seeker(strategy, 7), TODAY).screen([snippet])
 
-        assert [item.key for item in screening.kept] == ["https://a.example/5"]
+        assert [e.reason for e in screening.excluded] == ["missing_must_have"]
+        assert screening.kept == []
+
+    def test_a_short_post_naming_a_required_skill_is_kept(self, strategy: SeekerStrategy) -> None:
+        snippet = scouted(
+            url="https://a.example/6", title="Backend", summary_snippet="Python, remote EU."
+        )
+
+        screening = ListingScreener(ScreenRules.for_seeker(strategy, 7), TODAY).screen([snippet])
+
+        assert [item.key for item in screening.kept] == ["https://a.example/6"]
 
     def test_each_gate_names_its_reason(self, strategy: SeekerStrategy) -> None:
         screening = ListingScreener(ScreenRules.for_seeker(strategy, 7), TODAY).screen(

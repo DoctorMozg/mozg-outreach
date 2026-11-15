@@ -155,6 +155,68 @@ class TestFetch:
         assert result.items == []
         assert json.loads(result.cursor or "") == {"remote_python_jobs": 4}
 
+    async def test_limit_applies_to_each_channel_separately(self, session_base: Path) -> None:
+        history = {
+            "chan_a": [message(n, f"post a{n}") for n in (1, 2, 3)],
+            "chan_b": [message(n, f"post b{n}") for n in (1, 2, 3)],
+        }
+        adapter, _ = adapter_for(history, session_base, channels=["chan_a", "chan_b"])
+
+        result = await adapter.fetch(SourceQuery(limit=2), None)
+
+        assert sorted(i.source_item_id for i in result.items) == [
+            "chan_a/2",
+            "chan_a/3",
+            "chan_b/2",
+            "chan_b/3",
+        ]
+
+    async def test_total_limit_keeps_the_oldest_and_leaves_the_rest_for_the_next_read(
+        self, session_base: Path
+    ) -> None:
+        history = {
+            "chan_a": [message(n, f"post a{n}") for n in (1, 2, 3)],
+            "chan_b": [message(n, f"post b{n}") for n in (1, 2, 3)],
+        }
+        adapter, _ = adapter_for(history, session_base, channels=["chan_a", "chan_b"])
+
+        result = await adapter.fetch(SourceQuery(total_limit=4), None)
+
+        assert sorted(i.source_item_id for i in result.items) == [
+            "chan_a/1",
+            "chan_a/2",
+            "chan_b/1",
+            "chan_b/2",
+        ]
+        assert json.loads(result.cursor or "") == {"chan_a": 2, "chan_b": 2}
+        assert any("4 of 6" in e for e in result.errors)
+
+        again = await adapter.fetch(SourceQuery(total_limit=4), result.cursor)
+        assert sorted(i.source_item_id for i in again.items) == ["chan_a/3", "chan_b/3"]
+
+    async def test_total_limit_counts_only_posts_inside_the_window(
+        self, session_base: Path
+    ) -> None:
+        history = {
+            "chan_a": [message(n, f"post a{n}") for n in range(1, 7)],
+            "chan_b": [message(n, f"post b{n}") for n in range(1, 7)],
+        }
+        adapter, _ = adapter_for(history, session_base, channels=["chan_a", "chan_b"])
+        window = SourceQuery(since=datetime(2026, 11, 3, tzinfo=UTC), total_limit=4)
+
+        result = await adapter.fetch(window, None)
+
+        assert sorted(i.source_item_id for i in result.items) == [
+            "chan_a/4",
+            "chan_a/5",
+            "chan_b/4",
+            "chan_b/5",
+        ]
+        assert json.loads(result.cursor or "") == {"chan_a": 5, "chan_b": 5}
+
+        again = await adapter.fetch(window, result.cursor)
+        assert sorted(i.source_item_id for i in again.items) == ["chan_a/6", "chan_b/6"]
+
     async def test_unreadable_channel_is_reported_and_others_continue(
         self, session_base: Path, history: dict[str, list[ChannelMessage]]
     ) -> None:

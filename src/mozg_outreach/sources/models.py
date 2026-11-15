@@ -61,6 +61,7 @@ class SourceQuery(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     since: datetime | None = None
     limit: int = Field(default=100, ge=1)
+    total_limit: int | None = Field(default=None, ge=1, description="Cap across all channels.")
 
 
 class FetchResult(BaseModel):

@@ -12,7 +12,12 @@ from mozg_outreach.pipelines.seeker.models import (
     SeekerStrategy,
 )
 from mozg_outreach.runs.flow import GateAnswer
-from mozg_outreach.runs.seeker import WEB_SEARCH, SeekerSearchState
+from mozg_outreach.runs.seeker import (
+    IDENTIFY_MIN_SCORE,
+    WEB_SEARCH,
+    SeekerSearchState,
+    listing_of,
+)
 from mozg_outreach.sources.models import SourceItem
 from mozg_outreach.storage.models import Draft, Item, Project, Run, SourceConfig
 from tests.pipelines.conftest import Scripted
@@ -167,6 +172,75 @@ async def test_one_search_reports_jobs_and_gigs_and_drafts_a_letter_for_each(
     with harness.db.session() as session:
         channels = {d.item_id: d.channel for d in session.scalars(select(Draft))}
     assert channels == {ids[ItemKind.JOB]: "cover_letter", ids[ItemKind.GIG]: "proposal"}
+
+
+async def test_leads_scoring_under_the_floor_stay_in_the_report_but_are_not_identified(
+    harness: Harness, strategy: SeekerStrategy
+) -> None:
+    project_id = harness.seeker_project()
+    harness.feed.extra.append(
+        SourceItem(
+            source="greenhouse",
+            source_item_id="acme/2",
+            url=OTHER_URL,
+            kind="job",
+            title="Platform Engineer, internal tools",
+            raw_text="Python and PostgreSQL services. Remote within the EU.",
+            raw_payload={},
+            published_at=NOW,
+            fetched_at=NOW,
+            org_name="Acme",
+            location="Remote - EU",
+        )
+    )
+    weak = judgment(OTHER_URL, seniority="intern", counterparty="thin", scope_clarity="vague")
+    harness.script(
+        {
+            "seeker-strategist": [strategy],
+            "seeker-judge": [JudgeResult(judgments=[judgment(FEED_URL), weak], concerns=[])],
+            "lead-identifier": [identity(company())],
+        }
+    )
+    search = harness.manager.start(project_id, "seeker.search", {"options": OPTIONS})
+    await harness.manager.wait(search)
+    harness.manager.answer_gate(search, GateAnswer(approve=True))
+    done = await finish(harness, search)
+
+    assert done.status == RunStatus.COMPLETE, done.error
+    with harness.db.session() as session:
+        totals = {listing_of(i)[0].url: i.score_total for i in session.scalars(select(Item))}
+    assert len(totals) == 2, "the weak lead is still reported"
+    assert (totals[FEED_URL] or 0) >= IDENTIFY_MIN_SCORE > (totals[OTHER_URL] or 0)
+    [sent] = harness.runner.payloads["lead-identifier"]
+    assert sent.model_dump()["url"] == FEED_URL
+
+
+async def test_boards_an_enabled_feed_already_covers_are_not_scouted(
+    harness: Harness, strategy: SeekerStrategy
+) -> None:
+    project_id = harness.seeker_project()
+    with harness.db.session() as session:
+        session.add(SourceConfig(project_id=project_id, kind=WEB_SEARCH))
+        session.add(SourceConfig(project_id=project_id, kind="remoteok", config={}))
+    harness.script(
+        {
+            "seeker-strategist": [strategy],
+            "seeker-source-researcher": [BoardPlan(augmented=[], concerns=[])],
+            "seeker-scout": [scouted() for _ in range(30)],
+            "seeker-judge": [JudgeResult(judgments=[judgment(FEED_URL)], concerns=[])],
+            "lead-identifier": [identity(company())],
+        }
+    )
+    options = {**OPTIONS, "max_boards": 15}
+    search = harness.manager.start(project_id, "seeker.search", {"options": options})
+    await harness.manager.wait(search)
+    harness.manager.answer_gate(search, GateAnswer(approve=True))
+    done = await finish(harness, search)
+
+    assert done.status == RunStatus.COMPLETE, done.error
+    names = {b.name for b in SeekerSearchState.model_validate(done.state).boards}
+    assert {"Wellfound", "Lever ATS (via Google)"} <= names
+    assert names.isdisjoint({"RemoteOK", "Greenhouse ATS"})
 
 
 class TestReuseLastStrategy:

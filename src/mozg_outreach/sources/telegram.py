@@ -274,6 +274,7 @@ class TelegramAdapter:
         errors: list[str] = []
         positions = self._read_cursor(cursor, errors)
         read: list[SourceItem] = []
+        read_ids: dict[str, list[int]] = {}
         async with self.open_session() as session:
             for raw_channel in self._config.channels:
                 channel = channel_username(raw_channel)
@@ -285,18 +286,41 @@ class TelegramAdapter:
                     errors.append(f"telegram: {exc}")
                     logger.warning("telegram: skipped channel %s: %s", channel, exc)
                     continue
+                read_ids[channel] = [positions.get(channel, 0), *(m.id for m in messages)]
                 if messages:
                     positions[channel] = max(positions.get(channel, 0), *(m.id for m in messages))
                 logger.info("telegram: %s returned %d messages", channel, len(messages))
                 read.extend(self._to_items(channel, messages))
 
         keywords = [*query.keywords, *self._config.keywords]
-        wanted = query.model_copy(update={"keywords": keywords})
-        return FetchResult(
-            items=select_items([i for i in read if matches_keywords(i, keywords)], wanted),
-            cursor=json.dumps(positions, sort_keys=True),
-            errors=errors,
-        )
+        # The limit already applied per channel while reading, so only sort and filter here.
+        wanted = query.model_copy(update={"keywords": keywords, "limit": len(read) or 1})
+        items = select_items([i for i in read if matches_keywords(i, keywords)], wanted)
+        if query.total_limit is not None and len(items) > query.total_limit:
+            items = self._trim_oldest(items, query.total_limit, positions, read_ids, errors)
+        return FetchResult(items=items, cursor=json.dumps(positions, sort_keys=True), errors=errors)
+
+    @staticmethod
+    def _trim_oldest(
+        items: list[SourceItem],
+        keep: int,
+        positions: dict[str, int],
+        read_ids: dict[str, list[int]],
+        errors: list[str],
+    ) -> list[SourceItem]:
+        """Keep the oldest posts; each cursor stops just before its first dropped post."""
+        ordered = sorted(items, key=lambda i: i.published_at or datetime.min.replace(tzinfo=UTC))
+        kept, dropped = ordered[:keep], ordered[keep:]
+        for item in dropped:
+            channel, message_id = (
+                str(item.raw_payload["channel"]),
+                int(str(item.raw_payload["message_id"])),
+            )
+            earlier = [m for m in read_ids[channel] if m < message_id]
+            positions[channel] = min(positions[channel], max(earlier))
+        errors.append(f"parsed the oldest {keep} of {len(items)} posts, the rest next run.")
+        logger.info("telegram: kept %d of %d posts, cursor rewound for the rest", keep, len(items))
+        return kept
 
     def _read_cursor(self, cursor: str | None, errors: list[str]) -> dict[str, int]:
         if cursor is None:
