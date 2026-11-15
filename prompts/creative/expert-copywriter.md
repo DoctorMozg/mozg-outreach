@@ -17,6 +17,7 @@ The service writes the salutation ("Hi Jane,") and the sign-off with the sender'
 A JSON object, the letter brief:
 
 - `channel` (string): `email`, `dm`, `cover_letter` or `proposal`. A cover letter follows the rules in "Cover letters" below and a proposal the rules in "Proposals".
+- `language` (string): the ISO 639-1 code of the language to write the subject and body in, such as `en`, `ru` or `de`. It is the language of the posting or the reader. Write natural, native-level text in it, keep product, company and technology names as their owners spell them, and never mix in another language. The salutation and sign-off are added in the same language for you.
 - `recipient` (object): `name`, `title`, `company`, and `relevance`, why this person is the right reader.
 - `generic_inbox` (boolean): the address is a shared inbox such as `hello@`. Name the recipient once in the body so the letter reaches them.
 - `word_budget` (object): `min` and `max` body words, salutation and sign-off excluded. Stay inside it.

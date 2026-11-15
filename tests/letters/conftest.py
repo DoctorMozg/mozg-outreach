@@ -9,6 +9,7 @@ from mozg_outreach.naturalize.models import WordBudget
 def email_brief() -> LetterBrief:
     return LetterBrief(
         channel="email",
+        language="en",
         recipient=LetterRecipient(name="Jane Example", title="CTO", company="Katana"),
         generic_inbox=False,
         word_budget=WordBudget(min=20, max=60),
@@ -30,5 +31,5 @@ def email_brief() -> LetterBrief:
 @pytest.fixture
 def email_frame() -> LetterFrame:
     return LetterFrame.build(
-        "email", "warm", LetterParty(recipient="Jane Example", sender="Stan Petrov")
+        "email", "warm", LetterParty(recipient="Jane Example", sender="Stan Petrov"), "en"
     )

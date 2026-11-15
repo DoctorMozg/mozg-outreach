@@ -67,7 +67,7 @@ The pipelines come from the `mz-biz-outreach` and `mz-job-outreach` plugins in h
 
 - **Naturalization is validated in Python.** The naturalizer's own metrics are model estimates. After each rewrite, check word budget, preserved entities, salutation and sign-off, and banned punctuation in Python, and revert to the snapshot on damage. Drafts use Medium severity (structure and wording) with ±10% length and the channel word budget, never Heavy or the generic "cut ≥15%" default.
 
-- **Letter format:** a subject (email only), a salutation, a gratitude sign-off with the sender's first name, and plain ASCII punctuation (no em or en dashes, curly quotes or ellipsis characters). Python writes the salutation and sign-off from the project's `sender_name` and `sender_tone` (`letters/frame.py`); the copywriter returns only subject and body.
+- **Letter format:** a subject (email only), a salutation, a gratitude sign-off with the sender's first name, and plain ASCII punctuation (no em or en dashes, curly quotes or ellipsis characters). Python writes the salutation and sign-off from the project's `sender_name` and `sender_tone`, in the letter's language (`letters/frame.py`); a job or gig letter is in its posting's language (`letters/language.py`). The copywriter returns only subject and body.
 
 - **Prompt conventions** (`prompts/<group>/<name>.md`; see the adapted `prompts/biz/outreach-scout.md`):
 

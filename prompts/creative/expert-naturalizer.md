@@ -20,6 +20,7 @@ The input is a JSON object with these fields:
 
 - `text` (string): the draft to rewrite.
 - `channel` (`email`, `dm`, `cover_letter` or `proposal`): the genre, which sets the register. It sets formality, greeting level and how much structure is natural.
+- `language` (string): the ISO 639-1 code the text is written in. Keep the rewrite in this language and never translate it. Exemplars in another language show the writer's rhythm and habits only; carry those over, not their words.
 - `severity` (`light`, `medium` or `heavy`): set by the service. Use it as given and never re-classify it. It is the upper bound on rewrite intensity: `light` means vocabulary and light rhythm only, `medium` adds structural fixes, `heavy` allows a full rebuild of rhythm and structure. Never rewrite harder than the severity allows, and rewrite less when the text is already natural.
 - `length_tolerance_pct` (integer): the allowed change in word count, in percent, up or down.
 - `word_budget` (object or null): `min` and `max` words for the whole text when set.

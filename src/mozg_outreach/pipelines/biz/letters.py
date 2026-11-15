@@ -30,6 +30,9 @@ from mozg_outreach.pipelines.steps import PipelineSteps
 
 logger = logging.getLogger(__name__)
 
+# Company letters stay in English until a brief names its market's language.
+BIZ_LANGUAGE = "en"
+
 SUBJECT_MAX_CHARS = 55
 
 
@@ -81,6 +84,7 @@ class BizLetterWriter:
         style = await self._profile(addressee, request.company)
         brief = LetterBrief(
             channel=route.channel,
+            language=BIZ_LANGUAGE,
             recipient=LetterRecipient(
                 name=contact.name,
                 title=contact.title,
@@ -102,7 +106,7 @@ class BizLetterWriter:
         return await self._composer.compose(
             Composition(
                 brief=brief,
-                frame=LetterFrame.build(route.channel, request.sender.tone, party),
+                frame=LetterFrame.build(route.channel, request.sender.tone, party, BIZ_LANGUAGE),
                 voice=request.voices.get(route.channel, VoiceContext(profile=None, samples=[])),
                 delivery=Delivery(
                     address=route.address,

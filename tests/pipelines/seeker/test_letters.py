@@ -108,3 +108,55 @@ async def test_named_contact_email_is_used_and_guesses_are_not(
     )
     no_email, _ = await write(strategy, contacts(None), tmp_path)
     assert no_email.review.address == "https://jobs.acme.example/backend/apply"
+
+
+RU_BODY = " ".join(
+    [
+        "В вакансии написано, что команда пишет сервисы на Python и PostgreSQL и сама выкатывает",
+        "их в Kubernetes. Последние годы я занимаюсь ровно этим: проектирую, пишу и поддерживаю",
+        "бэкенд, который держит основную нагрузку продукта.\n\nМне важно, чтобы релизы проходили",
+        "спокойно, у каждого сервиса был понятный владелец, а графики отвечали на вопрос раньше,",
+        "чем его кто-то задаст. Я сам настраиваю деплой и мониторинг и не передаю сервисы",
+        "отдельной команде платформы. Когда сервису нужен Go, пишу и на нем, так что смешанная",
+        "кодовая база меня не замедлит.\n\nВ вашу команду я принесу спокойную и аккуратную работу",
+        "с теми сервисами, которые у вас уже есть, и привычку оставлять код проще, чем он был до",
+        "меня. Буду рад обсудить роль, задачи на ближайшие месяцы и то, как сейчас устроена",
+        "работа бэкенд команды. Удобно созвониться в любой день на этой или следующей неделе,",
+        "напишите, пожалуйста, когда вам подходит, и я подстроюсь под ваше расписание.",
+    ]
+)
+
+
+async def test_a_russian_posting_gets_a_russian_letter(
+    strategy: SeekerStrategy, tmp_path: Path
+) -> None:
+    framed = f"Здравствуйте!\n\n{RU_BODY}\n\nСпасибо,\nStan"
+    draft = LetterDraft(
+        subject=None, body=RU_BODY, hook_used="listing", angle_used="role fit", concerns=[]
+    )
+    natural = NaturalizeResult(text=framed, changes=[], specificity_needed=[], concerns=[])
+    runner = RecordedRunner({"expert-copywriter": [draft], "expert-naturalizer": [natural]})
+    steps = PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path)
+    item = listing(
+        title="Senior Python разработчик",
+        summary="Ищем бэкенд разработчика: Python, PostgreSQL, Kubernetes. Удаленно.",
+    )
+    letter = await JobLetterWriter(steps, Naturalizer(steps)).write(
+        CoverLetterRequest(
+            listing=item,
+            judgment=judgment(),
+            contacts=None,
+            skills=SkillMatcher(strategy).match(item.summary),
+            background=CV_TEXT,
+            sender=SenderSettings(name="Stan Petrov", tone="warm"),
+        )
+    )
+
+    assert isinstance(letter, WrittenLetter)
+    [brief] = runner.payloads["expert-copywriter"]
+    assert isinstance(brief, LetterBrief)
+    assert brief.language == "ru"
+    [naturalize] = runner.payloads["expert-naturalizer"]
+    assert naturalize.model_dump()["language"] == "ru"
+    assert letter.text == framed
+    assert letter.review.problems == []

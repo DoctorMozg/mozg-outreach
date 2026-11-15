@@ -62,6 +62,9 @@ class LetterRecipient(BaseModel):
 
 class LetterBrief(BaseModel):
     channel: Channel
+    language: str = Field(
+        min_length=2, max_length=2, description="ISO 639-1 code; subject and body use it."
+    )
     recipient: LetterRecipient
     generic_inbox: bool = Field(
         description="The address is a shared inbox, so the body must name the recipient."

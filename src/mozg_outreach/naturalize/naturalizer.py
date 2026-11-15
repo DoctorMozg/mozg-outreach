@@ -5,6 +5,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
+from mozg_outreach.letters.language import detect_language
 from mozg_outreach.naturalize.models import (
     Channel,
     NaturalizeInput,
@@ -35,6 +36,7 @@ MAX_ATTEMPTS = 2
 class NaturalizeRequest(BaseModel):
     text: str = Field(min_length=1)
     channel: Channel
+    language: str = Field(min_length=2, max_length=2)
     preserve: list[str] = Field(default_factory=list)
 
 
@@ -51,6 +53,7 @@ class Naturalizer:
         payload = NaturalizeInput(
             text=request.text,
             channel=request.channel,
+            language=request.language,
             # Medium fixes structure as well as wording; heavy would cut length and lose facts.
             severity="medium",
             length_tolerance_pct=LENGTH_TOLERANCE_PCT,
@@ -58,7 +61,7 @@ class Naturalizer:
             preserve=request.preserve,
             allowed_punctuation=habitual_punctuation(voice.samples),
             voice_profile=voice.profile.render() if voice.profile else None,
-            exemplars=pick_exemplars(voice.samples, request.text),
+            exemplars=pick_exemplars(voice.samples, request.text, request.language),
         )
         validator = RewriteValidator(payload)
         outcome: RewriteOutcome | None = None
@@ -83,10 +86,11 @@ class Naturalizer:
         return outcome
 
 
-def pick_exemplars(samples: list[str], text: str) -> list[str]:
-    """Samples closest in length to the draft, since length shapes rhythm more than topic."""
+def pick_exemplars(samples: list[str], text: str, language: str) -> list[str]:
+    """Samples in the letter's language when there are any, closest in length to the draft."""
+    same = [s for s in samples if detect_language(s) == language] or samples
     target = word_count(text)
-    return sorted(samples, key=lambda s: abs(word_count(s) - target))[:MAX_EXEMPLARS]
+    return sorted(same, key=lambda s: abs(word_count(s) - target))[:MAX_EXEMPLARS]
 
 
 def habitual_punctuation(samples: list[str]) -> list[SoftPunctuation]:

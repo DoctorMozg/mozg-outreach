@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from mozg_outreach.letters.composer import Composition, Delivery, LetterComposer, WrittenLetter
 from mozg_outreach.letters.frame import LetterFrame, LetterParty
+from mozg_outreach.letters.language import PostingLanguage
 from mozg_outreach.letters.models import (
     Angle,
     Hook,
@@ -44,6 +45,7 @@ class JobLetterWriter:
     async def write(self, request: CoverLetterRequest) -> WrittenLetter | Skipped:
         listing = request.listing
         named = request.contacts.named_contact if request.contacts else None
+        language = PostingLanguage.of(f"{listing.title}\n{listing.summary}")
         recipient = LetterRecipient(
             name=named.name if named else HIRING_TEAM,
             title=(named.title or "") if named else "",
@@ -52,6 +54,7 @@ class JobLetterWriter:
         )
         brief = LetterBrief(
             channel="cover_letter",
+            language=language.letter,
             recipient=recipient,
             generic_inbox=False,
             word_budget=WORD_BUDGETS["cover_letter"],
@@ -68,15 +71,18 @@ class JobLetterWriter:
             sender_voice=request.sender.voice,
             sender_background=request.background,
         )
-        party = LetterParty(recipient=recipient.name, sender=request.sender.name)
+        party = LetterParty(recipient=named.name if named else None, sender=request.sender.name)
         logger.info("cover letter for %s to %s", listing.key, recipient.name)
         return await self._composer.compose(
             Composition(
                 brief=brief,
-                frame=LetterFrame.build("cover_letter", request.sender.tone, party),
+                frame=LetterFrame.build(
+                    "cover_letter", request.sender.tone, party, language.letter
+                ),
                 voice=request.voice,
                 delivery=_delivery(listing, request.contacts),
                 calibration="cover letter: neutral shape",
+                notes=language.notes(),
             )
         )
 

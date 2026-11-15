@@ -2,7 +2,7 @@
 
 import logging
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
 from mozg_outreach.letters.checks import LetterChecker, LetterProblem
@@ -31,6 +31,7 @@ class Composition(BaseModel):
     voice: VoiceContext
     delivery: Delivery
     calibration: str = "neutral"
+    notes: list[str] = Field(default_factory=list, description="Shown with the review notes.")
 
 
 class WrittenLetter(BaseModel):
@@ -63,11 +64,16 @@ class LetterComposer:
         preserve = [recipient, brief.recipient.company]
         preserve += [e for e in brief.verified_entities if e and e in attempt.text]
         outcome = await self._naturalizer.naturalize(
-            NaturalizeRequest(text=attempt.text, channel=brief.channel, preserve=preserve),
+            NaturalizeRequest(
+                text=attempt.text,
+                channel=brief.channel,
+                language=brief.language,
+                preserve=preserve,
+            ),
             job.voice,
         )
         subject = attempt.draft.subject
-        notes = [*attempt.draft.concerns, *outcome.review_notes]
+        notes = [*job.notes, *attempt.draft.concerns, *outcome.review_notes]
         if outcome.reverted and outcome.damage:
             damage = "; ".join(p.detail for p in outcome.damage)
             notes.append(f"Naturalized version rejected, original kept: {damage}")

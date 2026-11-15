@@ -22,6 +22,7 @@ def validator() -> RewriteValidator:
     request = NaturalizeInput(
         text=ORIGINAL,
         channel="email",
+        language="en",
         severity="light",
         length_tolerance_pct=5,
         word_budget=WordBudget(min=40, max=180),
@@ -78,6 +79,7 @@ class TestRevert:
             {
                 "text": dirty,
                 "channel": "email",
+                "language": "en",
                 "severity": "light",
                 "length_tolerance_pct": 5,
                 "word_budget": None,
@@ -90,6 +92,15 @@ class TestRevert:
         outcome = RewriteValidator(request).accept(result(dirty.replace("I saw", "I noticed")))
         assert not outcome.reverted
         assert [p.key for p in outcome.unresolved] == ["punctuation:semicolon"]
+
+    def test_a_rewrite_in_another_language_is_reverted(self, validator: RewriteValidator) -> None:
+        translated = (
+            "Здравствуйте, Анна!\n\nВидел, что Katana закрыла раунд Series B, и хотел бы "
+            "предложить помощь с облачными расходами по фиксированной цене.\n\nС уважением,\nСтан"
+        )
+        outcome = validator.accept(result(translated))
+        assert outcome.reverted
+        assert "language" in {p.kind for p in outcome.damage}
 
 
 class TestCleanup:

@@ -29,6 +29,7 @@ class RetryFeedback(BaseModel):
 class NaturalizeInput(BaseModel):
     text: str = Field(min_length=1)
     channel: Channel
+    language: str = Field(min_length=2, max_length=2, description="ISO 639-1 code to keep.")
     severity: Severity = Field(description="Set by the service; short texts are always light.")
     length_tolerance_pct: int = Field(ge=0, le=50, description="Allowed word-count change.")
     word_budget: WordBudget | None

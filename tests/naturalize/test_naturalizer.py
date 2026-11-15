@@ -55,7 +55,7 @@ async def run(
 ) -> tuple[RewriteOutcome, RecordedRunner]:
     runner = RecordedRunner({"expert-naturalizer": script})
     naturalizer = Naturalizer(PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path))
-    request = NaturalizeRequest(text=DRAFT, channel="email", preserve=["Series B"])
+    request = NaturalizeRequest(text=DRAFT, channel="email", language="en", preserve=["Series B"])
     return await naturalizer.naturalize(request, voice), runner
 
 
@@ -97,7 +97,13 @@ class TestHelpers:
 
     def test_exemplars_are_closest_in_length(self) -> None:
         samples = ["one two", "one two three four five six", "one two three four"]
-        assert pick_exemplars(samples, "a b c d e") == [samples[1], samples[2], samples[0]]
+        assert pick_exemplars(samples, "a b c d e", "en") == [samples[1], samples[2], samples[0]]
+
+    def test_exemplars_in_the_letter_language_come_first(self) -> None:
+        english = "Thanks for the call, I will send the notes tomorrow."
+        russian = "Спасибо за звонок, завтра пришлю заметки и план."
+        assert pick_exemplars([english, russian], "Добрый день, коллеги.", "ru") == [russian]
+        assert pick_exemplars([english], "Добрый день, коллеги.", "ru") == [english]
 
 
 class TestRetry:

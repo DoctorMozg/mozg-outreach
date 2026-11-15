@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from mozg_outreach.letters.language import detect_language
 from mozg_outreach.naturalize.models import NaturalizeInput, NaturalizeResult
 from mozg_outreach.naturalize.punctuation import PunctuationChecker, straighten_quotes
 
@@ -16,7 +17,9 @@ _WORD = re.compile(r"[^\W_]+(?:['-][^\W_]+)*")
 _ENTITY = re.compile(r"https?://\S+[^\s.,;:!?)]|[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\d+(?:[.,]\d+)*%?")
 _SENTENCE = re.compile(r"[^.!?\n]*\[SPECIFICITY NEEDED\][^.!?\n]*[.!?]?")
 
-ProblemKind = Literal["length_drift", "word_budget", "dropped_term", "frame_changed", "punctuation"]
+ProblemKind = Literal[
+    "length_drift", "word_budget", "dropped_term", "frame_changed", "punctuation", "language"
+]
 
 
 class RewriteProblem(BaseModel):
@@ -81,6 +84,10 @@ class RewriteValidator:
 
     def problems(self, text: str) -> list[RewriteProblem]:
         found = [*self._length(text), *self._dropped(text), *self._frame(text)]
+        written = detect_language(text)
+        if written != self._request.language:
+            detail = f"written in '{written}', the letter is in '{self._request.language}'"
+            found.append(RewriteProblem(kind="language", key="language", detail=detail))
         found += [
             RewriteProblem(
                 kind="punctuation",

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from mozg_outreach.letters.composer import Composition, Delivery, LetterComposer, WrittenLetter
 from mozg_outreach.letters.frame import LetterFrame, LetterParty
+from mozg_outreach.letters.language import PostingLanguage
 from mozg_outreach.letters.models import (
     Angle,
     Hook,
@@ -50,10 +51,12 @@ class ProposalWriter:
             company=listing.company,
             relevance="Posted the gig.",
         )
+        language = PostingLanguage.of(f"{listing.title}\n{listing.summary}")
         skills = request.skills
         matched = [h.skill for h in [*skills.must_haves, *skills.or_groups, *skills.nice_to_haves]]
         brief = LetterBrief(
             channel="proposal",
+            language=language.letter,
             recipient=recipient,
             generic_inbox=False,
             word_budget=WORD_BUDGETS["proposal"],
@@ -71,12 +74,12 @@ class ProposalWriter:
             sender_voice=request.sender.voice,
             sender_background=request.background,
         )
-        party = LetterParty(recipient=recipient.name, sender=request.sender.name)
+        party = LetterParty(recipient=None, sender=request.sender.name)
         logger.info("proposal for %s", listing.key)
         return await self._composer.compose(
             Composition(
                 brief=brief,
-                frame=LetterFrame.build("proposal", request.sender.tone, party),
+                frame=LetterFrame.build("proposal", request.sender.tone, party, language.letter),
                 voice=request.voice,
                 delivery=Delivery(
                     address=listing.url,
@@ -84,6 +87,7 @@ class ProposalWriter:
                     note=_application_method(listing) or "Submit it on the gig's page.",
                 ),
                 calibration="proposal: neutral shape",
+                notes=language.notes(),
             )
         )
 
