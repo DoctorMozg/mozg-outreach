@@ -24,6 +24,7 @@ The input is a JSON object with these fields:
 
 - `cv_text` (string): the CV as plain text or markdown.
 - `preferences` (string): what the user wants, in free text. It may name regions, a salary or rate floor, engagement types and exclusions.
+- `facts` (array): extra facts about the user beside the CV, each with `label`, `value` and `source_url` (null when the user or the CV says it). Treat them as true, like the CV.
 - `jobs` (object or null): set when the user searches salaried jobs, with `recency_days` (how fresh listings must be) and `limit`.
 - `gigs` (object or null): set when the user searches freelance gigs, with the same fields.
 - `feedback` (string or null): the user's notes on a rejected draft. When set, revise the strategy to follow the notes and keep everything they did not touch.

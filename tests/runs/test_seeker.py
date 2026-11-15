@@ -1,7 +1,7 @@
 from sqlalchemy import select
 
-from mozg_outreach.domain import FieldValue, ItemKind, RunStatus
-from mozg_outreach.letters.models import LetterDraft
+from mozg_outreach.domain import BriefFact, FieldValue, ItemKind, RunStatus
+from mozg_outreach.letters.models import LetterBrief, LetterDraft
 from mozg_outreach.naturalize.models import NaturalizeResult
 from mozg_outreach.pipelines.seeker.models import (
     BoardPlan,
@@ -15,7 +15,7 @@ from mozg_outreach.runs.seeker import WEB_SEARCH
 from mozg_outreach.storage.models import Draft, Item, Run, SourceConfig
 from tests.pipelines.conftest import Scripted
 from tests.pipelines.leads.conftest import company, identity
-from tests.pipelines.seeker.conftest import GIG_URL, SCOPE, judgment
+from tests.pipelines.seeker.conftest import CV_TEXT, GIG_URL, SCOPE, judgment
 from tests.pipelines.seeker.test_letters import BODY
 
 from .conftest import FEED_URL, NOW, Harness
@@ -23,6 +23,7 @@ from .conftest import FEED_URL, NOW, Harness
 OPTIONS = {"max_boards": 1, "research_fields_top": 0, "summary": False}
 # Proposals get a longer word budget than cover letters.
 PROPOSAL_BODY = " ".join(["word"] * 300)
+NOTICE = BriefFact(label="Notice period", value="One month")
 
 
 def scouted_gig() -> ScoutedListing:
@@ -66,7 +67,7 @@ async def finish(harness: Harness, run_id: int) -> Run:
 async def test_one_search_reports_jobs_and_gigs_and_drafts_a_letter_for_each(
     harness: Harness, strategy: SeekerStrategy
 ) -> None:
-    project_id = harness.seeker_project(gigs=True)
+    project_id = harness.seeker_project(gigs=True, facts=[NOTICE])
     with harness.db.session() as session:
         session.add(SourceConfig(project_id=project_id, kind=WEB_SEARCH))
     harness.script(
@@ -93,6 +94,8 @@ async def test_one_search_reports_jobs_and_gigs_and_drafts_a_letter_for_each(
     done = await finish(harness, search)
     assert done.status == RunStatus.COMPLETE, done.error
 
+    [plan] = harness.runner.payloads["seeker-strategist"]
+    assert plan.model_dump()["facts"] == [NOTICE.model_dump()]
     scouts = harness.runner.payloads["seeker-scout"]
     assert [p.model_dump()["kind"] for p in scouts] == ["job", "gig"]
     with harness.db.session() as session:
@@ -116,6 +119,9 @@ async def test_one_search_reports_jobs_and_gigs_and_drafts_a_letter_for_each(
         drafted = await finish(harness, run_id)
         assert drafted.status == RunStatus.COMPLETE, drafted.error
 
+    for sent in harness.runner.payloads["expert-copywriter"]:
+        assert isinstance(sent, LetterBrief)
+        assert sent.sender_background == f"{CV_TEXT}\n\nMore facts:\n- Notice period: One month"
     with harness.db.session() as session:
         channels = {d.item_id: d.channel for d in session.scalars(select(Draft))}
     assert channels == {ids[ItemKind.JOB]: "cover_letter", ids[ItemKind.GIG]: "proposal"}

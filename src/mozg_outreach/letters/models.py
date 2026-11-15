@@ -76,7 +76,8 @@ class LetterBrief(BaseModel):
     reader_style: ReaderStyle | None
     sender_voice: str
     sender_background: str | None = Field(
-        default=None, description="The sender's CV; every claim about the sender comes from it."
+        default=None,
+        description="The sender's CV or company facts; every claim about the sender comes from it.",
     )
     retry: RetryFeedback | None = None
 

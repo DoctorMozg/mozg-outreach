@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from mozg_outreach.agents import PromptLibrary
-from mozg_outreach.domain import ProjectMode
+from mozg_outreach.domain import BriefFact, ProjectMode
 from mozg_outreach.pipelines.seeker.models import (
     JudgeResult,
     SearchScope,
@@ -84,11 +84,12 @@ class Harness:
         for name, results in script.items():
             self.runner._script.setdefault(name, []).extend(results)
 
-    def seeker_project(self, gigs: bool = False) -> int:
+    def seeker_project(self, gigs: bool = False, facts: list[BriefFact] | None = None) -> int:
         """A seeker project with a job feed; it searches jobs, and gigs when asked."""
         seeker = SeekerBrief(
             cv_text=CV_TEXT,
             preferences="Remote EU",
+            facts=facts or [],
             gigs=SearchScope(recency_days=30) if gigs else None,
         )
         with self.db.session() as session:

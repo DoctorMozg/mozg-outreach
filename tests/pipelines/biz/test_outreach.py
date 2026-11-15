@@ -5,7 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mozg_outreach.agents import PromptLibrary
-from mozg_outreach.letters.models import LetterDraft
+from mozg_outreach.domain import BriefFact
+from mozg_outreach.letters.models import LetterBrief, LetterDraft
 from mozg_outreach.naturalize.models import NaturalizeResult
 from mozg_outreach.naturalize.punctuation import PunctuationChecker
 from mozg_outreach.naturalize.validation import body_word_count
@@ -18,7 +19,7 @@ from mozg_outreach.pipelines.biz.enrichment_models import (
     ReputationResult,
     TechResult,
 )
-from mozg_outreach.pipelines.biz.models import ScoutResult, Strategy
+from mozg_outreach.pipelines.biz.models import BizBrief, ScoutResult, Strategy
 from mozg_outreach.pipelines.biz.outreach import DOSSIER, BizOutreach
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.storage.models import Entity, Item, Project, Run
@@ -67,11 +68,15 @@ def outreach(session: Session, tmp_path: Path) -> tuple[BizOutreach, RecordedRun
 
 async def test_selected_item_becomes_enriched_scored_and_drafted(
     session: Session,
+    project: Project,
     item: Item,
     strategy: Strategy,
     outreach: tuple[BizOutreach, RecordedRunner],
 ) -> None:
-    service, _ = outreach
+    service, runner = outreach
+    brief = load_fixture("brief", BizBrief)
+    brief.facts = [BriefFact(label="Clients", value="Siemens", source_url="https://us.example")]
+    project.brief = brief.model_dump(mode="json")
 
     dossier = await service.enrich(item, strategy)
     batch = await service.write_letters(item, strategy)
@@ -91,6 +96,9 @@ async def test_selected_item_becomes_enriched_scored_and_drafted(
     assert PunctuationChecker().check(f"{draft.subject}\n{draft.body}") == []
     assert draft.review["problems"] == []
     assert draft.review["address"] == "hello@katanamrp.com"
+    [letter_brief] = runner.payloads["expert-copywriter"]
+    assert isinstance(letter_brief, LetterBrief)
+    assert letter_brief.sender_background == "- Clients: Siemens"
 
 
 class TestPreconditions:

@@ -26,7 +26,7 @@ A JSON object, the letter brief:
 - `verified_entities` (list of strings): the only product names, customer names, numbers and dates you may use. The recipient's and company's names are always allowed.
 - `reader_style` (object or null): how this reader prefers to be addressed. `calibration_directive` lines tell you how to shape structure, length and which angle leads. Null means use a neutral shape.
 - `sender_voice` (string): how the sender writes. It owns the register and word choice.
-- `sender_background` (string or null): the sender's CV. Set for cover letters and proposals. Every claim about the sender's experience, employers, skills and years comes from it.
+- `sender_background` (string or null): for cover letters and proposals, the sender's CV followed by extra facts; for company letters, facts about the sender's company, or null. Every claim about the sender's experience, employers, clients, skills and years comes from it.
 - `retry` (object or null): when set, your previous attempt (`previous_attempt`) broke the rules listed in `problems`. Fix those problems and keep the rest.
 
 ## How the letter works
@@ -38,12 +38,12 @@ A JSON object, the letter brief:
 
 Use at most one honest persuasion lever, and only when the brief supports it:
 
-| Lever         | Honest use in a letter                                        |
-| ------------- | ------------------------------------------------------------- |
-| Reciprocity   | Offer something useful first: a finding, a short audit, a tip |
-| Social proof  | A named similar client, only if it is in `verified_entities`  |
-| Loss aversion | A real cost they are paying now, never a manufactured fear    |
-| Unity         | Shared ground (same city, same stack), only when it is true   |
+| Lever         | Honest use in a letter                                                              |
+| ------------- | ----------------------------------------------------------------------------------- |
+| Reciprocity   | Offer something useful first: a finding, a short audit, a tip                       |
+| Social proof  | A named similar client, only if it is in `verified_entities` or `sender_background` |
+| Loss aversion | A real cost they are paying now, never a manufactured fear                          |
+| Unity         | Shared ground (same city, same stack), only when it is true                         |
 
 ## Cover letters
 

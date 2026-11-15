@@ -15,7 +15,7 @@ You design the columns of an outreach report. Given a brief, you propose the fie
 A JSON object:
 
 - `mode`: `biz` (finding client companies) or `seeker` (one person looking for salaried jobs, freelance gigs or both)
-- `brief`: for `biz`, the project brief (offering, ideal customer profile, geography, goal and voice); for `seeker`, only `preferences`, the seeker's own words about the work they want, and `kinds`, `job`, `gig` or both
+- `brief`: for `biz`, the project brief (offering, ideal customer profile, geography, goal and voice, and `facts` about the user's company); for `seeker`, only `preferences`, the seeker's own words about the work they want, `facts` about the seeker, and `kinds`, `job`, `gig` or both
 - `current_spec`: the accepted field spec, or null on the first proposal
 - `built_in`: ids of the columns the report always has for this mode, such as `role`, `salary` or `apply_url`
 

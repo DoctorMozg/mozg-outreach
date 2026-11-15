@@ -37,7 +37,7 @@ async def test_proposal_quotes_scope_and_only_supplied_prices(
             gig=hidden,
             skills=SkillMatcher(strategy).match(SCOPE),
             rate=strategy.preferences.rate_floor,
-            cv_text=CV_TEXT,
+            background=CV_TEXT,
             sender=SenderSettings(name="Stan Petrov", tone="warm"),
         )
     )

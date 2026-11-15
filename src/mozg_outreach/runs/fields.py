@@ -42,7 +42,7 @@ async def propose(ctx: Ctx) -> PhaseResult:
         # The CV isn't needed to propose fields, only what the seeker wants.
         seeker = SeekerBrief.model_validate(raw)
         kinds = [k for k in KINDS if seeker.scope(k)]
-        brief = SeekerWants(preferences=seeker.preferences, kinds=kinds)
+        brief = SeekerWants(preferences=seeker.preferences, facts=seeker.facts, kinds=kinds)
     proposal = await FieldProposer(ctx.steps).propose(
         FieldProposalInput(
             mode=inputs.mode,

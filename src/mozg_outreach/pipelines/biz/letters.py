@@ -39,6 +39,7 @@ class LetterRequest(BaseModel):
     dossier: CompanyDossier
     angles: list[Angle] = Field(min_length=1)
     sender: SenderSettings
+    background: str | None = Field(default=None, description="Facts about the sender's company.")
     voices: dict[Channel, VoiceContext] = Field(default_factory=dict)
 
 
@@ -94,6 +95,7 @@ class BizLetterWriter:
             verified_entities=evidence.verified_entities,
             reader_style=style,
             sender_voice=request.sender.voice,
+            sender_background=request.background,
         )
         party = LetterParty(recipient=contact.name, sender=request.sender.name)
         guessed = route.confidence == "guessed"

@@ -32,7 +32,9 @@ class ProposalRequest(BaseModel):
     gig: Listing
     skills: SkillMatch
     rate: Money | None = Field(description="The user's floor; the only rate a proposal may quote.")
-    cv_text: str = Field(min_length=1)
+    background: str = Field(
+        min_length=1, description="The CV and brief facts; every claim about the sender is in it."
+    )
     sender: SenderSettings
     voice: VoiceContext = Field(default_factory=lambda: VoiceContext(profile=None, samples=[]))
 
@@ -67,7 +69,7 @@ class ProposalWriter:
             verified_entities=[listing.company, listing.title, *matched, *pricing(request)],
             reader_style=None,
             sender_voice=request.sender.voice,
-            sender_background=request.cv_text,
+            sender_background=request.background,
         )
         party = LetterParty(recipient=recipient.name, sender=request.sender.name)
         logger.info("proposal for %s", listing.key)

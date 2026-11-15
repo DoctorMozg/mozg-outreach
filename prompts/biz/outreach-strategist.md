@@ -23,7 +23,7 @@ The input is a JSON object with these fields:
 - `goal` (string): the user's outreach objective, e.g. "find potential clients for our DevOps consulting in DACH region".
 - `sector` (string or null, optional): the user's sector hint.
 - `region` (string or null, optional): a hard geographic filter. When set it is the target geography: it overrides any geography in `goal` or `brief`, and `target_profile.geography` covers that region and nothing outside it.
-- `brief` (object or null, optional): the structured brief the user filled in, with `offering`, `icp`, `geography`, `goal` (with `goal.goal`, `goal.channels`, `goal.voice`, `goal.exclusions`), `competitors` and `notes`.
+- `brief` (object or null, optional): the structured brief the user filled in, with `offering`, `icp`, `geography`, `goal` (with `goal.goal`, `goal.channels`, `goal.voice`, `goal.exclusions`), `competitors`, `notes` and `facts` (extra facts about the user's company, each with `label`, `value` and `source_url`).
 - `climate` (object or null, optional): a climate report for the target sector and region, with dated `signals` (each with a `source_url` and an `outreach_implication`), `top_outreach_angles`, `climate_summary` and `overall_climate`. When present, base `timing_rationale`, strong-positive signals and outreach angles' `timing_trigger` on its signals, and name the signal you used. Don't repeat a claim the report doesn't contain. When null, research the market yourself.
 - `feedback` (string or null, optional): the user's notes on your previous strategy, which they rejected. When set, keep what they didn't object to and change what they asked for; say in `concerns` if a request conflicts with the brief.
 

@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from mozg_outreach.domain import BriefFact, facts_text
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
 
 Seniority = Literal["intern", "junior", "mid", "senior", "staff", "principal", "executive"]
@@ -118,6 +119,7 @@ class SeekerBrief(BaseModel):
 
     cv_text: str = Field(min_length=200, description="The CV as plain text or markdown.")
     preferences: str = Field(min_length=1)
+    facts: list[BriefFact] = Field(default_factory=list)
     jobs: SearchScope | None = Field(
         default=SearchScope(recency_days=7),
         title="Salaried jobs",
@@ -137,6 +139,12 @@ class SeekerBrief(BaseModel):
 
     def scope(self, kind: ListingKind) -> SearchScope | None:
         return self.jobs if kind == "job" else self.gigs
+
+    def background(self) -> str:
+        """The CV plus the brief's facts: all that a letter may claim about the sender."""
+        if not self.facts:
+            return self.cv_text
+        return f"{self.cv_text}\n\nMore facts:\n{facts_text(self.facts)}"
 
 
 class SeekerPreferences(PlacePreferences):
@@ -162,6 +170,7 @@ class KindPlan(BaseModel):
 class SeekerStrategyInput(BaseModel):
     cv_text: str
     preferences: str
+    facts: list[BriefFact]
     jobs: SearchScope | None
     gigs: SearchScope | None
     feedback: str | None = Field(default=None, description="The user's notes on a rejected draft.")

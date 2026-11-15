@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from mozg_outreach.agents import AgentOutputError
 from mozg_outreach.domain import (
+    BriefFact,
     FieldDefinition,
     FieldScalar,
     FieldSpec,
@@ -24,6 +25,7 @@ class SeekerWants(BaseModel):
     """A seeker brief without the CV, which proposing fields doesn't need."""
 
     preferences: str
+    facts: list[BriefFact]
     kinds: list[ListingKind] = Field(min_length=1, description="What is searched.")
 
 

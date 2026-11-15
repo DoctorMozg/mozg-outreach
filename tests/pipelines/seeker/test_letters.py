@@ -71,7 +71,7 @@ async def write(
             judgment=judgment(),
             contacts=found,
             skills=SkillMatcher(strategy).match(item.summary),
-            cv_text=CV_TEXT,
+            background=CV_TEXT,
             sender=SenderSettings(name="Stan Petrov", tone="warm"),
         )
     )

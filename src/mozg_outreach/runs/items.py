@@ -104,7 +104,7 @@ async def seeker_letter(ctx: Ctx) -> PhaseResult:
     strategy = SeekerStrategy.model_validate(state["strategy"])
     listing, judgment = listing_of(item)
     inputs = ProjectInputs.load(ctx.db, ctx.project_id)
-    cv_text = SeekerBrief.model_validate(inputs.require_brief()).cv_text
+    background = SeekerBrief.model_validate(inputs.require_brief()).background()
     skills = SkillMatcher(strategy).match(listing_text(listing))
     naturalizer = Naturalizer(ctx.steps)
     if listing.kind == "gig":
@@ -113,7 +113,7 @@ async def seeker_letter(ctx: Ctx) -> PhaseResult:
                 gig=listing,
                 skills=skills,
                 rate=strategy.preferences.rate_floor,
-                cv_text=cv_text,
+                background=background,
                 sender=inputs.sender(),
                 voice=load_voice(ctx.db, "proposal"),
             )
@@ -126,7 +126,7 @@ async def seeker_letter(ctx: Ctx) -> PhaseResult:
                 judgment=judgment,
                 contacts=JobContacts.model_validate(found) if found else None,
                 skills=skills,
-                cv_text=cv_text,
+                background=background,
                 sender=inputs.sender(),
                 voice=load_voice(ctx.db, "cover_letter"),
             )

@@ -86,6 +86,20 @@ class FieldSpec(BaseModel):
 type FieldScalar = str | int | float | bool | list[str] | None
 
 
+class BriefFact(BaseModel):
+    """A fact about the user or their company that the brief's own fields have no place for."""
+
+    label: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+    source_url: str | None = Field(
+        default=None, description="The page it was read on; null when the user or the CV says it."
+    )
+
+
+def facts_text(facts: list[BriefFact]) -> str:
+    return "\n".join(f"- {fact.label}: {fact.value}" for fact in facts)
+
+
 class FieldValue(BaseModel):
     """An extracted value with the evidence it came from."""
 

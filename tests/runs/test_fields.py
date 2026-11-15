@@ -2,6 +2,7 @@ import pytest
 from sqlalchemy import select
 
 from mozg_outreach.domain import (
+    BriefFact,
     FieldDefinition,
     FieldSpec,
     FieldType,
@@ -29,6 +30,7 @@ SPEC = FieldSpec(
     ]
 )
 OTHER_URL = "https://boards.greenhouse.io/acme/jobs/2"
+NOTICE = BriefFact(label="Notice period", value="One month")
 
 
 def accept_spec(harness: Harness, project_id: int) -> None:
@@ -68,7 +70,7 @@ class TestFieldProposal:
     async def test_seeker_proposes_from_preferences_without_cv_or_brief_review(
         self, harness: Harness
     ) -> None:
-        project_id = harness.seeker_project(gigs=True)
+        project_id = harness.seeker_project(gigs=True, facts=[NOTICE])
         harness.script({"field-proposer": [FieldProposal(spec=SPEC, rationale="r")]})
         run_id = harness.manager.start(project_id, "seeker.fields", {})
         await harness.manager.wait(run_id)
@@ -77,6 +79,7 @@ class TestFieldProposal:
         assert sent.model_dump(mode="json")["mode"] == "seeker"
         assert sent.model_dump(mode="json")["brief"] == {
             "preferences": "Remote EU",
+            "facts": [NOTICE.model_dump()],
             "kinds": ["job", "gig"],
         }
         assert "brief-reviewer" not in harness.runner.payloads

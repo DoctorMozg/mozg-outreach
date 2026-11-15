@@ -78,6 +78,27 @@ function ObjectFields({ schema, root, value, onChange }: { schema: Schema; root:
             </fieldset>
           );
         }
+        const row = field.type === "array" && field.items ? resolve(field.items, root) : null;
+        if (row?.type === "object") {
+          const rows = Array.isArray(current) ? (current as Json[]) : [];
+          return (
+            <fieldset key={name}>
+              <legend>{label}</legend>
+              {field.description && <p className="hint">{field.description}</p>}
+              {rows.map((entry, index) => (
+                <div key={index} className="stack">
+                  <ObjectFields schema={row} root={root} value={entry} onChange={(v) => set(rows.map((r, i) => (i === index ? v : r)))} />
+                  <button className="secondary" onClick={() => set(rows.filter((_, i) => i !== index))}>
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button className="secondary" onClick={() => set([...rows, {}])}>
+                Add
+              </button>
+            </fieldset>
+          );
+        }
         return (
           <label key={name} className="field">
             <span>{label}</span>

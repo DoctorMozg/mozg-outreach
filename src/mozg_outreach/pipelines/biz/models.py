@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from mozg_outreach.domain import BriefFact, facts_text
+
 CONCERNS_DESCRIPTION = (
     "Caveats for the user: source conflicts, unverified claims, partial coverage. Empty if none."
 )
@@ -44,6 +46,11 @@ class BizBrief(BaseModel):
     goal: GoalAndVoice = Field(title="Goal and voice")
     competitors: list[str] = Field(default_factory=list)
     notes: str = ""
+    facts: list[BriefFact] = Field(default_factory=list)
+
+    def background(self) -> str | None:
+        """What letters may claim about the sender's company beyond the offering."""
+        return facts_text(self.facts) or None
 
 
 class BriefGap(BaseModel):

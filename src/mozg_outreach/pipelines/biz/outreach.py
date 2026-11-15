@@ -19,7 +19,7 @@ from mozg_outreach.pipelines.biz.letters import (
     LetterBatch,
     LetterRequest,
 )
-from mozg_outreach.pipelines.biz.models import Strategy
+from mozg_outreach.pipelines.biz.models import BizBrief, Strategy
 from mozg_outreach.pipelines.biz.registry_ingest import BizRegistryIngest
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.registry.ingest import IngestContext
@@ -84,6 +84,9 @@ class BizOutreach:
                     "voice": strategy.sender_voice,
                 }
             ),
+            background=BizBrief.model_validate(project.brief).background()
+            if project.brief
+            else None,
             voices={channel: self._voice(channel) for channel in get_args(Channel)},
         )
         writer = BizLetterWriter(self._steps, Naturalizer(self._steps))

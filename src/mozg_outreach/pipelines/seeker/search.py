@@ -76,6 +76,7 @@ class SeekerSearch:
         payload = SeekerStrategyInput(
             cv_text=brief.cv_text,
             preferences=brief.preferences,
+            facts=brief.facts,
             jobs=brief.jobs,
             gigs=brief.gigs,
             feedback=feedback,
