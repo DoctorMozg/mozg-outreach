@@ -1,6 +1,7 @@
 """One person's search for jobs and gigs as phases: plan, strategy gate, boards, Telegram
 channels, collect, screen, judge, score, identify, report fields and summary."""
 
+import hashlib
 import logging
 from collections import Counter
 from datetime import UTC, datetime, timedelta
@@ -10,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from mozg_outreach.domain import FieldSpec, ItemScore
+from mozg_outreach.domain import FieldSpec, ItemScore, RunStatus
 from mozg_outreach.pipelines.leads.enrichment import IDENTITY, LeadEnrichment, LeadTask, RunRef
 from mozg_outreach.pipelines.leads.fields import FieldTask, LeadFieldResearch, field_task
 from mozg_outreach.pipelines.leads.identify import lead_input
@@ -36,9 +37,23 @@ from mozg_outreach.pipelines.summary import (
     SeekerSummaryInput,
     stored_items,
 )
-from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
+from mozg_outreach.runs.flow import (
+    Approval,
+    FlowContext,
+    FlowSpec,
+    GateAnswer,
+    Phase,
+    PhaseResult,
+    RunState,
+)
 from mozg_outreach.runs.inputs import ProjectInputs
-from mozg_outreach.sources.telegram import TelegramAdapter, TelegramConfig, channel_username
+from mozg_outreach.sources.telegram import (
+    TelegramAdapter,
+    TelegramConfig,
+    TelegramConfigError,
+    TelegramCredentials,
+    channel_username,
+)
 from mozg_outreach.sources.telegram_discovery import (
     MAX_QUERIES,
     ChannelDiscovery,
@@ -46,7 +61,7 @@ from mozg_outreach.sources.telegram_discovery import (
     FoundChannel,
 )
 from mozg_outreach.storage.db import Database
-from mozg_outreach.storage.models import Item, SourceConfig
+from mozg_outreach.storage.models import Item, JsonObject, Run, SourceConfig
 from mozg_outreach.storage.repositories import ItemRepository
 
 logger = logging.getLogger(__name__)
@@ -58,6 +73,10 @@ MAX_EXCLUDED_KEPT = 100
 
 
 class SeekerOptions(BaseModel):
+    reuse_last_strategy: bool = Field(
+        default=True,
+        description="Reuse the last search's strategy and boards while the brief is unchanged.",
+    )
     max_boards: int = Field(default=4, ge=0, le=15, description="Web boards scouted by agents.")
     research_fields_top: int = Field(
         default=10, ge=0, le=30, description="Best leads whose report fields are researched."
@@ -72,6 +91,10 @@ class ChannelChoice(BaseModel):
 class SeekerSearchState(RunState):
     options: SeekerOptions = Field(default_factory=SeekerOptions)
     strategy: SeekerStrategy | None = None
+    brief_hash: str | None = Field(
+        default=None, description="The brief the strategy was planned from."
+    )
+    reused_from: int | None = Field(default=None, description="The run the strategy came from.")
     boards: list[Board] = Field(default_factory=list)
     guidance: list[Board] = Field(default_factory=list, description="Gated networks to apply to.")
     found: ChannelChoice | None = Field(default=None, description="Telegram channels to approve.")
@@ -113,9 +136,49 @@ def _sources(ctx: Ctx) -> list[SourceConfig]:
 
 
 async def plan(ctx: Ctx) -> PhaseResult:
-    ctx.state.strategy = await _search(ctx).plan(_brief(ctx), ctx.state.feedback)
-    ctx.emit("strategy", {"concerns": ctx.state.strategy.concerns})
+    brief = _brief(ctx)
+    ctx.state.brief_hash = hashlib.sha256(brief.model_dump_json().encode()).hexdigest()
+    last = _last_search(ctx) if ctx.state.options.reuse_last_strategy else None
+    # Gate feedback asks for a new plan, so it never reuses.
+    if last and last.state.brief_hash == ctx.state.brief_hash and not ctx.state.feedback:
+        ctx.state.strategy = last.state.strategy
+        ctx.state.reused_from = last.state.reused_from or last.run_id
+        ctx.state.boards, ctx.state.guidance = last.state.boards, last.state.guidance
+        # The user approved this strategy in its own run, so its gate passes without asking again.
+        ctx.state.answers[approve_strategy.kind] = GateAnswer(approve=True)
+        logger.info("run %d reuses the strategy of run %d", ctx.run_id, ctx.state.reused_from)
+    else:
+        ctx.state.strategy = await _search(ctx).plan(brief, ctx.state.feedback)
+        ctx.state.reused_from = None
+    payload: JsonObject = {"concerns": _strategy(ctx).concerns}
+    if ctx.state.reused_from is not None:
+        payload["reused_from"] = ctx.state.reused_from
+    ctx.emit("strategy", payload)
     return None
+
+
+class _LastSearch(BaseModel):
+    run_id: int
+    state: SeekerSearchState
+
+
+def _last_search(ctx: Ctx) -> _LastSearch | None:
+    """The newest finished search of this project, whose strategy the user approved."""
+    with ctx.db.session() as session:
+        row = session.scalars(
+            select(Run)
+            .where(
+                Run.project_id == ctx.project_id,
+                Run.pipeline == SEEKER_SEARCH.pipeline,
+                Run.status == RunStatus.COMPLETE,
+            )
+            .order_by(Run.id.desc())
+            .limit(1)
+        ).first()
+        if row is None or not row.state:
+            return None
+        last = _LastSearch(run_id=row.id, state=SeekerSearchState.model_validate(row.state))
+    return last if last.state.strategy else None
 
 
 approve_strategy = Approval[SeekerSearchState](
@@ -128,6 +191,8 @@ async def boards(ctx: Ctx) -> PhaseResult:
     web = any(s.kind == WEB_SEARCH for s in _sources(ctx))
     if not web or ctx.state.options.max_boards == 0:
         ctx.state.boards, ctx.state.guidance = [], []
+        return None
+    if ctx.state.reused_from is not None:
         return None
     choice = await _search(ctx).boards(_strategy(ctx))
     ranked = sorted(choice.scouted, key=lambda b: b.relevance_score, reverse=True)
@@ -190,11 +255,23 @@ def _discovery_terms(strategy: SeekerStrategy) -> list[str]:
 
 
 def _discovering(ctx: Ctx) -> list[SourceConfig]:
-    return [
-        r
-        for r in _sources(ctx)
-        if r.kind == TelegramAdapter.name and TelegramConfig.model_validate(r.config).discover
-    ]
+    return [r for r in _telegram(ctx) if TelegramConfig.model_validate(r.config).discover]
+
+
+def _telegram(ctx: Ctx) -> list[SourceConfig]:
+    """Enabled Telegram sources; without API keys they are skipped like a failing feed."""
+    rows = [r for r in _sources(ctx) if r.kind == TelegramAdapter.name]
+    if not rows:
+        return []
+    try:
+        TelegramCredentials.from_env()
+    except TelegramConfigError as exc:
+        note = f"telegram skipped: {exc}"
+        if note not in ctx.state.concerns:
+            logger.warning(note)
+            ctx.state.concerns.append(note)
+        return []
+    return rows
 
 
 def _save_channels(ctx: Ctx, choice: ChannelChoice) -> None:
@@ -225,7 +302,7 @@ async def collect(ctx: Ctx) -> PhaseResult:
     rows = [s for s in _sources(ctx) if s.kind not in {WEB_SEARCH, TelegramAdapter.name}]
     scouted: list[SourcedListing] = []
     widest = max(_scope_days(brief, k) for k in kinds) if kinds else 0
-    for row in (s for s in _sources(ctx) if s.kind == TelegramAdapter.name and kinds):
+    for row in _telegram(ctx) if kinds else []:
         posts = await TelegramPosts(ctx.steps).collect(
             ctx.adapters(row.kind, row.config),
             TelegramRequest(

@@ -7,7 +7,7 @@ from mozg_outreach.domain import IdentifierKind, RunStatus, SourceKind
 from mozg_outreach.pipelines.seeker.models import JudgeResult, SeekerStrategy
 from mozg_outreach.pipelines.seeker.telegram_posts import ParsedPost, ParserResult
 from mozg_outreach.runs.flow import GateAnswer
-from mozg_outreach.runs.seeker import ChannelChoice, _discovery_terms
+from mozg_outreach.runs.seeker import ChannelChoice, SeekerSearchState, _discovery_terms
 from mozg_outreach.sources import telegram_discovery
 from mozg_outreach.sources.telegram import (
     ChannelMessage,
@@ -124,8 +124,11 @@ class TestChannelDiscovery:
         script(harness, strategy)
         again = harness.manager.start(project_id, "seeker.search", {})
         await harness.manager.wait(again)
-        rerun = await answer(harness, again, GateAnswer(approve=True))
-        assert rerun.status == RunStatus.COMPLETE, "nothing new to offer, so no channel gate"
+        # The strategy is reused and no new channel is found, so neither gate stops the run.
+        with harness.db.session() as db:
+            finished = db.get(Run, again)
+            assert finished is not None
+            assert finished.status == RunStatus.COMPLETE, finished.pending_gate
         assert telegram_config(harness).channels == ["py_jobs"]
         assert session.reads[-1] == ("py_jobs", 2), "the second run resumes from the cursor"
 
@@ -143,6 +146,26 @@ class TestChannelDiscovery:
         done = await answer(harness, run_id, GateAnswer(approve=True))
         assert done.status == RunStatus.COMPLETE
         assert session.queries == []
+
+    async def test_missing_api_keys_skip_telegram_instead_of_failing_the_run(
+        self, harness: Harness, strategy: SeekerStrategy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("TELEGRAM_API_ID", raising=False)
+        monkeypatch.delenv("TELEGRAM_API_HASH", raising=False)
+        harness.adapters["telegram"] = lambda c: TelegramAdapter(TelegramConfig.model_validate(c))
+        project_id = harness.seeker_project()
+        with harness.db.session() as db:
+            config = {"discover": True, "channels": ["py_jobs"]}
+            db.add(SourceConfig(project_id=project_id, kind="telegram", config=config))
+        script(harness, strategy)
+        run_id = harness.manager.start(project_id, "seeker.search", {})
+        await harness.manager.wait(run_id)
+
+        done = await answer(harness, run_id, GateAnswer(approve=True))
+        assert done.status == RunStatus.COMPLETE, done.error
+        concerns = SeekerSearchState.model_validate(done.state).concerns
+        skipped = [c for c in concerns if c.startswith("telegram skipped")]
+        assert skipped == ["telegram skipped: environment variable TELEGRAM_API_ID is not set"]
 
 
 def test_discovery_searches_cv_skills_when_the_gate_cleared_must_haves(

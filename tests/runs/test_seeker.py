@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy import select
 
 from mozg_outreach.domain import BriefFact, FieldValue, ItemKind, RunStatus
@@ -11,9 +12,9 @@ from mozg_outreach.pipelines.seeker.models import (
     SeekerStrategy,
 )
 from mozg_outreach.runs.flow import GateAnswer
-from mozg_outreach.runs.seeker import WEB_SEARCH
+from mozg_outreach.runs.seeker import WEB_SEARCH, SeekerSearchState
 from mozg_outreach.sources.models import SourceItem
-from mozg_outreach.storage.models import Draft, Item, Run, SourceConfig
+from mozg_outreach.storage.models import Draft, Item, Project, Run, SourceConfig
 from tests.pipelines.conftest import Scripted
 from tests.pipelines.leads.conftest import company, identity
 from tests.pipelines.seeker.conftest import CV_TEXT, GIG_URL, SCOPE, judgment
@@ -166,3 +167,60 @@ async def test_one_search_reports_jobs_and_gigs_and_drafts_a_letter_for_each(
     with harness.db.session() as session:
         channels = {d.item_id: d.channel for d in session.scalars(select(Draft))}
     assert channels == {ids[ItemKind.JOB]: "cover_letter", ids[ItemKind.GIG]: "proposal"}
+
+
+class TestReuseLastStrategy:
+    async def approved_search(self, harness: Harness, strategy: SeekerStrategy) -> tuple[int, int]:
+        """A finished first search whose strategy the user edited at the gate."""
+        project_id = harness.seeker_project()
+        judged = JudgeResult(judgments=[judgment(FEED_URL)], concerns=[])
+        harness.script(
+            {
+                "seeker-strategist": [strategy, strategy],
+                "seeker-judge": [judged, judged],
+                "lead-identifier": [identity(), identity()],
+            }
+        )
+        run_id = harness.manager.start(project_id, "seeker.search", {})
+        await harness.manager.wait(run_id)
+        edited = strategy.model_copy(update={"must_have_skills": ["Python", "Go"]})
+        revised = edited.model_dump(mode="json")
+        harness.manager.answer_gate(run_id, GateAnswer(approve=True, revised=revised))
+        assert (await finish(harness, run_id)).status == RunStatus.COMPLETE
+        return project_id, run_id
+
+    async def test_next_search_reuses_the_approved_strategy_without_asking(
+        self, harness: Harness, strategy: SeekerStrategy
+    ) -> None:
+        project_id, first = await self.approved_search(harness, strategy)
+
+        options: dict[str, object] = {"options": {"summary": False}}
+        again = await finish(harness, harness.manager.start(project_id, "seeker.search", options))
+
+        assert again.status == RunStatus.COMPLETE, again.pending_gate
+        state = SeekerSearchState.model_validate(again.state)
+        assert state.reused_from == first
+        assert state.strategy is not None
+        assert state.strategy.must_have_skills == ["Python", "Go"]
+        assert len(harness.runner.payloads["seeker-strategist"]) == 1
+
+    @pytest.mark.parametrize("change", ["brief", "opt_out"])
+    async def test_a_changed_brief_or_opting_out_plans_again(
+        self, harness: Harness, strategy: SeekerStrategy, change: str
+    ) -> None:
+        project_id, _ = await self.approved_search(harness, strategy)
+        options = {"reuse_last_strategy": False} if change == "opt_out" else {}
+        if change == "brief":
+            with harness.db.session() as session:
+                project = session.get(Project, project_id)
+                assert project is not None
+                assert project.brief is not None
+                project.brief = {**project.brief, "preferences": "Remote worldwide"}
+
+        again = await finish(
+            harness, harness.manager.start(project_id, "seeker.search", {"options": options})
+        )
+
+        assert (again.status, again.phase) == (RunStatus.AWAITING_GATE, "approve_strategy")
+        assert SeekerSearchState.model_validate(again.state).reused_from is None
+        assert len(harness.runner.payloads["seeker-strategist"]) == 2

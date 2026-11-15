@@ -190,6 +190,8 @@ class TestSearchFields:
         await finished_search(harness, project_id, {})
         accept_spec(harness, project_id)
         harness.script(script)
-        await finished_search(harness, project_id, {"research_fields_top": 0})
+        await finished_search(
+            harness, project_id, {"research_fields_top": 0, "reuse_last_strategy": False}
+        )
 
         assert "field-researcher" not in harness.runner.payloads
