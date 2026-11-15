@@ -38,9 +38,16 @@ class TestMigrate:
         self, tmp_path: Path, head: str
     ) -> None:
         db = Database(tmp_path / "legacy.db")
-        Base.metadata.create_all(db.engine)
-        with db.session() as session:
-            session.add(Project(name="Kept", mode=ProjectMode.BIZ, brief=None))
+        # Databases from before migrations have the baseline tables and no alembic_version.
+        with db.engine.begin() as connection:
+            command.upgrade(alembic_config(connection), BASELINE)
+            connection.execute(text("DROP TABLE alembic_version"))
+            connection.execute(
+                text(
+                    "INSERT INTO projects (name, mode, sender_tone, created_at) "
+                    "VALUES ('Kept', 'BIZ', 'neutral', '2026-11-01')"
+                )
+            )
 
         db.migrate()
 

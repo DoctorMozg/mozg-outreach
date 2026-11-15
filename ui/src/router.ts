@@ -7,6 +7,7 @@ export type Route =
   | { page: "run"; id: number }
   | { page: "item"; id: number }
   | { page: "voice" }
+  | { page: "cvs" }
   | { page: "registry" }
   | { page: "entity"; id: number };
 
@@ -21,6 +22,7 @@ export function parse(hash: string): Route {
     case "entity":
       return { page, id: num };
     case "voice":
+    case "cvs":
     case "registry":
       return { page };
     default:
@@ -44,6 +46,7 @@ export const href = {
   run: (id: number) => `#/run/${id}`,
   item: (id: number) => `#/item/${id}`,
   voice: () => "#/voice",
+  cvs: () => "#/cvs",
   registry: () => "#/registry",
   entity: (id: number) => `#/entity/${id}`,
 };

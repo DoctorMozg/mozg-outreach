@@ -13,6 +13,7 @@ import { Projects } from "./pages/Projects";
 import { EntityView, Registry } from "./pages/Registry";
 import { RunView } from "./pages/RunView";
 import { Voice } from "./pages/Voice";
+import { Cvs } from "./pages/Cvs";
 import { type Route, useRoute } from "./router";
 import { theme } from "./theme";
 
@@ -28,6 +29,8 @@ function Page({ route }: { route: Route }): ReactElement {
       return <ItemView id={route.id} />;
     case "voice":
       return <Voice />;
+    case "cvs":
+      return <Cvs />;
     case "registry":
       return <Registry />;
     case "entity":

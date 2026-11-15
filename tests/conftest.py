@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from mozg_outreach.domain import ProjectMode
 from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import Project, Run
+from tests.cvs.pdfs import CV_LINES, make_pdf
 
 
 @pytest.fixture
@@ -36,3 +37,9 @@ def run(session: Session, project: Project) -> Run:
     session.add(r)
     session.flush()
     return r
+
+
+@pytest.fixture
+def cv_pdf() -> bytes:
+    """A CV with a real text layer."""
+    return make_pdf(CV_LINES)

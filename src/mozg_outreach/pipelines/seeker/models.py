@@ -140,11 +140,12 @@ class SeekerBrief(BaseModel):
     def scope(self, kind: ListingKind) -> SearchScope | None:
         return self.jobs if kind == "job" else self.gigs
 
-    def background(self) -> str:
-        """The CV plus the brief's facts: all that a letter may claim about the sender."""
+    def background(self, cv_text: str | None = None) -> str:
+        """The CV (the brief's unless one is given) plus the facts: all a letter may claim."""
+        cv = cv_text or self.cv_text
         if not self.facts:
-            return self.cv_text
-        return f"{self.cv_text}\n\nMore facts:\n{facts_text(self.facts)}"
+            return cv
+        return f"{cv}\n\nMore facts:\n{facts_text(self.facts)}"
 
 
 class SeekerPreferences(PlacePreferences):

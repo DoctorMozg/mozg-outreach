@@ -250,6 +250,49 @@ export async function call<T>(method: string, path: string, body?: unknown): Pro
 
 export const get = <T,>(path: string) => call<T>("GET", path);
 
+/** Sends a file as the raw request body, with its own content type. */
+export async function upload<T>(path: string, file: File): Promise<T> {
+  const response = await fetch(path, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+  if (!response.ok) {
+    const payload: { detail?: unknown } = await response.json().catch(() => ({}));
+    throw new ApiError(response.status, detailText(payload.detail ?? response.statusText));
+  }
+  return (await response.json()) as T;
+}
+
+export interface CvSummary {
+  language: string;
+  headline: string;
+  seniority: string;
+  titles: string[];
+  domains: string[];
+  core_skills: string[];
+}
+
+export interface Cv {
+  id: number;
+  name: string;
+  filename: string;
+  /** Null until the profiler has read it. */
+  summary: CvSummary | null;
+  created_at: string;
+}
+
+export interface CvUpload {
+  cv: Cv;
+  concerns: string[];
+  cost_usd: number;
+}
+
+/** The CV to send for one job or gig, stored on the lead as `details.cv_choice`. */
+export interface CvChoice {
+  cv_id: number;
+  picked_by: "ratings" | "only" | "user";
+  listing_language: string | null;
+  ranked: { cv_id: number; name: string; total: number | null; in_listing_language: boolean; reason: string | null }[];
+  concerns: string[];
+}
+
 export interface BriefDraft {
   brief: Json;
   concerns: string[];

@@ -3,6 +3,9 @@
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from mozg_outreach.cvs.library import CvLibrary
+from mozg_outreach.cvs.models import CV_CHOICE, CvChoice
+from mozg_outreach.cvs.picker import CvPicker
 from mozg_outreach.domain import ItemKind
 from mozg_outreach.letters.composer import WrittenLetter
 from mozg_outreach.letters.models import Skipped
@@ -11,7 +14,12 @@ from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.biz.outreach import BizOutreach
 from mozg_outreach.pipelines.leads.ingest import LeadRegistryIngest
 from mozg_outreach.pipelines.seeker.letters import CoverLetterRequest, JobLetterWriter
-from mozg_outreach.pipelines.seeker.models import JobContacts, SeekerBrief, SeekerStrategy
+from mozg_outreach.pipelines.seeker.models import (
+    JobContacts,
+    Listing,
+    SeekerBrief,
+    SeekerStrategy,
+)
 from mozg_outreach.pipelines.seeker.proposals import ProposalRequest, ProposalWriter
 from mozg_outreach.pipelines.seeker.screening import listing_text
 from mozg_outreach.pipelines.seeker.search import SeekerSearch
@@ -98,13 +106,36 @@ async def seeker_enrich(ctx: Ctx) -> PhaseResult:
     return None
 
 
+async def _cv_text(ctx: Ctx, item: Item, listing: Listing) -> str | None:
+    """The text of the CV to send: the lead's earlier pick, else a new one; None without CVs."""
+    with ctx.db.session() as session:
+        library = CvLibrary(session)
+        texts = {cv.id: cv.text for cv in library.all()}
+        options = library.options()
+    stored = item.details.get(CV_CHOICE)
+    choice = CvChoice.model_validate(stored) if stored else None
+    if choice is not None and choice.cv_id in texts:
+        return texts[choice.cv_id]
+    if not options:
+        if texts:
+            ctx.state.concerns.append("No CV has a profile yet, so the brief's CV was used.")
+        return None
+    choice = await CvPicker(ctx.steps).pick(listing, options)
+    with ctx.db.session() as session:
+        ItemRepository(session).set_detail(_row(session, ctx.state.item_id), CV_CHOICE, choice)
+    ctx.state.concerns += choice.concerns
+    ctx.emit("cv", {"cv_id": choice.cv_id, "picked_by": choice.picked_by})
+    return texts[choice.cv_id]
+
+
 async def seeker_letter(ctx: Ctx) -> PhaseResult:
     """A cover letter for a job, a proposal for a gig."""
     item, state = _item(ctx)
     strategy = SeekerStrategy.model_validate(state["strategy"])
     listing, judgment = listing_of(item)
     inputs = ProjectInputs.load(ctx.db, ctx.project_id)
-    background = SeekerBrief.model_validate(inputs.require_brief()).background()
+    cv_text = await _cv_text(ctx, item, listing)
+    background = SeekerBrief.model_validate(inputs.require_brief()).background(cv_text)
     skills = SkillMatcher(strategy).match(listing_text(listing))
     naturalizer = Naturalizer(ctx.steps)
     if listing.kind == "gig":

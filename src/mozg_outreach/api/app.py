@@ -18,7 +18,7 @@ from mozg_outreach.agents import (
     RunnerSettings,
     StepRunner,
 )
-from mozg_outreach.api.routes import briefs, items, projects, registry, runs, voice
+from mozg_outreach.api.routes import briefs, cvs, items, projects, registry, runs, voice
 from mozg_outreach.api.services import Services
 from mozg_outreach.api.settings import Settings
 from mozg_outreach.runs.catalog import FLOWS
@@ -96,7 +96,7 @@ def create_app(
     # A failed agent call in a request (voice profile, brief draft) is an upstream failure.
     app.add_exception_handler(AgentRunError, _error(502))
     app.add_exception_handler(AgentOutputError, _error(502))
-    for module in (projects, briefs, runs, items, voice, registry):
+    for module in (projects, briefs, runs, items, cvs, voice, registry):
         app.include_router(module.router)
     if settings.ui_dist.is_dir():
         app.mount("/", StaticFiles(directory=settings.ui_dist, html=True), name="ui")

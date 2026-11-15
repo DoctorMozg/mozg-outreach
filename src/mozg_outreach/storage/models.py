@@ -1,7 +1,7 @@
 import logging
 from datetime import UTC, date, datetime
 
-from sqlalchemy import JSON, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, ForeignKey, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from mozg_outreach.domain import (
@@ -177,6 +177,21 @@ class Interaction(Base):
     kind: Mapped[str] = mapped_column(String(40))
     note: Mapped[str] = mapped_column(Text, default="")
     happened_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class Cv(Base):
+    """One of the user's CV files; `summary` is the AI profile the user can correct."""
+
+    __tablename__ = "cvs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    filename: Mapped[str] = mapped_column(String(200))
+    # Deferred: lists and picks need the text, only a download needs the file.
+    pdf: Mapped[bytes] = mapped_column(LargeBinary, deferred=True)
+    text: Mapped[str] = mapped_column(Text)
+    summary: Mapped[JsonObject | None]
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
 class VoiceSample(Base):

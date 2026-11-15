@@ -13,7 +13,7 @@ import {
   useMantineColorScheme,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
-import { IconAddressBook, IconFeather, IconMoon, IconPlus, IconRadar2, IconSun } from "@tabler/icons-react";
+import { IconAddressBook, IconFeather, IconFileCv, IconMoon, IconPlus, IconRadar2, IconSun } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactElement, ReactNode } from "react";
 import { get, type Project } from "../api";
@@ -89,6 +89,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
             active={route.page === "registry" || route.page === "entity"}
             onClick={nav.close}
           />
+          <NavLink href={href.cvs()} label="Your CVs" leftSection={<IconFileCv size={18} />} active={route.page === "cvs"} onClick={nav.close} />
           <NavLink href={href.voice()} label="Your voice" leftSection={<IconFeather size={18} />} active={route.page === "voice"} onClick={nav.close} />
         </AppShell.Section>
       </AppShell.Navbar>

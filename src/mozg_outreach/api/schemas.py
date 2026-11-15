@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
+from mozg_outreach.cvs.models import CvSummary
 from mozg_outreach.domain import EntityKind, IdentifierKind, ItemKind, ProjectMode, RunStatus
 from mozg_outreach.letters.models import Tone
 from mozg_outreach.naturalize.models import Channel
@@ -276,3 +277,26 @@ class BriefDraftOut(BaseModel):
     concerns: list[str]
     field_version: int | None = Field(description="The drafted field spec, not yet accepted.")
     cost_usd: float
+
+
+class CvOut(Row):
+    id: int
+    name: str
+    filename: str
+    summary: CvSummary | None
+    created_at: datetime
+
+
+class CvUploadOut(BaseModel):
+    cv: CvOut
+    concerns: list[str]
+    cost_usd: float
+
+
+class CvPatch(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    summary: CvSummary | None = None
+
+
+class CvPick(BaseModel):
+    cv_id: int | None = Field(description="Null clears the pick, so the next letter picks again.")

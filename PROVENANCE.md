@@ -11,7 +11,7 @@ The agent prompts and reference material here come from [claude-pipelines](https
 
 `prompts/biz/run-summarizer.md` is adapted from upstream `outreach-reporter`. Upstream `outreach-enrichment-orchestrator` and `outreach-card-writer` were dropped: Python fans out enrichment and builds the report from the database.
 
-The seeker strategist, source researcher, scout and judge each merge the upstream job and freelance agents of the same role, and `prompts/seeker/sources/boards.json` merges both source catalogs. `prompts/shared/seeker-run-summarizer.md` adapts `run-summarizer` to seeker leads. `prompts/seeker/telegram-post-parser.md` and `prompts/shared/{biz,seeker}-brief-writer.md` have no upstream: they were written here.
+The seeker strategist, source researcher, scout and judge each merge the upstream job and freelance agents of the same role, and `prompts/seeker/sources/boards.json` merges both source catalogs. `prompts/shared/seeker-run-summarizer.md` adapts `run-summarizer` to seeker leads. `prompts/seeker/telegram-post-parser.md`, `prompts/seeker/cv-{profiler,picker}.md` and `prompts/shared/{biz,seeker}-brief-writer.md` have no upstream: they were written here.
 
 The forked `expert-copywriter` is cut down to short outreach letters; the general marketing formats (landing pages, changelogs) were dropped.
 

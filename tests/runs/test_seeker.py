@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import select
 
+from mozg_outreach.cvs.models import CV_CHOICE, CvChoice, CvRating, CvRatings, CvSummary
 from mozg_outreach.domain import BriefFact, FieldValue, ItemKind, RunStatus
 from mozg_outreach.letters.models import LetterBrief, LetterDraft
 from mozg_outreach.naturalize.models import NaturalizeResult
@@ -19,7 +20,7 @@ from mozg_outreach.runs.seeker import (
     listing_of,
 )
 from mozg_outreach.sources.models import SourceItem
-from mozg_outreach.storage.models import Draft, Item, Project, Run, SourceConfig
+from mozg_outreach.storage.models import Cv, Draft, Item, Project, Run, SourceConfig
 from tests.pipelines.conftest import Scripted
 from tests.pipelines.leads.conftest import company, identity
 from tests.pipelines.seeker.conftest import CV_TEXT, GIG_URL, SCOPE, judgment
@@ -298,3 +299,83 @@ class TestReuseLastStrategy:
         assert (again.status, again.phase) == (RunStatus.AWAITING_GATE, "approve_strategy")
         assert SeekerSearchState.model_validate(again.state).reused_from is None
         assert len(harness.runner.payloads["seeker-strategist"]) == 2
+
+
+async def search_one_job(harness: Harness, strategy: SeekerStrategy) -> tuple[int, int]:
+    """A finished search that reported the feed's one job, selected; project and item ids."""
+    project_id = harness.seeker_project()
+    harness.script(
+        {
+            "seeker-strategist": [strategy],
+            "seeker-judge": [JudgeResult(judgments=[judgment(FEED_URL)], concerns=[])],
+            "lead-identifier": [identity(company())],
+        }
+    )
+    search = harness.manager.start(project_id, "seeker.search", {"options": OPTIONS})
+    await harness.manager.wait(search)
+    harness.manager.answer_gate(search, GateAnswer(approve=True))
+    assert (await finish(harness, search)).status == RunStatus.COMPLETE
+    with harness.db.session() as session:
+        job = session.scalars(select(Item)).one()
+        job.selected = True
+        return project_id, job.id
+
+
+class TestCvChoice:
+    TEXTS = ("Data engineer CV: Airflow, dbt and Spark.", "Backend CV: Python, FastAPI, Kafka.")
+
+    async def searched_job(self, harness: Harness, strategy: SeekerStrategy) -> int:
+        project_id, _ = await search_one_job(harness, strategy)
+        with harness.db.session() as session:
+            for n, text in enumerate(self.TEXTS):
+                summary = CvSummary(
+                    language="en",
+                    headline=text.split(":")[0],
+                    seniority="senior",
+                    titles=["Engineer"],
+                    domains=[],
+                    core_skills=[],
+                )
+                session.add(
+                    Cv(
+                        name=f"CV {n}",
+                        filename=f"{n}.pdf",
+                        pdf=b"%PDF",
+                        text=text,
+                        summary=summary.model_dump(),
+                    )
+                )
+            return project_id
+
+    async def test_the_letter_is_written_from_the_picked_cv_and_the_pick_is_kept(
+        self, harness: Harness, strategy: SeekerStrategy
+    ) -> None:
+        project_id = await self.searched_job(harness, strategy)
+        with harness.db.session() as session:
+            job_id = session.scalars(select(Item.id)).one()
+            data_cv, backend_cv = session.scalars(select(Cv.id).order_by(Cv.id)).all()
+        ratings = CvRatings(
+            listing_language="en",
+            ratings=[
+                CvRating(cv_id=data_cv, skills=1, title=1, seniority=4, domain=2, reason="data"),
+                CvRating(cv_id=backend_cv, skills=4, title=4, seniority=4, domain=2, reason="api"),
+            ],
+            concerns=[],
+        )
+        harness.script({"cv-picker": [ratings], **letter("Dear Hiring Team,", BODY)})
+        harness.script(letter("Dear Hiring Team,", BODY))
+
+        for _ in range(2):
+            run_id = harness.manager.start(project_id, "seeker.letters", {"item_id": job_id})
+            assert (await finish(harness, run_id)).status == RunStatus.COMPLETE
+
+        assert len(harness.runner.payloads["cv-picker"]) == 1, "the second letter reuses the pick"
+        for sent in harness.runner.payloads["expert-copywriter"]:
+            assert isinstance(sent, LetterBrief)
+            assert sent.sender_background == self.TEXTS[1]
+        with harness.db.session() as session:
+            job = session.get(Item, job_id)
+            assert job is not None
+            choice = CvChoice.model_validate(job.details[CV_CHOICE])
+        assert (choice.cv_id, choice.picked_by) == (backend_cv, "ratings")
+        assert [r.cv_id for r in choice.ranked] == [backend_cv, data_cv]

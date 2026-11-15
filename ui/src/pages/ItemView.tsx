@@ -21,10 +21,10 @@ import {
   Timeline,
   Title,
 } from "@mantine/core";
-import { IconArrowLeft, IconCheck, IconCopy, IconEdit, IconMail, IconSparkles } from "@tabler/icons-react";
+import { IconArrowLeft, IconCheck, IconCopy, IconDownload, IconEdit, IconMail, IconSparkles } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
-import { call, type Draft, enrichHint, get, type ItemDetail, type Run } from "../api";
+import { call, type Cv, type CvChoice, type Draft, enrichHint, get, type ItemDetail, type Run } from "../api";
 import { ActivityBadge, Empty, ErrorBox, Score } from "../components/common";
 import { Diff } from "../components/Diff";
 import { href } from "../router";
@@ -41,6 +41,8 @@ export function ItemView({ id }: { id: number }): ReactElement {
   const refresh = (): void => void client.invalidateQueries({ queryKey: key });
   const i = item.data;
   if (!i) return <ErrorBox error={item.error} />;
+  // The CV pick has its own card; every other section is shown raw.
+  const research = Object.entries(i.details).filter(([name]) => name !== "cv_choice");
 
   return (
     <Stack maw={1400} mx="auto">
@@ -71,6 +73,7 @@ export function ItemView({ id }: { id: number }): ReactElement {
         <Grid.Col span={{ base: 12, lg: 5 }}>
           <Stack>
             <Actions item={i} onChange={refresh} />
+            {i.kind !== "company" && <CvPick item={i} onChange={refresh} />}
             {i.score && (
               <Card>
                 <Title order={4} mb="sm">
@@ -116,13 +119,13 @@ export function ItemView({ id }: { id: number }): ReactElement {
               </Title>
               <FieldList fields={i.fields} />
             </Card>
-            {Object.keys(i.details).length > 0 && (
+            {research.length > 0 && (
               <Card>
                 <Title order={4} mb="sm">
                   Research details
                 </Title>
                 <Accordion variant="contained">
-                  {Object.entries(i.details).map(([name, detail]) => (
+                  {research.map(([name, detail]) => (
                     <Accordion.Item key={name} value={name}>
                       <Accordion.Control>{name.replaceAll("_", " ")}</Accordion.Control>
                       <Accordion.Panel>
@@ -137,6 +140,74 @@ export function ItemView({ id }: { id: number }): ReactElement {
         </Grid.Col>
       </Grid>
     </Stack>
+  );
+}
+
+/** The CV this job or gig gets: picked by the ratings at the first letter, or by the user. */
+function CvPick({ item, onChange }: { item: ItemDetail; onChange: () => void }): ReactElement | null {
+  const cvs = useQuery({ queryKey: ["cvs"], queryFn: () => get<Cv[]>("/api/cvs") });
+  const choice = (item.details as { cv_choice?: CvChoice }).cv_choice ?? null;
+  const pick = useMutation({
+    mutationFn: (cvId: number | null) => call("PUT", `/api/items/${item.id}/cv`, { cv_id: cvId }),
+    onSuccess: onChange,
+  });
+  if (!cvs.data?.length) return null;
+  const picked = cvs.data.find((c) => c.id === choice?.cv_id);
+  const how = { ratings: "picked by the ratings", only: "your only CV", user: "your pick" } as const;
+  return (
+    <Card>
+      <Group justify="space-between" mb="xs">
+        <Title order={4}>CV to send</Title>
+        {picked && (
+          <Button size="xs" variant="default" component="a" href={`/api/cvs/${picked.id}/pdf`} leftSection={<IconDownload size={14} />}>
+            {picked.filename}
+          </Button>
+        )}
+      </Group>
+      <Group gap="xs" align="center">
+        <Select
+          w={260}
+          placeholder="Picked when the letter is written"
+          data={cvs.data.map((c) => ({ value: String(c.id), label: c.name }))}
+          value={picked ? String(picked.id) : null}
+          onChange={(v) => pick.mutate(v === null ? null : Number(v))}
+          clearable
+        />
+        {choice && picked && (
+          <Text size="sm" c="dimmed">
+            {how[choice.picked_by]}
+          </Text>
+        )}
+      </Group>
+      {choice && choice.ranked.length > 0 && (
+        <Stack gap={4} mt="sm">
+          {choice.ranked.map((r) => (
+            <Text key={r.cv_id} size="sm">
+              <Badge size="xs" variant="light" color={r.cv_id === choice.cv_id ? "teal" : "gray"} mr={6}>
+                {r.total === null ? "n/a" : r.total.toFixed(0)}
+              </Badge>
+              {r.name}
+              {!r.in_listing_language && choice.listing_language && (
+                <Text span c="orange" size="xs">
+                  {" "}
+                  not in {choice.listing_language}
+                </Text>
+              )}
+              {r.reason && (
+                <Text span c="dimmed" size="xs">
+                  {" "}
+                  {r.reason}
+                </Text>
+              )}
+            </Text>
+          ))}
+        </Stack>
+      )}
+      <Text size="xs" c="dimmed" mt="xs">
+        Clearing the pick lets the next letter pick again.
+      </Text>
+      <ErrorBox error={cvs.error ?? pick.error} />
+    </Card>
   );
 }
 
