@@ -24,7 +24,7 @@ from mozg_outreach.pipelines.biz.models import BizBrief
 from mozg_outreach.pipelines.seeker.models import SeekerBrief
 from mozg_outreach.runs.catalog import FIELD_PIPELINES, SEARCH_OPTIONS
 from mozg_outreach.runs.seeker import WEB_SEARCH
-from mozg_outreach.sources.factory import source_kinds
+from mozg_outreach.sources.factory import DEFAULT_SOURCES, source_kinds
 from mozg_outreach.storage.models import FieldSpecVersion, JsonObject, Project, Run, SourceConfig
 from mozg_outreach.storage.repositories import FieldSpecRepository
 
@@ -80,8 +80,10 @@ async def create_project(body: ProjectIn, svc: Svc) -> ProjectOut:
         )
         session.add(project)
         session.flush()
-        # Every mode can search the web; feeds are opt-in.
-        session.add(SourceConfig(project_id=project.id, kind=WEB_SEARCH))
+        # Every mode can search the web; seekers also get every feed that needs no setup.
+        defaults = DEFAULT_SOURCES if body.mode == ProjectMode.SEEKER else {}
+        for kind, config in {WEB_SEARCH: {}, **defaults}.items():
+            session.add(SourceConfig(project_id=project.id, kind=kind, config=dict(config)))
         logger.info("created %s project %d", body.mode, project.id)
         return ProjectOut.model_validate(project)
 

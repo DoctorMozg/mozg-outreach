@@ -9,6 +9,7 @@ from mozg_outreach.api.schemas import EntityDetail, EntityOut, GraphOut, ItemOut
 from mozg_outreach.domain import EntityKind, ItemKind, SourceKind
 from mozg_outreach.naturalize.voice import VoiceNotes
 from mozg_outreach.pipelines.biz.models import Strategy
+from mozg_outreach.sources.factory import DEFAULT_SOURCES
 from mozg_outreach.storage.models import (
     Entity,
     Item,
@@ -121,8 +122,27 @@ class TestProjects:
             {"kind": "greenhouse", "config": {"boards": ["acme"]}},
         )
         kinds = [s["kind"] for s in await api.ok_list(f"/api/projects/{seeker}/sources")]
-        assert kinds == ["web_search", "greenhouse"]
+        assert kinds[-1] == "greenhouse"
         assert added["cursor"] is None
+
+    async def test_new_projects_enable_every_source_that_needs_no_setup(self, api: Api) -> None:
+        biz = await api.ok_list(f"/api/projects/{await api.project(brief=biz_brief())}/sources")
+        assert [s["kind"] for s in biz] == ["web_search"]
+        seeker = await api.ok_list(f"/api/projects/{await api.project('seeker')}/sources")
+        by_kind = {s["kind"]: s for s in seeker}
+        # ATS boards need company names from the user, so only they stay opt-in.
+        assert set(by_kind) == {
+            "web_search",
+            "arbeitnow",
+            "hn_whoishiring",
+            "remoteok",
+            "remotive",
+            "telegram",
+        }
+        assert all(s["enabled"] for s in seeker)
+        assert by_kind["telegram"]["config"] == {"discover": True}
+        for kind, config in DEFAULT_SOURCES.items():
+            api.services.adapters(kind, config)
 
     async def test_only_the_same_item_waits_for_its_open_run(self, api: Api) -> None:
         project_id = await api.project("seeker")

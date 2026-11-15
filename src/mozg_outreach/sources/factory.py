@@ -65,6 +65,16 @@ _BUILDERS: dict[str, Builder] = {
 }
 
 
+# What a new seeker project gets switched on; ATS boards need company names, so they stay opt-in.
+DEFAULT_SOURCES: dict[str, dict[str, object]] = {
+    "arbeitnow": {},
+    "hn_whoishiring": {},
+    "remoteok": {},
+    "remotive": {},
+    "telegram": {"discover": True},
+}
+
+
 def source_kinds() -> list[str]:
     return sorted(_BUILDERS)
 
