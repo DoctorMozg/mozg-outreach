@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from mozg_outreach.domain import EntityKind, IdentifierKind, ItemKind, ProjectMode, RunStatus
 from mozg_outreach.letters.models import Tone
@@ -251,3 +251,18 @@ class MergeSuggestionOut(BaseModel):
     status: str
     a: EntityOut
     b: EntityOut
+
+
+class BriefRequest(BaseModel):
+    """Biz projects send their company site, seeker projects the CV."""
+
+    site_url: HttpUrl | None = None
+    cv_text: str | None = Field(default=None, min_length=200)
+    note: str = Field(default="", max_length=4000)
+
+
+class BriefDraftOut(BaseModel):
+    brief: JsonObject = Field(description="A draft for the form; it is not saved.")
+    concerns: list[str]
+    field_version: int | None = Field(description="The drafted field spec, not yet accepted.")
+    cost_usd: float

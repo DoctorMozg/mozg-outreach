@@ -2,7 +2,7 @@
 
 from pydantic import Field
 
-from mozg_outreach.domain import ProjectMode
+from mozg_outreach.domain import FieldSpec, ProjectMode
 from mozg_outreach.pipelines.biz.discovery import BizDiscovery
 from mozg_outreach.pipelines.biz.models import BizBrief, BriefReview
 from mozg_outreach.pipelines.fields import FieldProposalInput, FieldProposer, SeekerWants
@@ -32,25 +32,27 @@ async def review(ctx: Ctx) -> PhaseResult:
 BUILT_IN = {ProjectMode.SEEKER: COLUMNS}
 
 
+def proposal_input(
+    mode: ProjectMode, brief: BizBrief | SeekerBrief, spec: FieldSpec | None
+) -> FieldProposalInput:
+    wants: BizBrief | SeekerWants
+    if isinstance(brief, SeekerBrief):
+        # The CV isn't needed to propose fields, only what the seeker wants.
+        kinds = [k for k in KINDS if brief.scope(k)]
+        wants = SeekerWants(preferences=brief.preferences, facts=brief.facts, kinds=kinds)
+    else:
+        wants = brief
+    return FieldProposalInput(
+        mode=mode, brief=wants, current_spec=spec, built_in=list(BUILT_IN.get(mode, ()))
+    )
+
+
 async def propose(ctx: Ctx) -> PhaseResult:
     inputs = ProjectInputs.load(ctx.db, ctx.project_id)
     raw = inputs.require_brief()
-    brief: BizBrief | SeekerWants
-    if inputs.mode == ProjectMode.BIZ:
-        brief = BizBrief.model_validate(raw)
-    else:
-        # The CV isn't needed to propose fields, only what the seeker wants.
-        seeker = SeekerBrief.model_validate(raw)
-        kinds = [k for k in KINDS if seeker.scope(k)]
-        brief = SeekerWants(preferences=seeker.preferences, facts=seeker.facts, kinds=kinds)
-    proposal = await FieldProposer(ctx.steps).propose(
-        FieldProposalInput(
-            mode=inputs.mode,
-            brief=brief,
-            current_spec=inputs.spec,
-            built_in=list(BUILT_IN.get(inputs.mode, ())),
-        )
-    )
+    model = BizBrief if inputs.mode == ProjectMode.BIZ else SeekerBrief
+    request = proposal_input(inputs.mode, model.model_validate(raw), inputs.spec)
+    proposal = await FieldProposer(ctx.steps).propose(request)
     with ctx.db.session() as session:
         ctx.state.version = (
             FieldSpecRepository(session).propose(ctx.project_id, proposal.spec).version

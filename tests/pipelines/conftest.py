@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from mozg_outreach.agents import AgentPrompt, AgentResult, EventSink
+from mozg_outreach.agents import AgentEvent, AgentPrompt, AgentResult, EventSink
 
 REPO_PROMPTS = Path(__file__).resolve().parents[2] / "prompts"
 
@@ -17,6 +17,8 @@ class RecordedRunner:
     def __init__(self, script: dict[str, list[Scripted]]) -> None:
         self._script = {name: list(results) for name, results in script.items()}
         self.payloads: defaultdict[str, list[BaseModel]] = defaultdict(list)
+        # Pages each agent "fetches", reported as WebFetch events before its result.
+        self.fetches: dict[str, list[str]] = {}
 
     async def run[TResult: BaseModel](
         self,
@@ -29,6 +31,9 @@ class RecordedRunner:
         on_event: EventSink | None = None,
     ) -> AgentResult[TResult]:
         self.payloads[prompt.name].append(payload)
+        for url in self.fetches.get(prompt.name, []):
+            if on_event:
+                on_event(AgentEvent(prompt.name, "tool_use", "WebFetch", url=url))
         queue = self._script.get(prompt.name)
         if not queue:
             raise AssertionError(f"no scripted result left for {prompt.name}")

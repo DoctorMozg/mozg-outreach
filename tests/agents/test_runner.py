@@ -28,6 +28,7 @@ class TestSuccess:
         fake = FakeQuery(
             [
                 assistant(ToolUseBlock(id="t1", name="WebSearch", input={"query": "x"})),
+                assistant(ToolUseBlock(id="t2", name="WebFetch", input={"url": "https://a.io"})),
                 assistant(TextBlock(text="Found one.")),
                 result_message(VALID_OUTPUT),
             ]
@@ -46,11 +47,12 @@ class TestSuccess:
         assert result.value == ScoutResult.model_validate(VALID_OUTPUT)
         assert result.cost_usd == 0.25
         assert result.models == ("claude-sonnet-5-5",)
-        assert [(e.kind, e.detail) for e in events] == [
-            ("started", "sonnet"),
-            ("tool_use", "WebSearch"),
-            ("text", "Found one."),
-            ("finished", "$0.2500"),
+        assert [(e.kind, e.detail, e.url) for e in events] == [
+            ("started", "sonnet", None),
+            ("tool_use", "WebSearch", None),
+            ("tool_use", "WebFetch", "https://a.io"),
+            ("text", "Found one.", None),
+            ("finished", "$0.2500", None),
         ]
 
     async def test_session_is_isolated_and_schema_enforced(

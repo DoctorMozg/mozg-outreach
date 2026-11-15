@@ -228,3 +228,10 @@ export async function call<T>(method: string, path: string, body?: unknown): Pro
 }
 
 export const get = <T,>(path: string) => call<T>("GET", path);
+
+export interface BriefDraft {
+  brief: Json;
+  concerns: string[];
+  field_version: number | null;
+  cost_usd: number;
+}

@@ -43,6 +43,7 @@ class AgentEvent:
     agent: str
     kind: Literal["started", "tool_use", "text", "finished"]
     detail: str
+    url: str | None = None
 
 
 EventSink = Callable[[AgentEvent], None]
@@ -172,7 +173,11 @@ class AgentRunner:
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, ToolUseBlock):
-                        emit(AgentEvent(agent, "tool_use", block.name))
+                        # Kept so a caller can check that a cited page was actually read.
+                        url = block.input.get("url") if block.name == "WebFetch" else None
+                        emit(
+                            AgentEvent(agent, "tool_use", block.name, url=str(url) if url else None)
+                        )
                     elif isinstance(block, TextBlock) and block.text.strip():
                         emit(AgentEvent(agent, "text", block.text))
             elif isinstance(message, ResultMessage):

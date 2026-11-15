@@ -10,8 +10,15 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from mozg_outreach.agents import AgentRunner, PromptLibrary, RunnerSettings, StepRunner
-from mozg_outreach.api.routes import items, projects, registry, runs, voice
+from mozg_outreach.agents import (
+    AgentOutputError,
+    AgentRunError,
+    AgentRunner,
+    PromptLibrary,
+    RunnerSettings,
+    StepRunner,
+)
+from mozg_outreach.api.routes import briefs, items, projects, registry, runs, voice
 from mozg_outreach.api.services import Services
 from mozg_outreach.api.settings import Settings
 from mozg_outreach.runs.catalog import FLOWS
@@ -86,7 +93,10 @@ def create_app(
     app.add_exception_handler(RunStateError, _error(409))
     app.add_exception_handler(FieldSpecConflictError, _error(409))
     app.add_exception_handler(ValidationError, _error(422))
-    for module in (projects, runs, items, voice, registry):
+    # A failed agent call in a request (voice profile, brief draft) is an upstream failure.
+    app.add_exception_handler(AgentRunError, _error(502))
+    app.add_exception_handler(AgentOutputError, _error(502))
+    for module in (projects, briefs, runs, items, voice, registry):
         app.include_router(module.router)
     if settings.ui_dist.is_dir():
         app.mount("/", StaticFiles(directory=settings.ui_dist, html=True), name="ui")
