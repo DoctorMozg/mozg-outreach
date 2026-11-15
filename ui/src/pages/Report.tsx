@@ -1,176 +1,275 @@
+import {
+  Affix,
+  Anchor,
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  Divider,
+  Drawer,
+  Group,
+  Popover,
+  ScrollArea,
+  SegmentedControl,
+  Select,
+  Stack,
+  Switch,
+  Table,
+  Text,
+  TextInput,
+  Title,
+  Tooltip,
+  Transition,
+} from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { IconColumns3, IconExternalLink, IconMail, IconSearch, IconSparkles, IconTable } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactElement, Fragment, useState } from "react";
+import { type ReactElement, useState } from "react";
 import { call, get, type Graph, type Item, type Project } from "../api";
-import { ErrorBox, Score, Section, Value } from "../components/common";
+import { Empty, ErrorBox, Score, Value } from "../components/common";
 import { GraphView } from "../components/GraphView";
 import { href } from "../router";
 
+const DEFAULT_COLUMNS = 3;
+
 export function Report({ project }: { project: Project }): ReactElement {
-  const client = useQueryClient();
+  const [view, setView] = useState<"leads" | "graph">("leads");
   const [since, setSince] = useState("");
   const [until, setUntil] = useState("");
-  const [sort, setSort] = useState<"score" | "date">("score");
   const range = dateWindow(since, until);
-  const key = ["items", project.id, since, until, sort];
+  return (
+    <Stack>
+      <Group justify="space-between">
+        <SegmentedControl
+          value={view}
+          onChange={(v) => setView(v === "graph" ? "graph" : "leads")}
+          data={[
+            { value: "leads", label: "Leads" },
+            { value: "graph", label: "Connections" },
+          ]}
+        />
+        <Group gap="xs">
+          <TextInput type="date" size="xs" aria-label="From" leftSection={<Text size="xs">from</Text>} leftSectionWidth={44} value={since} onChange={(e) => setSince(e.currentTarget.value)} />
+          <TextInput type="date" size="xs" aria-label="To" leftSection={<Text size="xs">to</Text>} leftSectionWidth={30} value={until} onChange={(e) => setUntil(e.currentTarget.value)} />
+        </Group>
+      </Group>
+      {view === "leads" ? <Leads project={project} range={range} /> : <Connections project={project} range={range} />}
+    </Stack>
+  );
+}
+
+function Connections({ project, range }: { project: Project; range: Record<string, string> }): ReactElement {
+  const graph = useQuery({
+    queryKey: ["graph", project.id, range],
+    queryFn: () => get<Graph>(`/api/graph?${new URLSearchParams({ project_id: String(project.id), ...range }).toString()}`),
+  });
+  return (
+    <Card>
+      <Text size="sm" c="dimmed" mb="sm">
+        Leads, the companies behind them and the people found so far. Click a node to open it.
+      </Text>
+      <ErrorBox error={graph.error} />
+      {graph.data && <GraphView graph={graph.data} />}
+    </Card>
+  );
+}
+
+function Leads({ project, range }: { project: Project; range: Record<string, string> }): ReactElement {
+  const client = useQueryClient();
+  const [sort, setSort] = useState<"score" | "date">("score");
+  const key = ["items", project.id, range, sort];
   const items = useQuery({
     queryKey: key,
     queryFn: () => get<Item[]>(`/api/projects/${project.id}/items?${new URLSearchParams({ ...range, sort }).toString()}`),
   });
-  const graph = useQuery({
-    queryKey: ["graph", project.id, since, until],
-    queryFn: () => get<Graph>(`/api/graph?${new URLSearchParams({ project_id: String(project.id), ...range }).toString()}`),
-  });
-  const [open, setOpen] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
   const [onlySelected, setOnlySelected] = useState(false);
-  const [kind, setKind] = useState<Item["kind"] | "">("");
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const toggleColumn = (name: string): void => {
-    const next = new Set(hidden);
-    if (next.has(name)) next.delete(name);
-    else next.add(name);
-    setHidden(next);
-  };
+  const [kind, setKind] = useState<Item["kind"] | "all">("all");
+  const [openId, setOpenId] = useState<number | null>(null);
+  const allColumns = [...new Set((items.data ?? []).flatMap((i) => Object.keys(i.fields)))];
+  const [picked, setPicked] = useStoredColumns(project.id);
+  const columns = (picked ?? allColumns.slice(0, DEFAULT_COLUMNS)).filter((c) => allColumns.includes(c));
 
   const select = useMutation({
     mutationFn: (item: Item) => call<Item>("PATCH", `/api/items/${item.id}`, { selected: !item.selected }),
-    onSuccess: () => client.invalidateQueries({ queryKey: key }),
-  });
-  const bulk = useMutation({
-    mutationFn: async ({ action, chosen }: { action: "enrich" | "letters"; chosen: Item[] }) => {
-      // One run per item; the server queues them behind its run limit.
-      const results = await Promise.allSettled(chosen.map((i) => call("POST", `/api/items/${i.id}/${action}`)));
-      const failed = results.filter((r) => r.status === "rejected").map((r) => String((r as PromiseRejectedResult).reason));
-      if (failed.length) throw new Error(failed.join("\n"));
-    },
-    onSuccess: () => (window.location.hash = href.project(project.id, "runs")),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["items", project.id] }),
   });
 
-  const rows = (items.data ?? []).filter((i) => (!onlySelected || i.selected) && (!kind || i.kind === kind));
-  const seeker = project.mode === "seeker";
-  const allColumns = [...new Set(rows.flatMap((i) => Object.keys(i.fields)))];
-  const columns = allColumns.filter((c) => !hidden.has(c));
+  const needle = query.trim().toLowerCase();
+  const rows = (items.data ?? []).filter(
+    (i) => (!onlySelected || i.selected) && (kind === "all" || i.kind === kind) && (!needle || i.title.toLowerCase().includes(needle)),
+  );
   // Bulk actions take only the selected rows on screen, so a filter never hides what they touch.
   const chosen = rows.filter((i) => i.selected);
-  // Gigs are answered on their own board, so there is nothing to enrich.
-  const enrichable = chosen.filter((i) => i.kind !== "gig");
-  const letterLabel = lettersFor(new Set(chosen.map((i) => i.kind)));
+  const seeker = project.mode === "seeker";
+  const open = items.data?.find((i) => i.id === openId) ?? null;
+
+  if (items.data?.length === 0) {
+    return (
+      <Empty icon={<IconTable size={36} />} title="No leads yet">
+        Run a search and its scored leads land here.
+      </Empty>
+    );
+  }
 
   return (
-    <>
-      <Section
-        title={`Report (${items.data?.length ?? 0})`}
-        actions={
-          <span className="actions">
-            <label>
-              <input type="checkbox" checked={onlySelected} onChange={(e) => setOnlySelected(e.target.checked)} /> selected only
-            </label>
-            {(project.mode === "biz" || enrichable.length > 0) && (
-              <button className="secondary" disabled={!enrichable.length || bulk.isPending} onClick={() => bulk.mutate({ action: "enrich", chosen: enrichable })}>
-                Enrich {enrichable.length}
-              </button>
-            )}
-            <button disabled={!chosen.length || bulk.isPending} onClick={() => bulk.mutate({ action: "letters", chosen })}>
-              {letterLabel} for {chosen.length}
-            </button>
-          </span>
-        }
-      >
-        <ErrorBox error={items.error ?? bulk.error ?? select.error} />
-        <div className="inline">
-          <label>
-            from <input type="date" value={since} onChange={(e) => setSince(e.target.value)} />
-          </label>
-          <label>
-            to <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
-          </label>
-          <label>
-            sort by{" "}
-            <select value={sort} onChange={(e) => setSort(e.target.value === "date" ? "date" : "score")}>
-              <option value="score">score</option>
-              <option value="date">date, newest first</option>
-            </select>
-          </label>
+    <Card p={0}>
+      <Group justify="space-between" p="md" gap="sm">
+        <Group gap="sm">
+          <Title order={4}>{items.data ? `${rows.length} of ${items.data.length} leads` : "Leads"}</Title>
+          <TextInput
+            size="xs"
+            placeholder="Search leads"
+            leftSection={<IconSearch size={14} />}
+            value={query}
+            onChange={(e) => setQuery(e.currentTarget.value)}
+            w={220}
+          />
           {seeker && (
-            <label>
-              kind{" "}
-              <select value={kind} onChange={(e) => setKind(e.target.value as Item["kind"] | "")}>
-                <option value="">jobs and gigs</option>
-                <option value="job">jobs</option>
-                <option value="gig">gigs</option>
-              </select>
-            </label>
+            <SegmentedControl
+              size="xs"
+              value={kind}
+              onChange={(v) => setKind(v as Item["kind"] | "all")}
+              data={[
+                { value: "all", label: "All" },
+                { value: "job", label: "Jobs" },
+                { value: "gig", label: "Gigs" },
+              ]}
+            />
           )}
-        </div>
-        <details className="columns">
-          <summary>
-            Columns ({columns.length} of {allColumns.length})
-          </summary>
-          {allColumns.map((c) => (
-            <label key={c}>
-              <input type="checkbox" checked={!hidden.has(c)} onChange={() => toggleColumn(c)} /> {c}
-            </label>
-          ))}
-        </details>
-        <table className="report">
-          <thead>
-            <tr>
-              <th />
-              <th>Score</th>
-              <th title="Posted on, or the day a run found it">Date</th>
-              {seeker && <th>Kind</th>}
-              <th>Lead</th>
+          <Switch size="sm" label="Selected only" checked={onlySelected} onChange={(e) => setOnlySelected(e.currentTarget.checked)} />
+        </Group>
+        <Group gap="xs">
+          <Select
+            size="xs"
+            w={170}
+            allowDeselect={false}
+            value={sort}
+            onChange={(v) => setSort(v === "date" ? "date" : "score")}
+            data={[
+              { value: "score", label: "Best score first" },
+              { value: "date", label: "Newest first" },
+            ]}
+          />
+          <ColumnPicker all={allColumns} shown={columns} onChange={setPicked} />
+        </Group>
+      </Group>
+      <ErrorBox error={items.error ?? select.error} />
+      <ScrollArea type="auto">
+        <Table highlightOnHover stickyHeader verticalSpacing="sm" miw={760}>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th w={44} />
+              <Table.Th w={70}>Score</Table.Th>
+              <Table.Th miw={260}>Lead</Table.Th>
               {columns.map((c) => (
-                <th key={c}>{c}</th>
+                <Table.Th key={c} miw={180}>
+                  {c.replaceAll("_", " ")}
+                </Table.Th>
               ))}
-            </tr>
-          </thead>
-          <tbody>
+              <Table.Th w={110}>
+                <Tooltip label="Posted on, or the day a run found it">
+                  <span>Date</span>
+                </Tooltip>
+              </Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
             {rows.map((item) => (
-              <Fragment key={item.id}>
-                <tr className={item.selected ? "chosen" : ""}>
-                  <td>
-                    <input type="checkbox" checked={item.selected} onChange={() => select.mutate(item)} />
-                  </td>
-                  <td>
-                    <button className="link" onClick={() => setOpen(open === item.id ? null : item.id)} title="Why this score">
-                      <Score value={item.score_total} />
-                    </button>
-                  </td>
-                  <td className="muted">{item.dated}</td>
-                  {seeker && (
-                    <td>
-                      <span className="tag">{item.kind}</span>
-                    </td>
-                  )}
-                  <td>
-                    <a href={href.item(item.id)}>{item.title}</a>
+              <Table.Tr
+                key={item.id}
+                bg={item.selected ? "var(--mantine-primary-color-light)" : undefined}
+                style={{ cursor: "pointer" }}
+                onClick={() => setOpenId(item.id)}
+              >
+                <Table.Td onClick={(e) => e.stopPropagation()}>
+                  <Checkbox checked={item.selected} onChange={() => select.mutate(item)} aria-label={`Select ${item.title}`} />
+                </Table.Td>
+                <Table.Td>
+                  <Score value={item.score_total} />
+                </Table.Td>
+                <Table.Td>
+                  <Text fw={550} size="sm">
+                    {item.title}
+                  </Text>
+                  <Group gap={4} mt={2}>
+                    {seeker && (
+                      <Badge size="xs" variant="outline" color="gray">
+                        {item.kind}
+                      </Badge>
+                    )}
                     {item.score?.blockers.map((b) => (
-                      <span key={b} className="tag danger">
+                      <Badge key={b} size="xs" color="red" variant="light">
                         {b}
-                      </span>
+                      </Badge>
                     ))}
-                  </td>
-                  {columns.map((c) => (
-                    <td key={c}>
+                  </Group>
+                </Table.Td>
+                {columns.map((c) => (
+                  <Table.Td key={c}>
+                    <Text size="sm" lineClamp={2} component="div">
                       <Value field={item.fields[c]} />
-                    </td>
-                  ))}
-                </tr>
-                {open === item.id && item.score && (
-                  <tr className="axes">
-                    <td />
-                    <td colSpan={columns.length + (seeker ? 4 : 3)}>
-                      <Axes item={item} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
+                    </Text>
+                  </Table.Td>
+                ))}
+                <Table.Td c="dimmed" fz="sm" style={{ whiteSpace: "nowrap" }}>
+                  {item.dated}
+                </Table.Td>
+              </Table.Tr>
             ))}
-          </tbody>
-        </table>
-      </Section>
-      <Section title="Connections">{graph.data && <GraphView graph={graph.data} />}</Section>
-    </>
+          </Table.Tbody>
+        </Table>
+      </ScrollArea>
+      <BulkBar project={project} chosen={chosen} />
+      <Drawer opened={open !== null} onClose={() => setOpenId(null)} position="right" size="xl" title={<Text fw={650}>{open?.title}</Text>}>
+        {open && <LeadPreview item={open} onToggle={() => select.mutate(open)} />}
+      </Drawer>
+    </Card>
+  );
+}
+
+/** Which field columns show, remembered per project in this browser only. */
+function useStoredColumns(projectId: number): [string[] | null, (columns: string[]) => void] {
+  const storageKey = `report-columns-${projectId}`;
+  const [columns, setColumns] = useState<string[] | null>(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      return raw ? (JSON.parse(raw) as string[]) : null;
+    } catch {
+      return null; // storage blocked or corrupt: fall back to the default columns
+    }
+  });
+  const store = (next: string[]): void => {
+    setColumns(next);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(next));
+    } catch {
+      // A private window may refuse storage; the choice then lasts for this visit only.
+    }
+  };
+  return [columns, store];
+}
+
+function ColumnPicker({ all, shown, onChange }: { all: string[]; shown: string[]; onChange: (c: string[]) => void }): ReactElement {
+  return (
+    <Popover position="bottom-end" shadow="md" width={280}>
+      <Popover.Target>
+        <Button size="xs" variant="default" leftSection={<IconColumns3 size={14} />}>
+          Columns {shown.length}/{all.length}
+        </Button>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <ScrollArea.Autosize mah={360}>
+          <Checkbox.Group value={shown} onChange={(next) => onChange(all.filter((c) => next.includes(c)))}>
+            <Stack gap={6}>
+              {all.map((c) => (
+                <Checkbox key={c} value={c} label={c.replaceAll("_", " ")} size="xs" />
+              ))}
+            </Stack>
+          </Checkbox.Group>
+        </ScrollArea.Autosize>
+      </Popover.Dropdown>
+    </Popover>
   );
 }
 
@@ -178,6 +277,131 @@ export function Report({ project }: { project: Project }): ReactElement {
 function lettersFor(kinds: Set<Item["kind"]>): string {
   const names = [kinds.has("company") && "letters", kinds.has("job") && "cover letters", kinds.has("gig") && "proposals"].filter(Boolean);
   return `Write ${names.length ? names.join(" and ") : "letters"}`;
+}
+
+function BulkBar({ project, chosen }: { project: Project; chosen: Item[] }): ReactElement {
+  // Gigs are answered on their own board, so there is nothing to enrich.
+  const enrichable = chosen.filter((i) => i.kind !== "gig");
+  const bulk = useMutation({
+    mutationFn: async ({ action, items }: { action: "enrich" | "letters"; items: Item[] }) => {
+      // One run per item; the server queues them behind its run limit.
+      const results = await Promise.allSettled(items.map((i) => call("POST", `/api/items/${i.id}/${action}`)));
+      const failed = results.filter((r) => r.status === "rejected").map((r) => String((r as PromiseRejectedResult).reason));
+      if (failed.length) throw new Error(failed.join("\n"));
+      return items.length;
+    },
+    onSuccess: (count) => {
+      notifications.show({ color: "indigo", message: `${count} runs started` });
+      window.location.hash = href.project(project.id, "runs");
+    },
+  });
+  return (
+    <Affix position={{ bottom: 24, left: 0, right: 0 }} zIndex={150}>
+      <Transition mounted={chosen.length > 0} transition="slide-up">
+        {(styles) => (
+          <Group justify="center" style={styles}>
+            <Card shadow="lg" py="sm" px="md" withBorder>
+              <Group gap="sm">
+                <Text fw={600} size="sm">
+                  {chosen.length} selected
+                </Text>
+                <Divider orientation="vertical" />
+                {enrichable.length > 0 && (
+                  <Button
+                    size="xs"
+                    variant="default"
+                    leftSection={<IconSparkles size={14} />}
+                    loading={bulk.isPending}
+                    onClick={() => bulk.mutate({ action: "enrich", items: enrichable })}
+                  >
+                    Enrich {enrichable.length}
+                  </Button>
+                )}
+                <Button size="xs" leftSection={<IconMail size={14} />} loading={bulk.isPending} onClick={() => bulk.mutate({ action: "letters", items: chosen })}>
+                  {lettersFor(new Set(chosen.map((i) => i.kind)))} for {chosen.length}
+                </Button>
+              </Group>
+              {bulk.error && (
+                <Text size="xs" c="red" mt={4}>
+                  {bulk.error.message}
+                </Text>
+              )}
+            </Card>
+          </Group>
+        )}
+      </Transition>
+    </Affix>
+  );
+}
+
+function LeadPreview({ item, onToggle }: { item: Item; onToggle: () => void }): ReactElement {
+  return (
+    <Stack>
+      <Group justify="space-between">
+        <Group gap="sm">
+          <Score value={item.score_total} size="lg" />
+          <Badge variant="outline" color="gray">
+            {item.kind}
+          </Badge>
+          <Text size="sm" c="dimmed">
+            {item.dated}
+          </Text>
+        </Group>
+        <Group gap="xs">
+          <Switch label="Selected" checked={item.selected} onChange={onToggle} />
+          <Button size="xs" variant="light" component="a" href={href.item(item.id)} rightSection={<IconExternalLink size={14} />}>
+            Open lead
+          </Button>
+        </Group>
+      </Group>
+      {item.score?.blockers.length ? (
+        <Group gap={4}>
+          {item.score.blockers.map((b) => (
+            <Badge key={b} color="red" variant="light">
+              {b}
+            </Badge>
+          ))}
+        </Group>
+      ) : null}
+      {item.score && (
+        <>
+          <Title order={5}>Why this score</Title>
+          <Axes item={item} />
+        </>
+      )}
+      <Title order={5}>Fields</Title>
+      <FieldList fields={item.fields} />
+    </Stack>
+  );
+}
+
+export function FieldList({ fields }: { fields: Item["fields"] }): ReactElement {
+  return (
+    <Table variant="vertical" layout="fixed" withTableBorder>
+      <Table.Tbody>
+        {Object.entries(fields).map(([name, field]) => (
+          <Table.Tr key={name}>
+            <Table.Th w={170} style={{ verticalAlign: "top" }}>
+              {name.replaceAll("_", " ")}
+            </Table.Th>
+            <Table.Td>
+              <Value field={field} />
+              {field.quote && (
+                <Text size="xs" c="dimmed" fs="italic" mt={4}>
+                  "{field.quote}"
+                </Text>
+              )}
+              {field.source_url && (
+                <Anchor href={field.source_url} target="_blank" rel="noreferrer noopener" size="xs" c="dimmed" style={{ wordBreak: "break-all" }}>
+                  {field.source_url}
+                </Anchor>
+              )}
+            </Table.Td>
+          </Table.Tr>
+        ))}
+      </Table.Tbody>
+    </Table>
+  );
 }
 
 /** Only the ends the user set, so an empty input means no bound. */
@@ -188,19 +412,27 @@ function dateWindow(since: string, until: string): Record<string, string> {
 export function Axes({ item }: { item: Item }): ReactElement | null {
   if (!item.score) return null;
   return (
-    <table className="compact">
-      <tbody>
+    <Table withTableBorder verticalSpacing="xs" fz="sm">
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>Axis</Table.Th>
+          <Table.Th w={70}>Score</Table.Th>
+          <Table.Th w={70}>Weight</Table.Th>
+          <Table.Th>Reason</Table.Th>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
         {item.score.axes.map((a) => (
-          <tr key={a.axis}>
-            <td>{a.axis}</td>
-            <td>
-              <Score value={a.value} />
-            </td>
-            <td className="muted">x{a.weight}</td>
-            <td>{a.reason}</td>
-          </tr>
+          <Table.Tr key={a.axis}>
+            <Table.Td fw={500}>{a.axis.replaceAll("_", " ")}</Table.Td>
+            <Table.Td>
+              <Score value={a.value} size="sm" />
+            </Table.Td>
+            <Table.Td c="dimmed">x{a.weight}</Table.Td>
+            <Table.Td>{a.reason}</Table.Td>
+          </Table.Tr>
         ))}
-      </tbody>
-    </table>
+      </Table.Tbody>
+    </Table>
   );
 }

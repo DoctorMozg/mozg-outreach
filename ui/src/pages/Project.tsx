@@ -104,11 +104,7 @@ export function Project({ id, tab }: { id: number; tab: string }): ReactElement 
       {tab === "fields" && <Fields project={p} />}
       {tab === "sources" && <Sources project={p} />}
       {tab === "runs" && <Runs project={p} blocker={blocker ?? null} />}
-      {tab === "report" && (
-        <div className="legacy">
-          <Report project={p} />
-        </div>
-      )}
+      {tab === "report" && <Report project={p} />}
     </Stack>
   );
 }
