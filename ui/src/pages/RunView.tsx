@@ -1,7 +1,29 @@
+import {
+  Alert,
+  Anchor,
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  Code,
+  Group,
+  JsonInput,
+  List,
+  ScrollArea,
+  SegmentedControl,
+  Stack,
+  Stepper,
+  Table,
+  Text,
+  Textarea,
+  Title,
+} from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { IconArrowLeft, IconCheck, IconHandStop, IconPlayerPlay, IconPlayerStop, IconX } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useEffect, useRef, useState } from "react";
-import { call, get, type Json, type Run, type RunEvent } from "../api";
-import { Concerns, ErrorBox, Section, Status } from "../components/common";
+import { call, get, type Json, type Project, type Run, type RunEvent } from "../api";
+import { Concerns, ErrorBox, pipelineLabel, Status } from "../components/common";
 import { href } from "../router";
 
 const OPEN = new Set(["pending", "running", "awaiting_gate"]);
@@ -37,7 +59,7 @@ function useRunEvents(runId: number, onEvent: () => void): RunEvent[] {
     setEvents([]);
     // EventSource resends Last-Event-ID on reconnect, so the server replays only what was missed.
     const source = new EventSource(`/api/runs/${runId}/events`);
-    const receive = (message: MessageEvent<string>) => {
+    const receive = (message: MessageEvent<string>): void => {
       const event = JSON.parse(message.data) as RunEvent;
       setEvents((seen) => (seen.some((e) => e.seq === event.seq) ? seen : [...seen, event]));
       if (event.kind !== "agent") notify.current();
@@ -48,74 +70,184 @@ function useRunEvents(runId: number, onEvent: () => void): RunEvent[] {
   return events;
 }
 
+function words(name: string): string {
+  const text = name.replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export function RunView({ id }: { id: number }): ReactElement {
   const client = useQueryClient();
   const run = useQuery({ queryKey: ["run", id], queryFn: () => get<Run>(`/api/runs/${id}`) });
-  const refresh = () => client.invalidateQueries({ queryKey: ["run", id] });
-  const events = useRunEvents(id, () => void refresh());
+  const pipelines = useQuery({ queryKey: ["pipelines"], queryFn: () => get<Record<string, string[]>>("/api/pipelines"), staleTime: Infinity });
+  const projectId = run.data?.project_id;
+  const project = useQuery({
+    queryKey: ["project", projectId],
+    queryFn: () => get<Project>(`/api/projects/${projectId}`),
+    enabled: projectId !== undefined,
+  });
+  const refresh = (): void => void client.invalidateQueries({ queryKey: ["run", id] });
+  const events = useRunEvents(id, refresh);
   const cancel = useMutation({ mutationFn: () => call<Run>("POST", `/api/runs/${id}/cancel`), onSuccess: refresh });
-  const resume = useMutation({ mutationFn: () => call<Run>("POST", `/api/runs/${id}/resume`), onSuccess: refresh });
+  const resume = useMutation({
+    mutationFn: () => call<Run>("POST", `/api/runs/${id}/resume`),
+    onSuccess: () => {
+      refresh();
+      notifications.show({ color: "indigo", message: `Run ${id} resumed` });
+    },
+  });
   const r = run.data;
   if (!r) return <ErrorBox error={run.error} />;
   const itemId = typeof r.state.item_id === "number" ? r.state.item_id : null;
+  const stopped = r.status === "failed" || r.status === "cancelled";
 
   return (
-    <div className="stack">
-      <h2>
-        Run {r.id}: {r.pipeline} <Status status={r.status} />
-      </h2>
-      <p>
-        <a href={href.project(r.project_id, "runs")}>Project runs</a> · <a href={href.project(r.project_id, "report")}>Report</a>
+    <Stack maw={1200} mx="auto">
+      <Group gap="md">
+        <Anchor href={href.project(r.project_id, "runs")} size="sm">
+          <Group gap={4}>
+            <IconArrowLeft size={14} />
+            {project.data?.name ?? "Project"}
+          </Group>
+        </Anchor>
+        <Anchor href={href.project(r.project_id, "report")} size="sm">
+          Report
+        </Anchor>
         {itemId !== null && (
-          <>
-            {" "}
-            · <a href={href.item(itemId)}>Lead</a>
-          </>
+          <Anchor href={href.item(itemId)} size="sm">
+            Lead
+          </Anchor>
         )}
-      </p>
-      <Section
-        title={`Phase: ${r.phase ?? "starting"} · $${r.cost_usd.toFixed(2)}`}
-        actions={
-          <span className="actions">
-            {OPEN.has(r.status) && (
-              <button className="secondary" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
-                Cancel
-              </button>
-            )}
-            {(r.status === "failed" || r.status === "cancelled") && (
-              <button onClick={() => resume.mutate()} disabled={resume.isPending}>
-                Resume from {r.phase}
-              </button>
-            )}
-          </span>
-        }
-      >
-        {r.error && <div className="error">{r.error}</div>}
-        <ErrorBox error={cancel.error ?? resume.error} />
-        <Concerns items={r.state.concerns} />
-      </Section>
+      </Group>
+      <Group justify="space-between" align="flex-start">
+        <div>
+          <Group gap="sm">
+            <Title order={2}>
+              {pipelineLabel(r.pipeline)} #{r.id}
+            </Title>
+            <Status status={r.status} />
+          </Group>
+          <Text size="sm" c="dimmed">
+            Started {new Date(r.started_at).toLocaleString()}
+            {r.finished_at && ` · ended ${new Date(r.finished_at).toLocaleString()}`} · ${r.cost_usd.toFixed(2)} of usage
+          </Text>
+        </div>
+        <Group gap="xs">
+          {OPEN.has(r.status) && (
+            <Button variant="default" leftSection={<IconPlayerStop size={16} />} onClick={() => cancel.mutate()} loading={cancel.isPending}>
+              Cancel
+            </Button>
+          )}
+          {stopped && (
+            <Button leftSection={<IconPlayerPlay size={16} />} onClick={() => resume.mutate()} loading={resume.isPending}>
+              Resume from {words(r.phase ?? "start").toLowerCase()}
+            </Button>
+          )}
+        </Group>
+      </Group>
+
+      <Progress run={r} phases={pipelines.data?.[r.pipeline] ?? []} />
+      {r.error && (
+        <Alert color="red" variant="light" icon={<IconX size={18} />} title={r.status === "failed" ? "The run failed" : "Stopped"}>
+          {r.error}
+        </Alert>
+      )}
+      <ErrorBox error={cancel.error ?? resume.error} />
+
       {r.status === "awaiting_gate" && r.pending_gate && <Gate run={r} gate={r.pending_gate} onDone={refresh} />}
       {r.pipeline.endsWith(".fields") && r.status === "complete" && <FieldsDone run={r} />}
       {isSummary(r.state.summary) && <SummaryView summary={r.state.summary} />}
-      <Section title="Activity">
-        <ol className="events">
-          {events.map((e) => (
-            <li key={e.seq} className={`event-${e.kind}`}>
-              <span className="muted">{new Date(e.created_at).toLocaleTimeString()}</span> <b>{e.kind}</b> {describe(e)}
-            </li>
-          ))}
-        </ol>
-      </Section>
-    </div>
+      {r.state.concerns && r.state.concerns.length > 0 && (
+        <Card>
+          <Concerns items={r.state.concerns} />
+        </Card>
+      )}
+      <Activity events={events} />
+    </Stack>
+  );
+}
+
+/** The flow's phases as steps; the current one shows running, waiting or failed. */
+function Progress({ run, phases }: { run: Run; phases: string[] }): ReactElement | null {
+  if (phases.length < 2) return null;
+  const at = run.phase ? phases.indexOf(run.phase) : 0;
+  const active = run.status === "complete" ? phases.length : Math.max(at, 0);
+  return (
+    <Card py="md">
+      <ScrollArea type="auto" offsetScrollbars>
+        <Stepper active={active} size="xs" miw={phases.length * 110} allowNextStepsSelect={false}>
+          {phases.map((phase, n) => {
+            const current = n === active;
+            const failed = current && (run.status === "failed" || run.status === "cancelled");
+            const waiting = current && run.status === "awaiting_gate";
+            return (
+              <Stepper.Step
+                key={phase}
+                label={words(phase)}
+                description={failed ? run.status : waiting ? "needs you" : undefined}
+                loading={current && run.status === "running"}
+                color={failed ? "red" : waiting ? "yellow" : undefined}
+                icon={failed ? <IconX size={14} /> : waiting ? <IconHandStop size={14} /> : undefined}
+                completedIcon={<IconCheck size={14} />}
+              />
+            );
+          })}
+        </Stepper>
+      </ScrollArea>
+    </Card>
   );
 }
 
 function describe(e: RunEvent): string {
   const p = e.payload;
-  if (e.kind === "agent") return `${String(p.agent)} ${String(p.kind)}${p.detail ? `: ${String(p.detail).slice(0, 160)}` : ""}`;
-  if (e.kind === "phase") return String(p.phase);
-  if (e.kind === "gate") return String(p.kind);
-  return JSON.stringify(p);
+  if (e.kind === "agent") return `${String(p.agent)} ${String(p.kind)}${p.detail ? `: ${String(p.detail).slice(0, 200)}` : ""}`;
+  if (e.kind === "phase") return words(String(p.phase));
+  if (e.kind === "gate") return `waiting for your ${String(p.kind)} approval`;
+  if (e.kind === "status") return `${String(p.status)}${p.error ? `: ${String(p.error)}` : ""}`;
+  // Payloads can carry whole lists (a strategy's concerns); the log names their size, not their content.
+  return Object.entries(p)
+    .filter(([, v]) => v !== null && (typeof v !== "object" || Array.isArray(v)))
+    .map(([k, v]) => `${k.replaceAll("_", " ")}: ${Array.isArray(v) ? v.length : String(v).slice(0, 120)}`)
+    .join(" · ");
+}
+
+function Activity({ events }: { events: RunEvent[] }): ReactElement {
+  const [shown, setShown] = useState<"steps" | "all">("steps");
+  const visible = shown === "all" ? events : events.filter((e) => e.kind !== "agent");
+  return (
+    <Card>
+      <Group justify="space-between" mb="sm">
+        <Title order={4}>Activity</Title>
+        <SegmentedControl
+          size="xs"
+          value={shown}
+          onChange={(v) => setShown(v === "all" ? "all" : "steps")}
+          data={[
+            { value: "steps", label: "Steps" },
+            { value: "all", label: `Everything (${events.length})` },
+          ]}
+        />
+      </Group>
+      <ScrollArea.Autosize mah={420}>
+        <Table verticalSpacing={4} fz="sm">
+          <Table.Tbody>
+            {visible.map((e) => (
+              <Table.Tr key={e.seq}>
+                <Table.Td w={90} c="dimmed" style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                  {new Date(e.created_at).toLocaleTimeString()}
+                </Table.Td>
+                <Table.Td w={140}>
+                  <Badge size="sm" variant="light" color={e.kind === "agent" ? "gray" : e.kind === "gate" ? "yellow" : "indigo"}>
+                    {e.kind.replaceAll("_", " ")}
+                  </Badge>
+                </Table.Td>
+                <Table.Td>{describe(e)}</Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </ScrollArea.Autosize>
+    </Card>
+  );
 }
 
 type RunSummary = {
@@ -130,38 +262,47 @@ function isSummary(value: unknown): value is RunSummary {
 
 function SummaryView({ summary }: { summary: RunSummary }): ReactElement {
   return (
-    <Section title="Run summary">
-      {summary.summary.split(/\n\s*\n/).map((paragraph, n) => (
-        <p key={n}>{paragraph}</p>
-      ))}
-      {summary.patterns.length > 0 && (
-        <>
-          <h3>Patterns</h3>
-          <ul>
-            {summary.patterns.map((p, n) => (
-              <li key={n}>
-                {p.pattern}{" "}
-                {p.item_ids.map((id) => (
-                  <a key={id} className="muted" href={href.item(id)}>
-                    #{id}{" "}
-                  </a>
-                ))}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {summary.recommendations.length > 0 && (
-        <>
-          <h3>Recommendations</h3>
-          <ol>
-            {summary.recommendations.map((r, n) => (
-              <li key={n}>{r}</li>
-            ))}
-          </ol>
-        </>
-      )}
-    </Section>
+    <Card>
+      <Title order={4} mb="sm">
+        Run summary
+      </Title>
+      <Stack gap="sm">
+        {summary.summary.split(/\n\s*\n/).map((paragraph, n) => (
+          <Text key={n}>{paragraph}</Text>
+        ))}
+        {summary.patterns.length > 0 && (
+          <div>
+            <Text fw={600} mb={4}>
+              Patterns
+            </Text>
+            <List spacing={6}>
+              {summary.patterns.map((p, n) => (
+                <List.Item key={n}>
+                  {p.pattern}{" "}
+                  {p.item_ids.map((itemId) => (
+                    <Anchor key={itemId} href={href.item(itemId)} size="sm" mr={6}>
+                      #{itemId}
+                    </Anchor>
+                  ))}
+                </List.Item>
+              ))}
+            </List>
+          </div>
+        )}
+        {summary.recommendations.length > 0 && (
+          <div>
+            <Text fw={600} mb={4}>
+              Recommendations
+            </Text>
+            <List type="ordered" spacing={6}>
+              {summary.recommendations.map((rec, n) => (
+                <List.Item key={n}>{rec}</List.Item>
+              ))}
+            </List>
+          </div>
+        )}
+      </Stack>
+    </Card>
   );
 }
 
@@ -170,35 +311,51 @@ type BriefReview = { complete?: boolean; gaps?: { field: string; question: strin
 function FieldsDone({ run }: { run: Run }): ReactElement {
   const review = run.state.review as BriefReview | null;
   return (
-    <Section title="Brief review">
-      {review?.gaps?.length ? (
-        <ul>
-          {review.gaps.map((g) => (
-            <li key={g.field}>
-              <b>{g.field}</b>: {g.question}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p>The brief has what the search needs.</p>
-      )}
-      {review?.suggestions?.map((s, n) => (
-        <p key={n} className="hint">
-          {s}
-        </p>
-      ))}
-      <p>
-        {String(run.state.rationale ?? "")} <a href={href.project(run.project_id, "fields")}>Review the proposed fields</a>
-      </p>
-    </Section>
+    <Card>
+      <Group justify="space-between" mb="sm">
+        <Title order={4}>Brief review</Title>
+        <Button component="a" href={href.project(run.project_id, "fields")}>
+          Review the proposed fields
+        </Button>
+      </Group>
+      <Stack gap="sm">
+        {review?.gaps?.length ? (
+          <List spacing={6}>
+            {review.gaps.map((g) => (
+              <List.Item key={g.field}>
+                <Text span fw={600}>
+                  {g.field}
+                </Text>
+                : {g.question}
+              </List.Item>
+            ))}
+          </List>
+        ) : (
+          <Text>The brief has what the search needs.</Text>
+        )}
+        {review?.suggestions?.map((s, n) => (
+          <Text key={n} size="sm" c="dimmed">
+            {s}
+          </Text>
+        ))}
+        {run.state.rationale ? <Text size="sm">{String(run.state.rationale)}</Text> : null}
+      </Stack>
+    </Card>
   );
 }
 
 type GateProps = { run: Run; gate: NonNullable<Run["pending_gate"]>; onDone: () => void };
 
 function Gate({ run, gate, onDone }: GateProps): ReactElement {
-  if (gate.kind === "channels") return <ChannelGate run={run} gate={gate} onDone={onDone} />;
-  return <StrategyGate run={run} gate={gate} onDone={onDone} />;
+  return (
+    <Card style={{ borderColor: "var(--mantine-color-yellow-filled)", borderWidth: 2 }}>
+      <Group gap="xs" mb="md">
+        <IconHandStop size={20} color="var(--mantine-color-yellow-filled)" />
+        <Title order={4}>{gate.kind === "channels" ? "Approve the Telegram channels" : `Approve the ${gate.kind}`}</Title>
+      </Group>
+      {gate.kind === "channels" ? <ChannelGate run={run} gate={gate} onDone={onDone} /> : <StrategyGate run={run} gate={gate} onDone={onDone} />}
+    </Card>
+  );
 }
 
 interface FoundChannel {
@@ -223,50 +380,54 @@ function ChannelGate({ run, gate, onDone }: GateProps): ReactElement {
       if (!next.delete(username)) next.add(username);
       return next;
     });
-  const approve = (): void =>
-    answer.mutate({ approve: true, revised: { channels: offered.filter((c) => picked.has(c.username)) } });
+  const approve = (): void => answer.mutate({ approve: true, revised: { channels: offered.filter((c) => picked.has(c.username)) } });
   return (
-    <Section title="Approve the Telegram channels">
-      <p className="hint">
-        Found by searching Telegram for the strategy's skills. Checked channels are read from now on; unchecked ones are
-        never offered again.
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th />
-            <th>Channel</th>
-            <th>Subscribers</th>
-            <th>Job posts</th>
-            <th>Last post</th>
-            <th>Found by</th>
-          </tr>
-        </thead>
-        <tbody>
-          {offered.map((c) => (
-            <tr key={c.username}>
-              <td>
-                <input type="checkbox" checked={picked.has(c.username)} onChange={() => toggle(c.username)} />
-              </td>
-              <td>
-                <a href={`https://t.me/${c.username}`} target="_blank" rel="noreferrer">
-                  @{c.username}
-                </a>{" "}
-                {c.title}
-              </td>
-              <td>{c.subscribers ?? "?"}</td>
-              <td>{Math.round(c.job_share * 100)}%</td>
-              <td>{c.last_post.slice(0, 10)}</td>
-              <td>{c.query}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <button onClick={approve} disabled={answer.isPending}>
-        Use {picked.size} of {offered.length} channels
-      </button>
+    <Stack>
+      <Text size="sm" c="dimmed">
+        Found by searching Telegram for the strategy's skills. Checked channels are read from now on; unchecked ones are never offered again.
+      </Text>
+      <Table.ScrollContainer minWidth={700}>
+        <Table highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th w={40} />
+              <Table.Th>Channel</Table.Th>
+              <Table.Th ta="right">Subscribers</Table.Th>
+              <Table.Th ta="right">Job posts</Table.Th>
+              <Table.Th>Last post</Table.Th>
+              <Table.Th>Found by</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {offered.map((c) => (
+              <Table.Tr key={c.username}>
+                <Table.Td>
+                  <Checkbox checked={picked.has(c.username)} onChange={() => toggle(c.username)} aria-label={`Use @${c.username}`} />
+                </Table.Td>
+                <Table.Td>
+                  <Anchor href={`https://t.me/${c.username}`} target="_blank" rel="noreferrer">
+                    @{c.username}
+                  </Anchor>{" "}
+                  <Text span c="dimmed" size="sm">
+                    {c.title}
+                  </Text>
+                </Table.Td>
+                <Table.Td ta="right">{c.subscribers ?? "?"}</Table.Td>
+                <Table.Td ta="right">{Math.round(c.job_share * 100)}%</Table.Td>
+                <Table.Td>{c.last_post.slice(0, 10)}</Table.Td>
+                <Table.Td c="dimmed">{c.query}</Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+      <Group>
+        <Button onClick={approve} loading={answer.isPending}>
+          Use {picked.size} of {offered.length} channels
+        </Button>
+      </Group>
       <ErrorBox error={answer.error} />
-    </Section>
+    </Stack>
   );
 }
 
@@ -281,49 +442,61 @@ function StrategyGate({ run, gate, onDone }: GateProps): ReactElement {
     onSuccess: onDone,
   });
   const edited = editing && text !== original;
-  const approve = () => answer.mutate(edited ? { approve: true, revised: JSON.parse(text) as Json } : { approve: true });
+  const approve = (): void => answer.mutate(edited ? { approve: true, revised: JSON.parse(text) as Json } : { approve: true });
   return (
-    <Section title={`Approve the ${gate.kind}`}>
+    <Stack>
+      <Text size="sm" c="dimmed">
+        Nothing is searched until you approve. Approve as is, edit it, or send it back with notes.
+      </Text>
       {draft && !editing && <StrategySummary strategy={draft} />}
-      {editing && <textarea className="code" rows={24} value={text} onChange={(e) => setText(e.target.value)} />}
-      <div className="actions">
-        <button onClick={approve} disabled={answer.isPending}>
+      {editing && <JsonInput autosize minRows={12} maxRows={30} formatOnBlur validationError="Not valid JSON" value={text} onChange={setText} />}
+      <Group>
+        <Button leftSection={<IconCheck size={16} />} onClick={approve} loading={answer.isPending}>
           {edited ? "Approve my edits" : "Approve"}
-        </button>
-        <button className="secondary" onClick={() => setEditing(!editing)}>
-          {editing ? "Show summary" : "Edit JSON"}
-        </button>
-      </div>
-      <label className="field">
-        <span>Or send it back with notes</span>
-        <textarea rows={3} value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="What should change?" />
-      </label>
-      <button className="secondary" disabled={!feedback.trim() || answer.isPending} onClick={() => answer.mutate({ approve: false, feedback })}>
-        Revise with notes
-      </button>
+        </Button>
+        <Button variant="default" onClick={() => setEditing(!editing)}>
+          {editing ? "Show summary" : "Edit as JSON"}
+        </Button>
+      </Group>
+      <Textarea label="Or send it back with notes" autosize minRows={2} value={feedback} onChange={(e) => setFeedback(e.currentTarget.value)} placeholder="What should change?" />
+      <Group>
+        <Button variant="light" disabled={!feedback.trim()} loading={answer.isPending} onClick={() => answer.mutate({ approve: false, feedback })}>
+          Revise with notes
+        </Button>
+      </Group>
       <ErrorBox error={answer.error} />
-    </Section>
+    </Stack>
   );
 }
 
 function StrategySummary({ strategy }: { strategy: Json }): ReactElement {
-  // Strategies differ per mode, so show top-level fields generically, short values inline.
+  // Strategies differ per mode, so show top-level fields generically: text, tags, or JSON.
   return (
-    <dl className="summary">
-      {Object.entries(strategy).map(([key, value]) => (
-        <div key={key}>
-          <dt>{key.replaceAll("_", " ")}</dt>
-          <dd>
-            {typeof value === "string" || typeof value === "number" ? (
-              String(value)
-            ) : Array.isArray(value) && value.every((v) => typeof v === "string") ? (
-              value.join(", ")
-            ) : (
-              <pre>{JSON.stringify(value, null, 2)}</pre>
-            )}
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <Table variant="vertical" layout="fixed" withTableBorder>
+      <Table.Tbody>
+        {Object.entries(strategy).map(([key, value]) => (
+          <Table.Tr key={key}>
+            <Table.Th w={200} style={{ verticalAlign: "top" }}>
+              {words(key)}
+            </Table.Th>
+            <Table.Td>
+              {typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? (
+                <Text size="sm">{String(value)}</Text>
+              ) : Array.isArray(value) && value.every((v) => typeof v === "string") ? (
+                <Group gap={6}>
+                  {value.map((v) => (
+                    <Badge key={v} variant="light" color="gray" tt="none" fw={500} style={{ whiteSpace: "normal", height: "auto" }}>
+                      {v}
+                    </Badge>
+                  ))}
+                </Group>
+              ) : (
+                <Code block>{JSON.stringify(value, null, 2)}</Code>
+              )}
+            </Table.Td>
+          </Table.Tr>
+        ))}
+      </Table.Tbody>
+    </Table>
   );
 }

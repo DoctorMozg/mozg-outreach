@@ -24,11 +24,7 @@ function Page({ route }: { route: Route }): ReactElement {
     case "project":
       return <Project id={route.id} tab={route.tab} />;
     case "run":
-      return (
-        <div className="legacy">
-          <RunView id={route.id} />
-        </div>
-      );
+      return <RunView id={route.id} />;
     case "item":
       return (
         <div className="legacy">

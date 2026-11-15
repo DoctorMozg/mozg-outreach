@@ -57,6 +57,11 @@ def search_pipeline(svc: Services, project_id: int) -> str:
         return SEARCH_PIPELINES[get_or_404(session, Project, project_id).mode]
 
 
+@router.get("/pipelines")
+async def pipelines(svc: Svc) -> dict[str, list[str]]:
+    return svc.runs.phases()
+
+
 @router.get("/projects/{project_id}/runs")
 async def list_runs(project_id: int, svc: Svc) -> list[RunOut]:
     with svc.db.session() as session:

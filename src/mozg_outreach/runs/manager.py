@@ -55,6 +55,10 @@ class RunManager:
     def pipelines(self) -> list[str]:
         return sorted(self._flows)
 
+    def phases(self) -> dict[str, list[str]]:
+        """Each pipeline's phases in run order, for showing a run's progress."""
+        return {name: [p.name for p in flow.phases] for name, flow in sorted(self._flows.items())}
+
     def start(self, project_id: int, pipeline: str, state: JsonObject) -> int:
         flow = self._flow(pipeline)
         self._check_ready(flow, project_id)

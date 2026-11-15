@@ -46,6 +46,18 @@ class TestRuns:
         assert bad_edit.status_code == 422
         assert (await api.client.get("/api/runs/999")).status_code == 404
 
+    async def test_pipelines_list_their_phases_in_order(self, api: Api) -> None:
+        pipelines = await api.ok("GET", "/api/pipelines")
+        assert pipelines["biz.search"] == [
+            "plan",
+            "approve_strategy",
+            "sources",
+            "scout",
+            "assess",
+            "summarize",
+        ]
+        assert pipelines["biz.letters"] == ["letters"]
+
     async def test_search_needs_a_brief(self, api: Api) -> None:
         project_id = await api.project()
         assert (

@@ -92,7 +92,7 @@ export function Section({ title, children, actions }: { title: ReactNode; childr
 }
 
 // Agents prefix a note with the source it is about ("Bayut: ..."), which is what groups them.
-const PREFIX = /^([^:]{3,120}):\s+(.+)$/s;
+const PREFIX = /^([^:]{3,240}):\s+(.+)$/s;
 
 export function groupConcerns(items: string[]): [string, string[]][] {
   const groups = new Map<string, string[]>();
