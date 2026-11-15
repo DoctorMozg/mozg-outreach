@@ -184,6 +184,11 @@ button.secondary {
   color: var(--accent);
 }
 
+button.danger {
+  background: var(--bad);
+  border-color: var(--bad);
+}
+
 button.link {
   background: none;
   border: none;

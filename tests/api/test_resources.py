@@ -102,6 +102,41 @@ class TestProjects:
         assert clash.status_code == 409
         assert (await api.client.post(f"/api/items/{free}/enrich")).status_code == 202
 
+    async def test_delete_removes_the_project_but_keeps_the_registry(self, api: Api) -> None:
+        project_id = await api.project("seeker")
+        with api.services.db.session() as session:
+            run = Run(project_id=project_id, pipeline="seeker.search", state={})
+            item = Item(project_id=project_id, kind=ItemKind.JOB, dedup_key="j", title="Job")
+            acme = Entity(kind=EntityKind.COMPANY, name="Acme")
+            session.add_all([run, item, acme])
+            session.flush()
+            seen = Sighting(
+                entity_id=acme.id,
+                source_kind=SourceKind.FEED,
+                source_url="https://acme.example",
+                project_id=project_id,
+                run_id=run.id,
+            )
+            session.add(seen)
+            session.flush()
+            run_id, sighting_id = run.id, seen.id
+
+        open_run = await api.client.delete(f"/api/projects/{project_id}")
+        assert open_run.status_code == 409
+        with api.services.db.session() as session:
+            finished = session.get(Run, run_id)
+            assert finished is not None
+            finished.finished_at = datetime.now(UTC)
+        assert (await api.client.delete(f"/api/projects/{project_id}")).status_code == 204
+
+        assert (await api.client.get(f"/api/projects/{project_id}")).status_code == 404
+        with api.services.db.session() as session:
+            assert session.query(Item).count() == 0
+            assert session.query(Run).count() == 0
+            sighting = session.get(Sighting, sighting_id)
+            assert sighting is not None
+            assert (sighting.project_id, sighting.run_id) == (None, None)
+
     async def test_item_actions_need_selection_and_a_pipeline(self, api: Api) -> None:
         project_id = await api.project("seeker")
         with api.services.db.session() as session:
