@@ -31,7 +31,7 @@ from mozg_outreach.storage.models import (
     Relation,
     Sighting,
 )
-from mozg_outreach.storage.repositories import ItemRepository, ReportFilter
+from mozg_outreach.storage.repositories import InteractionRepository, ItemRepository, ReportFilter
 
 router = APIRouter(prefix="/api")
 Svc = Annotated[Services, Depends(services)]
@@ -88,11 +88,15 @@ def _relations(session: Session, entity_id: int) -> list[RelationOut]:
 async def get_entity(entity_id: int, svc: Svc) -> EntityDetail:
     with svc.db.session() as session:
         entity = get_or_404(session, Entity, entity_id)
-        leads = session.execute(
-            select(ItemLink.role, Item)
-            .join(Item, Item.id == ItemLink.item_id)
-            .where(ItemLink.entity_id == entity_id)
-        )
+        leads = [
+            (role, item)
+            for role, item in session.execute(
+                select(ItemLink.role, Item)
+                .join(Item, Item.id == ItemLink.item_id)
+                .where(ItemLink.entity_id == entity_id)
+            )
+        ]
+        activity = InteractionRepository(session).activity([i for _, i in leads])
         return EntityDetail.model_validate(
             {
                 **EntityOut.model_validate(entity).model_dump(),
@@ -113,7 +117,13 @@ async def get_entity(entity_id: int, svc: Svc) -> EntityDetail:
                 ],
                 "relations": _relations(session, entity_id),
                 "leads": [
-                    LeadOut(item_id=i.id, project_id=i.project_id, title=i.title, role=role)
+                    LeadOut(
+                        item_id=i.id,
+                        project_id=i.project_id,
+                        title=i.title,
+                        role=role,
+                        activity=activity.get(i.id),
+                    )
                     for role, i in leads
                 ],
             }

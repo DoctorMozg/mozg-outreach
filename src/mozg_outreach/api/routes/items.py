@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from mozg_outreach.api.routes.runs import ensure_idle, run_out
 from mozg_outreach.api.schemas import (
@@ -40,14 +41,21 @@ class UserEdit(BaseModel):
     based_on_version: int
 
 
+def item_outs(session: Session, items: list[Item]) -> list[ItemOut]:
+    """Rows for a list of leads, each with what the user last did with it in any project."""
+    activity = InteractionRepository(session).activity(items)
+    return [
+        ItemOut.model_validate(i).model_copy(update={"activity": activity.get(i.id)}) for i in items
+    ]
+
+
 @router.get("/projects/{project_id}/items")
 async def report(
     project_id: int, svc: Svc, view: Annotated[ReportFilter, Query()]
 ) -> list[ItemOut]:
     with svc.db.session() as session:
         get_or_404(session, Project, project_id)
-        items = ItemRepository(session).report(project_id, view)
-        return [ItemOut.model_validate(i) for i in items]
+        return item_outs(session, ItemRepository(session).report(project_id, view))
 
 
 @router.get("/items/{item_id}")
@@ -61,7 +69,7 @@ async def get_item(item_id: int, svc: Svc) -> ItemDetail:
         )
         return ItemDetail.model_validate(
             {
-                **ItemOut.model_validate(item).model_dump(),
+                **item_outs(session, [item])[0].model_dump(),
                 "raw": item.raw,
                 "details": item.details,
                 "drafts": DraftRepository(session).for_item(item_id),
@@ -79,7 +87,7 @@ async def select_item(item_id: int, body: ItemPatch, svc: Svc) -> ItemOut:
     with svc.db.session() as session:
         item = get_or_404(session, Item, item_id)
         item.selected = body.selected
-        return ItemOut.model_validate(item)
+        return item_outs(session, [item])[0]
 
 
 def _start_item_run(svc: Services, item_id: int, action: str) -> RunOut:

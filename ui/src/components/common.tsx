@@ -1,7 +1,7 @@
 import { Accordion, Alert, Anchor, Badge, type BadgeProps, Card, Group, List, Text, Tooltip } from "@mantine/core";
 import { IconAlertTriangle, IconExternalLink, IconInfoCircle } from "@tabler/icons-react";
 import type { ReactElement, ReactNode } from "react";
-import type { FieldValue, Mode, RunStatus } from "../api";
+import type { Activity, FieldValue, Mode, RunStatus } from "../api";
 
 export function ErrorBox({ error }: { error: unknown }): ReactElement | null {
   if (!error) return null;
@@ -39,6 +39,23 @@ export function Score({ value, size = "md" }: { value: number | null; size?: Bad
     <Badge color={scoreColor(value)} variant="light" size={size} miw={42} style={{ fontVariantNumeric: "tabular-nums" }}>
       {value === null ? "n/a" : value.toFixed(0)}
     </Badge>
+  );
+}
+
+const ACTIVITY_COLORS: Record<string, string> = { sent: "blue", replied: "teal", called: "grape", met: "grape", declined: "red" };
+
+/** The lead's last logged status and note; `projectId` is the list's project, to flag another one's log. */
+export function ActivityBadge({ activity, projectId, size = "xs" }: { activity: Activity | null; projectId: number; size?: BadgeProps["size"] }): ReactElement | null {
+  if (!activity) return null;
+  const when = activity.status_at ? new Date(activity.status_at).toLocaleDateString() : null;
+  const elsewhere = activity.project_id !== projectId;
+  const label = [when && `${activity.status} on ${when}`, elsewhere && "logged in another project", activity.note].filter(Boolean).join(" · ");
+  return (
+    <Tooltip label={label} multiline maw={360}>
+      <Badge size={size} variant={elsewhere ? "outline" : "filled"} color={activity.status ? (ACTIVITY_COLORS[activity.status] ?? "gray") : "gray"}>
+        {activity.status ?? "note"}
+      </Badge>
+    </Tooltip>
   );
 }
 

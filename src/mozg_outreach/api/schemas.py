@@ -9,6 +9,7 @@ from mozg_outreach.domain import EntityKind, IdentifierKind, ItemKind, ProjectMo
 from mozg_outreach.letters.models import Tone
 from mozg_outreach.naturalize.models import Channel
 from mozg_outreach.storage.models import JsonObject
+from mozg_outreach.storage.repositories import LeadActivity
 
 
 class Row(BaseModel):
@@ -116,6 +117,7 @@ class ItemOut(Row):
     enriched_at: datetime | None
     dated: date = Field(description="Posted on, or the day a run first found the lead.")
     updated_at: datetime
+    activity: LeadActivity | None = None
 
 
 class ItemPatch(BaseModel):
@@ -218,6 +220,7 @@ class LeadOut(BaseModel):
     project_id: int
     title: str
     role: str
+    activity: LeadActivity | None
 
 
 class EntityOut(Row):

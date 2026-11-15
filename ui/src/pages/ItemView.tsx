@@ -25,7 +25,7 @@ import { IconArrowLeft, IconCheck, IconCopy, IconEdit, IconMail, IconSparkles } 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, type Draft, enrichHint, get, type ItemDetail, type Run } from "../api";
-import { Empty, ErrorBox, Score } from "../components/common";
+import { ActivityBadge, Empty, ErrorBox, Score } from "../components/common";
 import { Diff } from "../components/Diff";
 import { href } from "../router";
 import { Axes, FieldList } from "./Report";
@@ -56,6 +56,7 @@ export function ItemView({ id }: { id: number }): ReactElement {
         <Badge variant="outline" color="gray">
           {i.kind}
         </Badge>
+        <ActivityBadge activity={i.activity} projectId={i.project_id} size="lg" />
         <Text size="sm" c="dimmed">
           {i.dated}
         </Text>

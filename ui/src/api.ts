@@ -96,6 +96,17 @@ export interface Item {
   /** Posted on, or the day a run first found the lead (YYYY-MM-DD). */
   dated: string;
   updated_at: string;
+  activity: Activity | null;
+}
+
+/** What the user last did with a lead, logged here or on the same lead in another project. */
+export interface Activity {
+  /** The newest logged kind apart from notes; null when only notes were logged. */
+  status: string | null;
+  status_at: string | null;
+  note: string;
+  project_id: number;
+  item_id: number;
 }
 
 /** Label and cost note for a lead's enrich action; running it again repeats paid searches. */
@@ -188,7 +199,7 @@ export interface EntityDetail extends Entity {
     source_url: string | null;
     quote: string | null;
   }[];
-  leads: { item_id: number; project_id: number; title: string; role: string }[];
+  leads: { item_id: number; project_id: number; title: string; role: string; activity: Activity | null }[];
 }
 
 export interface Graph {

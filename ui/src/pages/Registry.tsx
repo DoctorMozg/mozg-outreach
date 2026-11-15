@@ -3,7 +3,7 @@ import { IconBuilding, IconSearch, IconUser } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, type Entity, type EntityDetail, get, type Graph, type MergeSuggestion } from "../api";
-import { Empty, ErrorBox, Value } from "../components/common";
+import { ActivityBadge, Empty, ErrorBox, Value } from "../components/common";
 import { GraphView } from "../components/GraphView";
 import { href } from "../router";
 
@@ -246,7 +246,8 @@ export function EntityView({ id }: { id: number }): ReactElement {
               <Anchor href={href.item(l.item_id)}>{l.title}</Anchor>{" "}
               <Text span c="dimmed">
                 {l.role}
-              </Text>
+              </Text>{" "}
+              <ActivityBadge activity={l.activity} projectId={l.project_id} />
             </Text>
           ))}
         </Stack>

@@ -1,3 +1,5 @@
+from datetime import UTC, date, datetime
+
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -242,3 +244,47 @@ class TestDraftsAndInteractions:
         ]
         with pytest.raises(ValueError, match="empty"):
             log.log(item_id, "  ")
+
+    def test_activity_shows_the_latest_status_and_note_in_every_project(
+        self, session: Session, project: Project, run: Run, item_id: int
+    ) -> None:
+        other = Project(name="Second", mode=ProjectMode.BIZ, sender_name=None, brief=None)
+        session.add(other)
+        session.flush()
+        items = ItemRepository(session)
+        twin = items.upsert(other.id, run.id, candidate("acme.io", "Acme"))
+        stranger = items.upsert(project.id, run.id, candidate("beta.io", "Beta"))
+        log = InteractionRepository(session)
+        for day, (row_id, kind, note) in enumerate(
+            [
+                (item_id, "sent", "applied through the form"),
+                (twin.id, "declined", ""),
+                (item_id, "note", "recruiter is on leave"),
+            ],
+            start=1,
+        ):
+            log.log(row_id, kind, note).happened_at = datetime(2026, 11, day, tzinfo=UTC)
+        mine = session.get(Item, item_id)
+        assert mine is not None
+
+        activity = log.activity([mine, twin, stranger])
+
+        assert stranger.id not in activity
+        latest = activity[item_id]
+        assert (latest.status, latest.note) == ("declined", "recruiter is on leave")
+        assert (latest.project_id, latest.item_id) == (other.id, twin.id)
+        assert latest.status_at is not None
+        assert latest.status_at.date() == date(2026, 11, 2)
+        assert activity[twin.id] == latest
+
+    def test_notes_alone_leave_the_status_empty(self, session: Session, item_id: int) -> None:
+        log = InteractionRepository(session)
+        log.log(item_id, "note", "ask Anna first")
+        item = session.get(Item, item_id)
+        assert item is not None
+        only_note = log.activity([item])[item_id]
+        assert (only_note.status, only_note.status_at, only_note.note) == (
+            None,
+            None,
+            "ask Anna first",
+        )

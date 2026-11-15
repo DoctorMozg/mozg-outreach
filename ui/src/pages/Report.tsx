@@ -27,7 +27,7 @@ import { IconColumns3, IconExternalLink, IconMail, IconSearch, IconSparkles, Ico
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, enrichHint, get, type Graph, type Item, type Project, type Run } from "../api";
-import { Empty, ErrorBox, Score, Value } from "../components/common";
+import { ActivityBadge, Empty, ErrorBox, Score, Value } from "../components/common";
 import { GraphView } from "../components/GraphView";
 import { href } from "../router";
 
@@ -212,6 +212,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
                     {item.title}
                   </Text>
                   <Group gap={4} mt={2}>
+                    <ActivityBadge activity={item.activity} projectId={project.id} />
                     {seeker && (
                       <Badge size="xs" variant="outline" color="gray">
                         {item.kind}
@@ -378,6 +379,7 @@ function LeadPreview({ item, onToggle, onEnrich, enriching }: PreviewProps): Rea
           <Badge variant="outline" color="gray">
             {item.kind}
           </Badge>
+          <ActivityBadge activity={item.activity} projectId={item.project_id} size="md" />
           <Text size="sm" c="dimmed">
             {item.dated}
           </Text>

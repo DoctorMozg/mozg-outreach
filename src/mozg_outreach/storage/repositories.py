@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -20,6 +20,9 @@ from mozg_outreach.storage.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# The interaction kind that comments on a lead without changing its status.
+NOTE = "note"
 
 
 class ReportFilter(BaseModel):
@@ -250,6 +253,25 @@ class DraftRepository:
         )
 
 
+class LeadActivity(BaseModel):
+    """What the user last did with a lead: the newest status, apart from notes, and newest note."""
+
+    status: str | None = None
+    status_at: datetime | None = None
+    note: str = ""
+    # Where the status was logged, or the note when there is no status yet.
+    project_id: int
+    item_id: int
+
+    def take(self, entry: Interaction, project_id: int) -> None:
+        """Fold in one interaction; callers pass them newest first."""
+        if entry.kind != NOTE and self.status is None:
+            self.status, self.status_at = entry.kind, entry.happened_at
+            self.project_id, self.item_id = project_id, entry.item_id
+        if entry.note and not self.note:
+            self.note = entry.note
+
+
 class InteractionRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -261,6 +283,25 @@ class InteractionRepository:
         self._session.add(entry)
         self._session.flush()
         return entry
+
+    def activity(self, items: list[Item]) -> dict[int, "LeadActivity"]:
+        """Per item, the newest status and note logged on it or on the same lead in any project."""
+        keys = {(i.kind, i.dedup_key) for i in items}
+        rows = self._session.execute(
+            select(Interaction, Item.kind, Item.dedup_key, Item.project_id)
+            .join(Item, Item.id == Interaction.item_id)
+            .where(Item.dedup_key.in_({key for _, key in keys}))
+            .order_by(Interaction.happened_at.desc(), Interaction.id.desc())
+        )
+        latest: dict[tuple[str, str], LeadActivity] = {}
+        for entry, kind, key, project_id in rows:
+            if (kind, key) not in keys:
+                continue
+            found = latest.setdefault(
+                (kind, key), LeadActivity(project_id=project_id, item_id=entry.item_id)
+            )
+            found.take(entry, project_id)
+        return {i.id: latest[i.kind, i.dedup_key] for i in items if (i.kind, i.dedup_key) in latest}
 
     def history(self, item_id: int) -> list[Interaction]:
         return list(

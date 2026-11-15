@@ -245,6 +245,29 @@ async def test_voice_profile_needs_samples_then_builds(api: Api) -> None:
     assert stored["profile"] == built["profile"]
 
 
+async def test_logged_activity_shows_in_every_list(api: Api) -> None:
+    first, second = await api.project("seeker"), await api.project("seeker")
+    with api.services.db.session() as session:
+        job = Item(project_id=first, kind=ItemKind.JOB, dedup_key="https://a.example/1", title="A")
+        twin = Item(project_id=second, kind=ItemKind.JOB, dedup_key=job.dedup_key, title="A")
+        acme = Entity(kind=EntityKind.COMPANY, name="Acme")
+        session.add_all([job, twin, acme])
+        session.flush()
+        session.add(ItemLink(item_id=twin.id, entity_id=acme.id, role="employer"))
+        job_id, twin_id, acme_id = job.id, twin.id, acme.id
+    await api.ok("POST", f"/api/items/{job_id}/interactions", {"kind": "sent", "note": "via form"})
+
+    [row] = await api.get(f"/api/projects/{second}/items", list[ItemOut])
+    assert row.activity is not None
+    assert (row.activity.status, row.activity.note) == ("sent", "via form")
+    assert row.activity.project_id == first
+    detail = await api.get(f"/api/items/{twin_id}", ItemOut)
+    assert detail.activity == row.activity
+    [lead] = (await api.get(f"/api/entities/{acme_id}", EntityDetail)).leads
+    assert lead.activity is not None
+    assert lead.activity.status == "sent"
+
+
 class TestRegistry:
     def seed(self, session: Session, project_id: int) -> tuple[int, int, int, int]:
         acme = Entity(kind=EntityKind.COMPANY, name="Acme GmbH")
