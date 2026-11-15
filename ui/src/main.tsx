@@ -26,11 +26,7 @@ function Page({ route }: { route: Route }): ReactElement {
     case "run":
       return <RunView id={route.id} />;
     case "item":
-      return (
-        <div className="legacy">
-          <ItemView id={route.id} />
-        </div>
-      );
+      return <ItemView id={route.id} />;
     case "voice":
       return (
         <div className="legacy">

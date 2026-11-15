@@ -18,10 +18,11 @@ export function diffWords(before: string, after: string): Piece[] {
     if (i < a.length && j < b.length && a[i] === b[j]) {
       out.push({ kind: "same", text: a[i++]! });
       j++;
-    } else if (j < b.length && (i === a.length || lcs[i]![j + 1]! >= lcs[i + 1]![j]!)) {
-      out.push({ kind: "added", text: b[j++]! });
-    } else {
+    } else if (i < a.length && (j === b.length || lcs[i + 1]![j]! >= lcs[i]![j + 1]!)) {
+      // On a tie the removed word goes first, so a replacement reads old then new.
       out.push({ kind: "removed", text: a[i++]! });
+    } else {
+      out.push({ kind: "added", text: b[j++]! });
     }
   }
   return out;
@@ -29,10 +30,10 @@ export function diffWords(before: string, after: string): Piece[] {
 
 export function Diff({ before, after }: { before: string; after: string }): ReactElement {
   return (
-    <pre className="diff">
+    <div className="letter diff">
       {diffWords(before, after).map((piece, n) =>
         piece.kind === "same" ? piece.text : <span key={n} className={piece.kind}>{piece.text}</span>,
       )}
-    </pre>
+    </div>
   );
 }
