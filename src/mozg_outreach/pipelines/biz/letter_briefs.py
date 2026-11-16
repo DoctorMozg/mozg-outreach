@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from mozg_outreach.domain import FieldValue
 from mozg_outreach.letters.models import Angle, Hook, Skipped
 from mozg_outreach.naturalize.models import Channel
+from mozg_outreach.pipelines.biz.approach_models import PlannedTouch
 from mozg_outreach.pipelines.biz.enrichment_models import CompanyDossier, EmailContact
 from mozg_outreach.pipelines.biz.models import OutreachAngle
 from mozg_outreach.registry.identifiers import name_key
@@ -41,6 +42,8 @@ class CompanyEvidence(BaseModel):
 class Addressee(BaseModel):
     contact: Contact
     route: Route
+    touch: PlannedTouch | None = Field(default=None, description="The approach plan's touch.")
+    named: bool = Field(default=True, description="False for a company inbox with no person named.")
 
 
 class Recipients(BaseModel):

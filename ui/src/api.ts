@@ -97,6 +97,20 @@ export interface Item {
   dated: string;
   updated_at: string;
   activity: Activity | null;
+  /** Where a company's approach sequence stands; null without a plan. */
+  approach_step: ApproachStep | null;
+}
+
+/** The first approach touch not done yet (approach_models.py ApproachStep). */
+export interface ApproachStep {
+  /** Null when every touch is done. */
+  step: number | null;
+  total: number;
+  done: number;
+  channel: TouchChannel | null;
+  reader: string | null;
+  /** YYYY-MM-DD: the first touch's date plus this touch's day offset; null before the first touch. */
+  due: string | null;
 }
 
 /** What the user last did with a lead, logged here or on the same lead in another project. */
@@ -111,9 +125,11 @@ export interface Activity {
 
 /** Label and cost note for a lead's enrich action; running it again repeats paid searches. */
 export function enrichHint(item: Item): { label: string; note: string | null } {
-  if (!item.enriched) return { label: "Enrich", note: null };
+  // A company's enrichment also plans the approach and drafts its letters.
+  const extra = item.kind === "company" ? ", replans the approach and drafts new letter versions" : "";
+  if (!item.enriched) return { label: "Enrich", note: item.kind === "company" ? "Enrichment researches the company, plans the approach and drafts the letters." : null };
   const when = item.enriched_at ? ` on ${new Date(item.enriched_at).toLocaleDateString()}` : "";
-  return { label: "Enrich again", note: `Already enriched${when}; running it again repeats the paid searches.` };
+  return { label: "Enrich again", note: `Already enriched${when}; running it again repeats the paid searches${extra}.` };
 }
 
 export interface DraftReview {
@@ -136,6 +152,8 @@ export interface Draft {
   item_id: number;
   channel: string;
   recipient: string;
+  /** The approach step this letter carries; null outside a plan. */
+  step: number | null;
   version: number;
   subject: string | null;
   body: string;
@@ -150,6 +168,30 @@ export interface Interaction {
   happened_at: string;
 }
 
+/** An email letter put into the user's Gmail Drafts, and what the mailbox shows became of it. */
+export interface MailThread {
+  id: number;
+  item_id: number;
+  recipient: string;
+  step: number | null;
+  draft_id: number;
+  address: string;
+  pushed_at: string;
+  sent_at: string | null;
+  replied_at: string | null;
+  bounced_at: string | null;
+}
+
+/** The Gmail account drafts go to; null when Gmail isn't set up. */
+export interface MailStatus {
+  address: string | null;
+}
+
+export interface MailCheck {
+  checked: number;
+  logged: string[];
+}
+
 export interface LinkedEntity {
   entity_id: number;
   kind: "person" | "company";
@@ -161,6 +203,7 @@ export interface ItemDetail extends Item {
   raw: Json;
   details: Json;
   drafts: Draft[];
+  mail: MailThread[];
   interactions: Interaction[];
   entities: LinkedEntity[];
 }
@@ -291,6 +334,63 @@ export interface CvChoice {
   listing_language: string | null;
   ranked: { cv_id: number; name: string; total: number | null; in_listing_language: boolean; reason: string | null }[];
   concerns: string[];
+}
+
+export type TouchChannel = "email" | "linkedin" | "phone";
+
+/** What `seeker.apply` filled on a job's form (apply/models.py FillReport). */
+export interface FillReport {
+  ats: string;
+  url: string;
+  filled: { label: string; source: "profile" | "cv" | "letter" | "answerer" }[];
+  for_user: { label: string; required: boolean; reason: string }[];
+  concerns: string[];
+}
+
+export interface PlanRoute {
+  ref: string;
+  channel: TouchChannel;
+  address: string;
+  confidence: "published" | "guessed" | "linkedin" | "shared_inbox";
+  source_url: string | null;
+}
+
+export interface PlanContact {
+  ref: string;
+  name: string | null;
+  title: string;
+  relevance: string;
+  routes: PlanRoute[];
+}
+
+export interface PlannedTouch {
+  step: number;
+  day: number;
+  contact_ref: string;
+  route_ref: string;
+  addressed_to: string | null;
+  purpose: "open" | "follow_up" | "breakup";
+  angle: string;
+  hook_ref: string | null;
+  ask: string;
+  talking_points: string;
+}
+
+/** Who to contact, how and when, stored on an enriched company as `details.approach`. */
+export interface StoredApproach {
+  plan: {
+    summary: string;
+    first_contact_ref: string;
+    rationale: string;
+    touches: PlannedTouch[];
+    avoid: string[];
+    concerns: string[];
+  };
+  contacts: PlanContact[];
+  hooks: { ref: string; hook: { signal: string; source: string; source_url: string | null } }[];
+  planned_on: string;
+  /** Touches the user marked done, with the day. */
+  done?: { step: number; on: string; interaction_id: number | null }[];
 }
 
 export interface BriefDraft {

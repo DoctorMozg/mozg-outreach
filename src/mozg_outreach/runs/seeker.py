@@ -150,7 +150,9 @@ def _sources(ctx: Ctx) -> list[SourceConfig]:
 
 async def plan(ctx: Ctx) -> PhaseResult:
     brief = _brief(ctx)
-    ctx.state.brief_hash = hashlib.sha256(brief.model_dump_json().encode()).hexdigest()
+    # Applicant details only fill forms, so editing them keeps the planned strategy.
+    planned = brief.model_dump_json(exclude={"applicant"})
+    ctx.state.brief_hash = hashlib.sha256(planned.encode()).hexdigest()
     last = _last_search(ctx) if ctx.state.options.reuse_last_strategy else None
     # Gate feedback asks for a new plan, so it never reuses.
     if last and last.state.brief_hash == ctx.state.brief_hash and not ctx.state.feedback:

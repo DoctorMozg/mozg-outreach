@@ -212,6 +212,7 @@ class VoiceRepository:
 class NewDraft(BaseModel):
     channel: str
     recipient: str
+    step: int | None = None
     subject: str | None
     body: str
     review: BaseModel
@@ -228,12 +229,14 @@ class DraftRepository:
                 Draft.item_id == item_id,
                 Draft.channel == draft.channel,
                 Draft.recipient == draft.recipient,
+                Draft.step.is_(None) if draft.step is None else Draft.step == draft.step,
             )
         )
         row = Draft(
             item_id=item_id,
             channel=draft.channel,
             recipient=draft.recipient,
+            step=draft.step,
             version=(latest or 0) + 1,
             subject=draft.subject,
             body=draft.body,
@@ -248,7 +251,7 @@ class DraftRepository:
             self._session.scalars(
                 select(Draft)
                 .where(Draft.item_id == item_id)
-                .order_by(Draft.recipient, Draft.channel, Draft.version)
+                .order_by(Draft.step, Draft.recipient, Draft.channel, Draft.version)
             )
         )
 

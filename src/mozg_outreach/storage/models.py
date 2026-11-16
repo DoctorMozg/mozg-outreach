@@ -1,7 +1,15 @@
 import logging
 from datetime import UTC, date, datetime
 
-from sqlalchemy import JSON, ForeignKey, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    ForeignKey,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from mozg_outreach.domain import (
@@ -153,18 +161,45 @@ class Item(Base):
 
 class Draft(Base):
     __tablename__ = "drafts"
-    __table_args__ = (UniqueConstraint("item_id", "channel", "recipient", "version"),)
+    __table_args__ = (
+        UniqueConstraint("item_id", "channel", "recipient", "step", "version", name="uq_drafts"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
     channel: Mapped[str] = mapped_column(String(40))
     recipient: Mapped[str] = mapped_column(String(200), default="")
+    # The approach plan's step this letter carries; null for letters outside a plan.
+    step: Mapped[int | None]
     version: Mapped[int] = mapped_column(default=1)
     subject: Mapped[str | None] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text)
     # Hook and angle used, naturalizer changes, and problems left for the user to fix.
     review: Mapped[JsonObject] = mapped_column(default=dict)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class MailThread(Base):
+    """An email letter put into the user's Gmail Drafts, and what became of it there."""
+
+    __tablename__ = "mail_threads"
+    __table_args__ = (UniqueConstraint("item_id", "recipient", "step", name="uq_mail_threads"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"), index=True)
+    recipient: Mapped[str] = mapped_column(String(200))
+    step: Mapped[int | None]
+    draft_id: Mapped[int] = mapped_column(ForeignKey("drafts.id", ondelete="CASCADE"))
+    address: Mapped[str] = mapped_column(String(320))
+    # Gmail's 64-bit thread id survives edits in Gmail and the send.
+    gmail_thread_id: Mapped[int] = mapped_column(BigInteger)
+    pushed_at: Mapped[datetime] = mapped_column(default=utcnow)
+    sent_at: Mapped[datetime | None]
+    # The sent message's own Message-ID header and subject, which a follow-up replies to.
+    sent_message_id: Mapped[str | None] = mapped_column(String(998))
+    sent_subject: Mapped[str | None] = mapped_column(String(998))
+    replied_at: Mapped[datetime | None]
+    bounced_at: Mapped[datetime | None]
 
 
 class Interaction(Base):

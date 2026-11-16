@@ -1,5 +1,7 @@
 """The FastAPI app: services in the lifespan, error mapping, routes and the built UI."""
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -18,9 +20,16 @@ from mozg_outreach.agents import (
     RunnerSettings,
     StepRunner,
 )
-from mozg_outreach.api.routes import briefs, cvs, items, projects, registry, runs, voice
+from mozg_outreach.api.routes import briefs, cvs, items, mail, projects, registry, runs, voice
 from mozg_outreach.api.services import Services
 from mozg_outreach.api.settings import Settings
+from mozg_outreach.apply.browser import ApplyBrowser
+from mozg_outreach.apply.desk import ApplyDesk
+from mozg_outreach.browser import BrowserService
+from mozg_outreach.browser.toolkit import TOOLKIT, BrowserToolkit
+from mozg_outreach.mail import GmailMailbox, Mailbox, MailError
+from mozg_outreach.mail.drafts import GmailDrafts, MailDraftError
+from mozg_outreach.pipelines.biz.progress import StepError
 from mozg_outreach.runs.catalog import FLOWS
 from mozg_outreach.runs.flow import AdapterFactory
 from mozg_outreach.runs.manager import RunEnvironment, RunManager, RunStateError
@@ -42,9 +51,13 @@ def _error(status: int) -> Callable[[Request, Exception], Awaitable[JSONResponse
 
 
 def create_app(
-    settings: Settings, runner: StepRunner | None = None, adapters: AdapterFactory | None = None
+    settings: Settings,
+    runner: StepRunner | None = None,
+    adapters: AdapterFactory | None = None,
+    applications: ApplyDesk | None = None,
+    mailbox: Mailbox | None = None,
 ) -> FastAPI:
-    """Build the app; tests pass a recorded runner and fake feeds instead of the real ones."""
+    """Build the app; tests pass a recorded runner, fake feeds, apply browser and mailbox."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -56,11 +69,16 @@ def create_app(
             def feeds(kind: str, config: JsonObject) -> SourceAdapter:
                 return build_adapter(kind, config, context)
 
+            browser = BrowserService(settings.browser)
             agent_runner = runner or AgentRunner(
-                RunnerSettings(max_concurrency=settings.max_parallel_agents)
+                RunnerSettings(max_concurrency=settings.max_parallel_agents),
+                toolkits={TOOLKIT: BrowserToolkit(browser)},
             )
             prompts = PromptLibrary(settings.prompts)
             factory = adapters or feeds
+            apply_browser = ApplyBrowser(
+                settings.home / "browser-profile", settings.browser.channel
+            )
             manager = RunManager(
                 RunEnvironment(
                     db=db,
@@ -69,10 +87,13 @@ def create_app(
                     workspaces=settings.workspaces,
                     adapters=factory,
                     max_parallel_runs=settings.max_parallel_runs,
+                    applications=applications or apply_browser,
                 ),
                 FLOWS,
             )
             manager.recover()
+            gmail_box = mailbox or (GmailMailbox(settings.gmail) if settings.gmail else None)
+            gmail = GmailDrafts(db, gmail_box) if gmail_box else None
             app.state.services = Services(
                 db=db,
                 runs=manager,
@@ -80,12 +101,22 @@ def create_app(
                 prompts=prompts,
                 adapters=factory,
                 home=settings.home,
+                browser=browser,
+                gmail=gmail,
             )
             logger.info("serving data from %s", settings.home)
+            # A test's mailbox is checked by hand, never by the clock.
+            poller = asyncio.create_task(gmail.watch()) if gmail and not mailbox else None
             try:
                 yield
             finally:
+                if poller is not None:
+                    poller.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await poller
                 await manager.shutdown()
+                await apply_browser.stop()
+                await browser.stop()
                 db.engine.dispose()
 
     app = FastAPI(title="mozg-outreach", lifespan=lifespan)
@@ -96,7 +127,10 @@ def create_app(
     # A failed agent call in a request (voice profile, brief draft) is an upstream failure.
     app.add_exception_handler(AgentRunError, _error(502))
     app.add_exception_handler(AgentOutputError, _error(502))
-    for module in (projects, briefs, runs, items, cvs, voice, registry):
+    app.add_exception_handler(MailDraftError, _error(409))
+    app.add_exception_handler(StepError, _error(409))
+    app.add_exception_handler(MailError, _error(502))
+    for module in (projects, briefs, runs, items, cvs, voice, registry, mail):
         app.include_router(module.router)
     if settings.ui_dist.is_dir():
         app.mount("/", StaticFiles(directory=settings.ui_dist, html=True), name="ui")

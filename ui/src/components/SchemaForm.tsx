@@ -70,7 +70,8 @@ function ObjectFields({ schema, root, value, onChange }: ObjectProps): ReactElem
         if (field.type === "object") {
           // A nullable section can be switched off, which sends null rather than its defaults.
           const optional = raw.anyOf?.some((s) => s.type === "null") ?? false;
-          const on = !(optional && name in value && value[name] === null);
+          // Off when saved as null, or when a section with no default was never filled in.
+          const on = !optional || (current !== null && current !== undefined);
           return (
             <Fieldset
               key={name}

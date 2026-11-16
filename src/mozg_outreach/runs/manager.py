@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mozg_outreach.agents import AgentEvent, PromptLibrary, StepRunner
+from mozg_outreach.apply.desk import ApplyDesk
 from mozg_outreach.domain import RunStatus
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.runs.events import RunLog
@@ -42,6 +43,7 @@ class RunEnvironment:
     workspaces: Path
     adapters: AdapterFactory
     max_parallel_runs: int = 2
+    applications: ApplyDesk | None = None
 
 
 class RunManager:
@@ -183,6 +185,8 @@ class RunManager:
             today=date.today(),
             workspace=workspace,
             adapters=self._env.adapters,
+            applications=self._env.applications,
+            answer_gate=lambda answer: self.answer_gate(run_id, answer),
         )
 
     def _save(

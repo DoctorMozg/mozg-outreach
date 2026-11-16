@@ -14,6 +14,12 @@ class TestParse:
         assert sample_prompt.effort == "medium"
         assert sample_prompt.max_turns == 12
         assert sample_prompt.body == "You are a scout."
+        assert sample_prompt.toolkits == ()
+
+    def test_reads_toolkits(self, prompt_root: Path) -> None:
+        path = prompt_root / "biz" / "sample-scout.md"
+        path.write_text(path.read_text().replace("model:", "toolkits: browser\nmodel:"))
+        assert PromptLibrary(prompt_root).get("biz", "sample-scout").toolkits == ("browser",)
 
     def test_name_must_match_file(self, prompt_root: Path) -> None:
         path = prompt_root / "biz" / "renamed.md"
@@ -46,7 +52,15 @@ class TestRepoPrompts:
         counts: dict[str, int] = {}
         for p in prompts:
             counts[p.group] = counts.get(p.group, 0) + 1
-        assert counts == {"biz": 13, "creative": 3, "seeker": 8, "shared": 7}
+        assert counts == {"biz": 14, "creative": 3, "seeker": 9, "shared": 7}
+
+    def test_toolkits_are_registered_ones(self, prompts: list[AgentPrompt]) -> None:
+        used = {p.name: p.toolkits for p in prompts if p.toolkits}
+        assert used == {
+            "outreach-contact-finder": ("browser",),
+            "outreach-scout": ("browser",),
+            "seeker-scout": ("browser",),
+        }
 
     def test_models_are_known_aliases(self, prompts: list[AgentPrompt]) -> None:
         assert {p.model for p in prompts} <= {"sonnet", "opus", "haiku"}

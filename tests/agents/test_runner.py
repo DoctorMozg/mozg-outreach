@@ -1,8 +1,11 @@
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from claude_agent_sdk import AssistantMessage, TextBlock, ToolUseBlock
+from claude_agent_sdk import AssistantMessage, TextBlock, ToolUseBlock, create_sdk_mcp_server
 
 from mozg_outreach.agents import (
     AgentEvent,
@@ -12,6 +15,7 @@ from mozg_outreach.agents import (
     AgentRunner,
     RunnerSettings,
 )
+from mozg_outreach.agents.toolkits import ToolkitSession, ToolkitUnavailable
 from tests.agents.conftest import FakeQuery, ScoutInput, ScoutResult, result_message
 
 VALID_OUTPUT = {"companies": [{"name": "Acme", "domain": "acme.io"}]}
@@ -129,3 +133,98 @@ async def test_concurrency_limit_is_shared(sample_prompt: AgentPrompt, tmp_path:
 def test_settings_reject_bad_limits(concurrency: int, budget: float) -> None:
     with pytest.raises(ValueError, match="must be"):
         RunnerSettings(max_concurrency=concurrency, default_budget_usd=budget)
+
+
+class FakeToolkit:
+    """Records how often a session opened and closed; can refuse to start."""
+
+    name = "pages"
+
+    def __init__(self, unavailable: bool = False) -> None:
+        self.unavailable = unavailable
+        self.open = 0
+        self.closed = 0
+
+    @asynccontextmanager
+    async def session(self) -> AsyncIterator[ToolkitSession]:
+        if self.unavailable:
+            raise ToolkitUnavailable("chrome is missing")
+        self.open += 1
+        try:
+            yield ToolkitSession(
+                server=create_sdk_mcp_server("pages"),
+                tool_names=("mcp__pages__open",),
+                env={"ENABLE_TOOL_SEARCH": "false"},
+            )
+        finally:
+            self.closed += 1
+
+
+@pytest.fixture
+def toolkit_prompt(sample_prompt: AgentPrompt) -> AgentPrompt:
+    return replace(sample_prompt, toolkits=("pages",))
+
+
+class TestToolkits:
+    async def test_a_session_is_mounted_for_the_run_and_closed_after(
+        self, toolkit_prompt: AgentPrompt, tmp_path: Path
+    ) -> None:
+        fake = FakeQuery(
+            [
+                assistant(
+                    ToolUseBlock(id="t1", name="mcp__browser__open", input={"url": "https://b.io"})
+                ),
+                result_message(VALID_OUTPUT),
+            ]
+        )
+        toolkit = FakeToolkit()
+        events: list[AgentEvent] = []
+        runner = AgentRunner(RunnerSettings(), query_fn=fake, toolkits={"pages": toolkit})
+
+        await runner.run(
+            toolkit_prompt,
+            ScoutInput(region="Berlin"),
+            ScoutResult,
+            workspace=tmp_path,
+            on_event=events.append,
+        )
+
+        _, options = fake.calls[0]
+        assert options.allowed_tools == ["WebFetch", "WebSearch", "mcp__pages__open"]
+        assert isinstance(options.mcp_servers, dict)
+        assert list(options.mcp_servers) == ["pages"]
+        assert options.strict_mcp_config is True
+        assert options.env["ENABLE_TOOL_SEARCH"] == "false"
+        assert (toolkit.open, toolkit.closed) == (1, 1)
+        assert [e.url for e in events if e.kind == "tool_use"] == ["https://b.io"]
+
+    async def test_an_unavailable_toolkit_leaves_the_web_tools(
+        self, toolkit_prompt: AgentPrompt, tmp_path: Path
+    ) -> None:
+        fake = FakeQuery([result_message(VALID_OUTPUT)])
+        events: list[AgentEvent] = []
+        runner = AgentRunner(
+            RunnerSettings(), query_fn=fake, toolkits={"pages": FakeToolkit(unavailable=True)}
+        )
+
+        await runner.run(
+            toolkit_prompt,
+            ScoutInput(region="Berlin"),
+            ScoutResult,
+            workspace=tmp_path,
+            on_event=events.append,
+        )
+
+        _, options = fake.calls[0]
+        assert options.allowed_tools == ["WebFetch", "WebSearch"]
+        assert options.mcp_servers == {}
+        assert "pages unavailable: chrome is missing" in [e.detail for e in events]
+
+    async def test_an_unknown_toolkit_is_a_configuration_error(
+        self, toolkit_prompt: AgentPrompt, tmp_path: Path
+    ) -> None:
+        runner = AgentRunner(RunnerSettings(), query_fn=FakeQuery([]))
+        with pytest.raises(ValueError, match="unknown toolkits"):
+            await runner.run(
+                toolkit_prompt, ScoutInput(region="x"), ScoutResult, workspace=tmp_path
+            )

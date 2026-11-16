@@ -217,8 +217,10 @@ SourceType = Literal[
 
 
 class SourceResearchInput(BaseModel):
+    sector: str | None = Field(description="The one target sector to find sources for.")
     target_description: str
     source_hints: list[str]
+    max_sources: int = Field(ge=1)
 
 
 class DirectorySource(BaseModel):
@@ -229,6 +231,9 @@ class DirectorySource(BaseModel):
     relevance: int = Field(ge=1, le=10)
     access_notes: str
     search_queries_used: list[str]
+    sector: str | None = Field(
+        default=None, description="Leave null; the pipeline sets the sector it searched for."
+    )
 
 
 class SourceList(BaseModel):
@@ -237,13 +242,21 @@ class SourceList(BaseModel):
 
 
 class ScoutInput(BaseModel):
-    source: DirectorySource
+    source: DirectorySource | None = Field(
+        description="The directory to scout; null means find companies by web search alone."
+    )
     target_profile: TargetProfile
     sector: str | None = None
     region: str | None = Field(
         default=None, description="Hard filter: keep only companies located inside it."
     )
     count_limit: int = Field(ge=1)
+    exclude_names: list[str] = Field(
+        default_factory=list, description="Companies already found; don't return them again."
+    )
+    queries_tried: list[str] = Field(
+        default_factory=list, description="Searches an earlier scout ran; use different ones."
+    )
 
 
 class ScoutedCompany(BaseModel):
@@ -265,4 +278,5 @@ class ScoutedCompany(BaseModel):
 
 class ScoutResult(BaseModel):
     companies: list[ScoutedCompany]
+    queries_used: list[str] = Field(default_factory=list, description="Every WebSearch query run.")
     concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)

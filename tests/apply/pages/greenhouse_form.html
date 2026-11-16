@@ -1,0 +1,15 @@
+<form method="post" action="/submit">
+<label for="first_name">First Name *</label><input id="first_name" name="first_name" required>
+<label for="last_name">Last Name *</label><input id="last_name" name="last_name" required>
+<label for="email">Email *</label><input id="email" name="email" type="email" required>
+<label for="phone">Phone</label><input id="phone" name="phone" type="tel">
+<label for="resume">Resume/CV *</label><input id="resume" name="resume" type="file" required>
+<label for="cover_letter">Cover Letter</label><input id="cover_letter" name="cover_letter" type="file">
+<label for="q1">Why do you want to work at Acme? *</label><textarea id="q1" name="question_1" maxlength="400" required></textarea>
+<label for="q2">Years of Python</label><select id="q2" name="question_2"><option value="">Select</option><option value="11">0-2</option><option value="12">3-5</option><option value="13">6+</option></select>
+<label for="q3">Notice period</label><input id="q3" name="question_3">
+<label for="gender">Gender</label><select id="gender" name="gender"><option value="">Select</option><option value="1">Male</option><option value="2">Female</option></select>
+<label for="auth">Are you legally authorized to work in the UK? *</label><select id="auth" name="question_4" required><option value="">Select</option><option>Yes</option><option>No</option></select>
+<label><input type="checkbox" name="gdpr" required> I consent to Acme storing my data</label>
+<button type="submit">Submit application</button>
+</form>

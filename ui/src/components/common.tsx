@@ -1,7 +1,7 @@
 import { Accordion, Alert, Anchor, Badge, type BadgeProps, Card, Group, List, Text, Tooltip } from "@mantine/core";
 import { IconAlertTriangle, IconExternalLink, IconInfoCircle } from "@tabler/icons-react";
 import type { ReactElement, ReactNode } from "react";
-import type { Activity, FieldValue, Mode, RunStatus } from "../api";
+import type { Activity, ApproachStep, FieldValue, Mode, RunStatus } from "../api";
 
 export function ErrorBox({ error }: { error: unknown }): ReactElement | null {
   if (!error) return null;
@@ -42,18 +42,78 @@ export function Score({ value, size = "md" }: { value: number | null; size?: Bad
   );
 }
 
-const ACTIVITY_COLORS: Record<string, string> = { sent: "blue", replied: "teal", called: "grape", met: "grape", declined: "red" };
+/** Labels of the interaction kinds the user can log, in menu order. */
+export const INTERACTION_LABELS = {
+  sent: "Sent",
+  replied: "Replied",
+  bounced: "Bounced",
+  called: "Called",
+  met: "Met",
+  declined: "Declined by me",
+  refused: "Refused by them",
+  note: "Note",
+} as const;
+export type InteractionKind = keyof typeof INTERACTION_LABELS;
+
+export function interactionLabel(kind: string): string {
+  return INTERACTION_LABELS[kind as InteractionKind] ?? kind;
+}
+
+const ACTIVITY_COLORS: Record<string, string> = { sent: "blue", replied: "teal", bounced: "red", called: "grape", met: "grape", declined: "red", refused: "orange" };
 
 /** The lead's last logged status and note; `projectId` is the list's project, to flag another one's log. */
 export function ActivityBadge({ activity, projectId, size = "xs" }: { activity: Activity | null; projectId: number; size?: BadgeProps["size"] }): ReactElement | null {
   if (!activity) return null;
   const when = activity.status_at ? new Date(activity.status_at).toLocaleDateString() : null;
   const elsewhere = activity.project_id !== projectId;
-  const label = [when && `${activity.status} on ${when}`, elsewhere && "logged in another project", activity.note].filter(Boolean).join(" · ");
+  const label = [when && `${interactionLabel(activity.status ?? "note")} on ${when}`, elsewhere && "logged in another project", activity.note].filter(Boolean).join(" · ");
   return (
     <Tooltip label={label} multiline maw={360}>
       <Badge size={size} variant={elsewhere ? "outline" : "filled"} color={activity.status ? (ACTIVITY_COLORS[activity.status] ?? "gray") : "gray"}>
         {activity.status ?? "note"}
+      </Badge>
+    </Tooltip>
+  );
+}
+
+const STEP_CHANNELS = { email: "email", linkedin: "LinkedIn", phone: "call" } as const;
+
+/** Whole days from today (local) to a YYYY-MM-DD date; negative when it is past. */
+function daysUntil(day: string): number {
+  const now = new Date();
+  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / 86_400_000);
+}
+
+const plural = (n: number): string => `${n} day${n === 1 ? "" : "s"}`;
+
+/** "in 10 days", "today", "3 days late": how far the next touch is. */
+function countdown(days: number): string {
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  return days > 0 ? `in ${plural(days)}` : `${plural(-days)} late`;
+}
+
+/** Where a company's approach sequence stands: the next step, to whom, and when it is due. */
+export function StepBadge({ step, size = "xs" }: { step: ApproachStep | null; size?: BadgeProps["size"] }): ReactElement | null {
+  if (!step) return null;
+  if (step.step === null) {
+    return (
+      <Badge size={size} variant="light" color="gray">
+        sequence done
+      </Badge>
+    );
+  }
+  const days = step.due ? daysUntil(step.due) : null;
+  const color = days === null ? "gray" : days < 0 ? "red" : days === 0 ? "orange" : "blue";
+  const when = days === null ? "not started" : countdown(days);
+  const what = [step.channel && STEP_CHANNELS[step.channel], step.reader && `to ${step.reader}`].filter(Boolean).join(" ");
+  const due = step.due ? ` (due ${step.due})` : "";
+  return (
+    <Tooltip label={`Approach step ${step.step} of ${step.total}: ${what}, ${when}${due}`}>
+      <Badge size={size} variant="light" color={color}>
+        step {step.step}/{step.total}
+        {step.channel ? ` · ${STEP_CHANNELS[step.channel]}` : ""} · {when}
       </Badge>
     </Tooltip>
   );

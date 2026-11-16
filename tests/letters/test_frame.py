@@ -45,13 +45,46 @@ UNNAMED = LetterParty(recipient=None, sender="Stan Petrov")
         ("cover_letter", UNNAMED, "en", "Dear Hiring Team,", "Best regards,"),
         ("cover_letter", PARTY, "de", "Guten Tag Jane Example,", "Viele Grüße,"),
         ("proposal", UNNAMED, "en", "Hi there,", "Best regards,"),
+        ("email", UNNAMED, "en", "Hello,", "Best regards,"),
         ("proposal", UNNAMED, "uk", "Добрий день!", "З повагою,"),
         ("cover_letter", UNNAMED, "ja", "Dear Hiring Team,", "Best regards,"),
     ],
-    ids=["ru-named", "ru-team", "en-team", "de-named", "en-gig", "uk-gig", "unframed-language"],
+    ids=[
+        "ru-named",
+        "ru-team",
+        "en-team",
+        "de-named",
+        "en-gig",
+        "en-inbox",
+        "uk-gig",
+        "unframed-language",
+    ],
 )
 def test_frame_is_written_in_the_letter_language(
     channel: Channel, party: LetterParty, language: str, salutation: str, closing: str
 ) -> None:
     frame = LetterFrame.build(channel, "neutral", party, language)
     assert (frame.salutation, frame.closing) == (salutation, closing)
+
+
+class TestOptOut:
+    def test_finish_puts_the_line_above_the_sign_off(self) -> None:
+        frame = LetterFrame.build("email", "warm", PARTY, "de").with_opt_out("de")
+        letter = frame.assemble("Erster Absatz.")
+        # The naturalizer may leave a single newline before the closing.
+        squeezed = letter.replace("\n\nDanke,", "\nDanke,")
+
+        finished = frame.finish(squeezed)
+
+        assert finished.splitlines()[-4:] == [frame.opt_out, "", "Danke,", "Stan"]
+        assert finished.startswith("Hallo Jane,\n\nErster Absatz.\n\n")
+
+    def test_without_opt_out_the_letter_is_unchanged(self) -> None:
+        frame = LetterFrame.build("email", "warm", PARTY, "en")
+        letter = frame.assemble("Body.")
+        assert frame.finish(letter) == letter
+
+    def test_a_letter_without_the_sign_off_is_an_error(self) -> None:
+        frame = LetterFrame.build("email", "warm", PARTY, "en").with_opt_out("en")
+        with pytest.raises(ValueError, match="does not end with"):
+            frame.finish("Hi Jane,\n\nBody.\n\nCheers,\nStan")

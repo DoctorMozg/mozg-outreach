@@ -37,6 +37,7 @@ class Composition(BaseModel):
 class WrittenLetter(BaseModel):
     recipient: str
     channel: Channel
+    step: int | None = None
     subject: str | None
     text: str
     review: DraftReview
@@ -68,6 +69,7 @@ class LetterComposer:
                 text=attempt.text,
                 channel=brief.channel,
                 language=brief.language,
+                word_budget=brief.word_budget,
                 preserve=preserve,
             ),
             job.voice,
@@ -97,8 +99,9 @@ class LetterComposer:
         return WrittenLetter(
             recipient=recipient,
             channel=brief.channel,
+            step=brief.touch.step if brief.touch else None,
             subject=subject,
-            text=outcome.text,
+            text=job.frame.finish(outcome.text),
             review=review,
         )
 

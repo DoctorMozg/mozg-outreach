@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 # Body words, excluding salutation and sign-off; from the legacy letter and proposal writers.
 WORD_BUDGETS: dict[Channel, WordBudget] = {
-    "email": WordBudget(min=120, max=180),
+    # Cold first emails reply best at 50-90 words (docs/research/2026-11-16-outreach-messages.md).
+    "email": WordBudget(min=60, max=100),
     "dm": WordBudget(min=60, max=100),
     "cover_letter": WordBudget(min=120, max=199),
     "proposal": WordBudget(min=280, max=350),
@@ -37,6 +38,7 @@ class NaturalizeRequest(BaseModel):
     text: str = Field(min_length=1)
     channel: Channel
     language: str = Field(min_length=2, max_length=2)
+    word_budget: WordBudget
     preserve: list[str] = Field(default_factory=list)
 
 
@@ -57,7 +59,7 @@ class Naturalizer:
             # Medium fixes structure as well as wording; heavy would cut length and lose facts.
             severity="medium",
             length_tolerance_pct=LENGTH_TOLERANCE_PCT,
-            word_budget=WORD_BUDGETS[request.channel],
+            word_budget=request.word_budget,
             preserve=request.preserve,
             allowed_punctuation=habitual_punctuation(voice.samples),
             voice_profile=voice.profile.render() if voice.profile else None,

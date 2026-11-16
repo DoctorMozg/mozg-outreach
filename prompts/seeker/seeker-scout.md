@@ -2,6 +2,7 @@
 name: seeker-scout
 description: Extracts salaried job listings or freelance gigs from a single board using query variants built from the strategy, and returns structured listings.
 tools: WebFetch, WebSearch
+toolkits: browser
 model: sonnet
 effort: medium
 maxTurns: 40
@@ -44,6 +45,10 @@ Source priority:
 **Banned sources**: scraped LinkedIn detail pages (search-result summaries only), scraped Upwork or Fiverr detail pages, AI-generated aggregations, undated reposts, and forum threads that name a listing without an authoritative apply link.
 
 Stay inside the board. Do not follow links to a different board.
+
+## Browser
+
+When WebFetch returns an empty shell, asks to enable JavaScript, or the list loads on scroll or behind filters, open the page with `mcp__browser__open`. It returns the page's accessibility tree; `mcp__browser__click` follows a link, tab, "show more" or next-page button by its `ref`, `mcp__browser__type` fills a site's own search box (`submit` true runs it), and `mcp__browser__back` returns. Browsing is read-only: logins, forms that send data and private addresses are refused, and a refusal is a reason to try another page, not to retry. WebFetch stays the first choice because it is cheaper. A page read through the browser counts as fetched for quotes and `source_url`. When the browser tools are missing, carry on with WebFetch.
 
 ## Process
 

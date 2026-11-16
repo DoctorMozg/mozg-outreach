@@ -18,6 +18,7 @@ uv run pytest tests/agents/test_prompt.py::TestParse::test_name_must_match_file 
 uv run pytest -m live                     # real Claude Code + web calls; costs subscription usage
 pre-commit run --files <changed files>    # ruff, ruff-format, mdformat, json format, mypy --strict, tsc
 uv run mozg-outreach                      # API on 127.0.0.1:8742; data in ~/.local/share/mozg-outreach (MOZG_OUTREACH_HOME)
+                                          # loads ./.env first; variables set in the shell win
 uv run python -m mozg_outreach.storage.revision "add x"   # autogenerate a migration after a model change; startup applies it
 cd ui && npm ci --ignore-scripts && npm run build   # build the UI into ui/dist, which the API serves at /
 cd ui && npm run dev                      # Vite on :5173, proxying /api to the running service
@@ -34,7 +35,7 @@ A local web service with a UI for business and job/freelance outreach. Scope for
 - **Enrichment.** The user picks promising items and enriches them.
 - **Registry.** People and companies live in one global registry shared by all projects. A lead links to many people and companies, each profile lists every source it was seen in, and the UI shows the connections as profiles and a graph. Exact identifiers merge automatically, and fuzzy matches are only suggested.
 - **Generated text** (letters, messages, proposals) is always naturalized toward the user's own voice, which is built from their writing samples and style prompts.
-- **No sending.** Drafts only.
+- **No sending.** Drafts only. Email drafts can go into the user's Gmail Drafts over IMAP, and the user sends them from Gmail; the app has no SMTP code.
 
 ## Origin of the pipelines
 
@@ -44,6 +45,8 @@ The pipelines come from the `mz-biz-outreach` and `mz-job-outreach` plugins in h
 
 - `runs/`: flows as phase lists (`FlowSpec`), `RunManager` (one task per run, state saved after every phase, gates, resume), and the run event log behind SSE.
 - `api/`: FastAPI app and routes; `ui/` mirrors its response types in `ui/src/api.ts`, so change both together.
+- `browser/`: guarded headless Chrome and the agents' read-only `browser` toolkit. `apply/`: application form filling (field scan, protected-question policy, ATS profiles, safe actor) and the visible Chrome where the user submits (`seeker.apply` in `runs/apply.py`).
+- `mail/`: Gmail over IMAP with a Workspace app password from `MOZG_OUTREACH_GMAIL_ADDRESS` and `MOZG_OUTREACH_GMAIL_APP_PASSWORD`. It pushes email drafts into Gmail Drafts and polls their threads to log sent, replied and bounced.
 - `pipelines/{biz,seeker}/`: agent steps and their pydantic contracts; `scoring/`, `letters/`, `naturalize/`, `registry/`, `sources/` and `storage/` hold the shared parts.
 
 ## Architecture decisions
@@ -67,11 +70,11 @@ The pipelines come from the `mz-biz-outreach` and `mz-job-outreach` plugins in h
 
 - **Naturalization is validated in Python.** The naturalizer's own metrics are model estimates. After each rewrite, check word budget, preserved entities, salutation and sign-off, and banned punctuation in Python, and revert to the snapshot on damage. Drafts use Medium severity (structure and wording) with ±10% length and the channel word budget, never Heavy or the generic "cut ≥15%" default.
 
-- **Letter format:** a subject (email only), a salutation, a gratitude sign-off with the sender's first name, and plain ASCII punctuation (no em or en dashes, curly quotes or ellipsis characters). Python writes the salutation and sign-off from the project's `sender_name` and `sender_tone`, in the letter's language (`letters/frame.py`); a job or gig letter is in its posting's language (`letters/language.py`). The copywriter returns only subject and body.
+- **Letter format:** a subject (email only), a salutation, a gratitude sign-off with the sender's first name, and plain ASCII punctuation (no em or en dashes, curly quotes or ellipsis characters). Python writes the salutation and sign-off from the project's `sender_name` and `sender_tone`, in the letter's language (`letters/frame.py`); a job or gig letter is in its posting's language (`letters/language.py`). The copywriter returns only subject and body. Letters to GCC companies get an opt-out line above the sign-off, added after naturalizing (`LetterFrame.finish`).
 
 - **Prompt conventions** (`prompts/<group>/<name>.md`; see the adapted `prompts/biz/outreach-scout.md`):
 
-  - Frontmatter keeps `name` (must equal the file stem), `model`, `effort` and `maxTurns`. `tools` lists only WebSearch/WebFetch, and `PromptLibrary` drops anything else.
+  - Frontmatter keeps `name` (must equal the file stem), `model`, `effort` and `maxTurns`. `tools` lists only WebSearch/WebFetch, and `PromptLibrary` drops anything else. `toolkits: browser` adds the read-only browser tools (`browser/toolkit.py`), mounted per run by `AgentRunner`.
   - `## Input` names the JSON fields of the pydantic input model.
   - `## Output Format` shows the exact output model shape, root always an object, with `concerns: [...]` replacing `STATUS`, `CONFLICT DETECTED` and `UNVERIFIED`.
   - Contracts live next to the pipeline, for example `src/mozg_outreach/pipelines/biz/models.py`. Offline pipeline tests replay recorded agent outputs with `RecordedRunner` (`tests/pipelines/conftest.py`).

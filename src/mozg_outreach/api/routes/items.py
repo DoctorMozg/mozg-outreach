@@ -1,5 +1,6 @@
 """The report, selection, enrichment and letter runs, drafts and interaction history."""
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,9 +20,13 @@ from mozg_outreach.api.schemas import (
     ItemPatch,
     LinkedEntity,
     RunOut,
+    StepDoneIn,
 )
 from mozg_outreach.api.services import Services, get_or_404, services
-from mozg_outreach.runs.items import ITEM_ACTIONS
+from mozg_outreach.pipelines.biz.approach_models import ApproachStep, StoredApproach
+from mozg_outreach.pipelines.biz.outreach import APPROACH
+from mozg_outreach.pipelines.biz.progress import ApproachProgress
+from mozg_outreach.runs.items import ITEM_ACTIONS, ItemActionName
 from mozg_outreach.storage.models import (
     Draft,
     Entity,
@@ -29,6 +34,7 @@ from mozg_outreach.storage.models import (
     Item,
     ItemLink,
     JsonObject,
+    MailThread,
     Project,
 )
 from mozg_outreach.storage.repositories import (
@@ -51,11 +57,19 @@ class UserEdit(BaseModel):
 
 
 def item_outs(session: Session, items: list[Item]) -> list[ItemOut]:
-    """Rows for a list of leads, each with what the user last did with it in any project."""
+    """Rows for a list of leads: what the user last did with each, and its approach step."""
     activity = InteractionRepository(session).activity(items)
     return [
-        ItemOut.model_validate(i).model_copy(update={"activity": activity.get(i.id)}) for i in items
+        ItemOut.model_validate(i).model_copy(
+            update={"activity": activity.get(i.id), "approach_step": _step(i)}
+        )
+        for i in items
     ]
+
+
+def _step(item: Item) -> ApproachStep | None:
+    stored = item.details.get(APPROACH)
+    return StoredApproach.model_validate(stored).current() if stored else None
 
 
 @router.get("/projects/{project_id}/items")
@@ -82,6 +96,9 @@ async def get_item(item_id: int, svc: Svc) -> ItemDetail:
                 "raw": item.raw,
                 "details": item.details,
                 "drafts": DraftRepository(session).for_item(item_id),
+                "mail": list(
+                    session.scalars(select(MailThread).where(MailThread.item_id == item_id))
+                ),
                 "interactions": InteractionRepository(session).history(item_id),
                 "entities": [
                     LinkedEntity(entity_id=e.id, kind=e.kind, name=e.name, role=role)
@@ -99,16 +116,15 @@ async def select_item(item_id: int, body: ItemPatch, svc: Svc) -> ItemOut:
         return item_outs(session, [item])[0]
 
 
-def _start_item_run(svc: Services, item_id: int, action: str) -> RunOut:
+def _start_item_run(svc: Services, item_id: int, action: ItemActionName) -> RunOut:
     with svc.db.session() as session:
         item = get_or_404(session, Item, item_id)
         project = get_or_404(session, Project, item.project_id)
         if not item.selected:
             raise HTTPException(409, f"item {item_id} is not selected")
-    actions = ITEM_ACTIONS[item.kind]
-    pipeline = actions.enrich if action == "enrich" else actions.letters
+    pipeline = ITEM_ACTIONS[item.kind].pipeline(action)
     if pipeline is None:
-        raise HTTPException(409, f"{item.kind} items have nothing to enrich")
+        raise HTTPException(409, f"{item.kind} items have no {action} step")
     ensure_idle(svc, project.id, pipeline, item_id)
     return run_out(svc, svc.runs.start(project.id, pipeline, {"item_id": item_id}))
 
@@ -123,6 +139,42 @@ async def write_letters(item_id: int, svc: Svc) -> RunOut:
     return _start_item_run(svc, item_id, "letters")
 
 
+@router.post("/items/{item_id}/approach", status_code=202)
+async def plan_approach(item_id: int, svc: Svc) -> RunOut:
+    return _start_item_run(svc, item_id, "approach")
+
+
+@router.post("/items/{item_id}/approach/steps/{step}/done", status_code=201)
+async def mark_step_done(item_id: int, step: int, body: StepDoneIn, svc: Svc) -> ApproachStep:
+    """The user made this touch; it is logged on the lead unless Gmail already logged it."""
+    with svc.db.session() as session:
+        item = _idle_company(svc, session, item_id)
+        return ApproachProgress(session).mark_done(item, step, body.on or date.today())
+
+
+@router.delete("/items/{item_id}/approach/steps/{step}/done")
+async def undo_step_done(item_id: int, step: int, svc: Svc) -> ApproachStep:
+    with svc.db.session() as session:
+        item = _idle_company(svc, session, item_id)
+        return ApproachProgress(session).undo(item, step)
+
+
+def _idle_company(svc: Services, session: Session, item_id: int) -> Item:
+    """A plan or enrichment run writes the stored approach at its end, which would undo a mark."""
+    item = get_or_404(session, Item, item_id)
+    for action in ("approach", "enrich"):
+        pipeline = ITEM_ACTIONS[item.kind].pipeline(action)
+        if pipeline:
+            ensure_idle(svc, item.project_id, pipeline, item_id)
+    return item
+
+
+@router.post("/items/{item_id}/apply", status_code=202)
+async def apply_to_job(item_id: int, svc: Svc) -> RunOut:
+    """Fills the job's application form in a visible browser; the user reviews and submits."""
+    return _start_item_run(svc, item_id, "apply")
+
+
 @router.put("/drafts/{draft_id}", status_code=201)
 async def edit_draft(draft_id: int, body: DraftEdit, svc: Svc) -> DraftOut:
     """A hand edit becomes the next version, so the generated text stays for comparison."""
@@ -133,6 +185,7 @@ async def edit_draft(draft_id: int, body: DraftEdit, svc: Svc) -> DraftOut:
             NewDraft(
                 channel=base.channel,
                 recipient=base.recipient,
+                step=base.step,
                 subject=body.subject,
                 body=body.body,
                 review=UserEdit(based_on_version=base.version),

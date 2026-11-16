@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from mozg_outreach.apply.models import ApplicantProfile
 from mozg_outreach.domain import BriefFact, facts_text
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
 
@@ -129,6 +130,11 @@ class SeekerBrief(BaseModel):
         default=SearchScope(recency_days=30),
         title="Freelance gigs",
         description="Projects and contracts for a client. Leave off to skip gigs.",
+    )
+    applicant: ApplicantProfile | None = Field(
+        default=None,
+        title="Applicant details",
+        description="Typed into job application forms. Never sent to the AI.",
     )
 
     @model_validator(mode="after")

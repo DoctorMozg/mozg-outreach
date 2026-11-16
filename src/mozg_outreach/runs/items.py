@@ -1,8 +1,13 @@
 """Work on one selected item: enrich it, or draft its letters, cover letter or proposal."""
 
+import logging
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from mozg_outreach.agents import AgentOutputError, AgentRunError
+from mozg_outreach.apply.models import FillReport
 from mozg_outreach.cvs.library import CvLibrary
 from mozg_outreach.cvs.models import CV_CHOICE, CvChoice
 from mozg_outreach.cvs.picker import CvPicker
@@ -28,7 +33,7 @@ from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs, load_voice, search_state
 from mozg_outreach.runs.seeker import CONTACTS, listing_of
-from mozg_outreach.storage.models import Draft, Item
+from mozg_outreach.storage.models import Draft, Item, Project
 from mozg_outreach.storage.repositories import DraftRepository, ItemRepository, NewDraft
 
 
@@ -42,7 +47,10 @@ class RevisionAsk(BaseModel):
 class ItemState(RunState):
     item_id: int
     revision: RevisionAsk | None = None
+    application: FillReport | None = None
 
+
+logger = logging.getLogger(__name__)
 
 type Ctx = FlowContext[ItemState]
 
@@ -71,6 +79,7 @@ def _revision(ctx: Ctx) -> RevisionTarget | None:
             {
                 "recipient": draft.recipient,
                 "channel": draft.channel,
+                "step": draft.step,
                 "revision": Revision(previous_text=draft.body, suggestion=ask.suggestion),
             }
         )
@@ -87,6 +96,7 @@ def _store(ctx: Ctx, letter: WrittenLetter | Skipped) -> None:
             NewDraft(
                 channel=letter.channel,
                 recipient=letter.recipient,
+                step=letter.step,
                 subject=letter.subject,
                 body=letter.text,
                 review=letter.review,
@@ -104,6 +114,40 @@ async def biz_enrich(ctx: Ctx) -> PhaseResult:
         dossier = await BizOutreach(session, ctx.steps).enrich(item, strategy, ctx.run_id)
     ctx.state.concerns += dossier.concerns
     return None
+
+
+async def biz_approach(ctx: Ctx) -> PhaseResult:
+    _, state = _item(ctx)
+    strategy = Strategy.model_validate(state["strategy"])
+    with ctx.db.session() as session:
+        item = _row(session, ctx.state.item_id)
+        approach = await BizOutreach(session, ctx.steps).plan_approach(item, strategy)
+    ctx.state.concerns += approach.plan.concerns
+    ctx.emit("approach", {"touches": len(approach.plan.touches)})
+    return None
+
+
+async def biz_enrich_approach(ctx: Ctx) -> PhaseResult:
+    """Inside enrichment a failed plan is a concern: letters then fall back to default routing."""
+    try:
+        return await biz_approach(ctx)
+    except (AgentRunError, AgentOutputError) as exc:
+        logger.warning("approach plan for item %d failed: %s", ctx.state.item_id, exc)
+        ctx.state.concerns.append(f"No approach plan, so letters use the default routing: {exc}")
+        return None
+
+
+async def biz_enrich_letters(ctx: Ctx) -> PhaseResult:
+    with ctx.db.session() as session:
+        item = _row(session, ctx.state.item_id)
+        project = session.get(Project, item.project_id)
+        sender = project.sender_name if project else None
+    if not sender:
+        ctx.state.concerns.append(
+            "No letters yet: set the sender name in the project settings, then Re-plan."
+        )
+        return None
+    return await biz_letters(ctx)
 
 
 async def biz_letters(ctx: Ctx) -> PhaseResult:
@@ -133,7 +177,7 @@ async def seeker_enrich(ctx: Ctx) -> PhaseResult:
     return None
 
 
-async def _cv_text(ctx: Ctx, item: Item, listing: Listing) -> str | None:
+async def cv_text_for(ctx: Ctx, item: Item, listing: Listing) -> str | None:
     """The text of the CV to send: the lead's earlier pick, else a new one; None without CVs."""
     with ctx.db.session() as session:
         library = CvLibrary(session)
@@ -161,7 +205,7 @@ async def seeker_letter(ctx: Ctx) -> PhaseResult:
     strategy = SeekerStrategy.model_validate(state["strategy"])
     listing, judgment = listing_of(item)
     inputs = ProjectInputs.load(ctx.db, ctx.project_id)
-    cv_text = await _cv_text(ctx, item, listing)
+    cv_text = await cv_text_for(ctx, item, listing)
     background = SeekerBrief.model_validate(inputs.require_brief()).background(cv_text)
     skills = SkillMatcher(strategy).match(listing_text(listing))
     naturalizer = Naturalizer(ctx.steps)
@@ -202,11 +246,28 @@ def _single(pipeline: str, phase: Phase[ItemState]) -> FlowSpec[ItemState]:
 
 
 ITEM_FLOWS = (
-    _single("biz.enrich", Phase("enrich", biz_enrich)),
+    FlowSpec[ItemState](
+        pipeline="biz.enrich",
+        state_type=ItemState,
+        phases=(
+            Phase("enrich", biz_enrich),
+            Phase("approach", biz_enrich_approach),
+            Phase("letters", biz_enrich_letters),
+        ),
+    ),
     _single("biz.letters", Phase("letters", biz_letters)),
+    # Re-planning rewrites the letters too, since each one is written for its step.
+    FlowSpec[ItemState](
+        pipeline="biz.approach",
+        state_type=ItemState,
+        phases=(Phase("approach", biz_approach), Phase("letters", biz_enrich_letters)),
+    ),
     _single("seeker.enrich", Phase("contacts", seeker_enrich)),
     _single("seeker.letters", Phase("letter", seeker_letter)),
 )
+
+
+ItemActionName = Literal["enrich", "letters", "approach", "apply"]
 
 
 class ItemAction(BaseModel):
@@ -214,10 +275,24 @@ class ItemAction(BaseModel):
 
     enrich: str | None
     letters: str
+    approach: str | None = None
+    apply: str | None = None
+
+    def pipeline(self, action: ItemActionName) -> str | None:
+        return {
+            "enrich": self.enrich,
+            "letters": self.letters,
+            "approach": self.approach,
+            "apply": self.apply,
+        }[action]
 
 
 ITEM_ACTIONS = {
-    ItemKind.COMPANY: ItemAction(enrich="biz.enrich", letters="biz.letters"),
-    ItemKind.JOB: ItemAction(enrich="seeker.enrich", letters="seeker.letters"),
+    ItemKind.COMPANY: ItemAction(
+        enrich="biz.enrich", letters="biz.letters", approach="biz.approach"
+    ),
+    ItemKind.JOB: ItemAction(
+        enrich="seeker.enrich", letters="seeker.letters", apply="seeker.apply"
+    ),
     ItemKind.GIG: ItemAction(enrich=None, letters="seeker.letters"),
 }

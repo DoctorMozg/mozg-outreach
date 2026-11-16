@@ -61,6 +61,8 @@ class TestRuns:
             "summarize",
         ]
         assert pipelines["biz.letters"] == ["letters"]
+        assert pipelines["biz.approach"] == ["approach", "letters"]
+        assert pipelines["seeker.apply"] == ["fill", "review"]
 
     async def test_search_needs_a_brief(self, api: Api) -> None:
         project_id = await api.project()
@@ -206,6 +208,8 @@ class TestProjects:
         assert (await api.client.post(f"/api/items/{item_id}/letters")).status_code == 409
         await api.ok("PATCH", f"/api/items/{item_id}", {"selected": True})
         assert (await api.client.post(f"/api/items/{item_id}/enrich")).status_code == 409
+        assert (await api.client.post(f"/api/items/{item_id}/approach")).status_code == 409
+        assert (await api.client.post(f"/api/items/{item_id}/apply")).status_code == 409
         detail = await api.ok("GET", f"/api/items/{item_id}")
         assert detail["selected"] is True
         assert detail["drafts"] == []
@@ -290,6 +294,12 @@ async def test_logged_activity_shows_in_every_list(api: Api) -> None:
     [lead] = (await api.get(f"/api/entities/{acme_id}", EntityDetail)).leads
     assert lead.activity is not None
     assert lead.activity.status == "sent"
+
+    # "refused" is the other side turning the user down, unlike "declined" by the user.
+    await api.ok("POST", f"/api/items/{twin_id}/interactions", {"kind": "refused", "note": ""})
+    refused = (await api.get(f"/api/items/{job_id}", ItemOut)).activity
+    assert refused is not None
+    assert (refused.status, refused.note) == ("refused", "via form")
 
 
 class TestRegistry:

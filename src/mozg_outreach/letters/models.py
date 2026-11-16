@@ -10,6 +10,7 @@ from mozg_outreach.naturalize.models import Channel, RetryFeedback, WordBudget
 Tone = Literal["warm", "neutral", "formal"]
 SocialStyle = Literal["driver", "analytical", "amiable", "expressive"]
 StyleConfidence = Literal["high", "medium", "low", "none"]
+TouchPurpose = Literal["open", "follow_up", "breakup"]
 
 CONCERNS = "Anything the caller should know: conflicting or unverified sources, thin evidence."
 
@@ -72,7 +73,31 @@ class RevisionTarget(BaseModel):
 
     recipient: str
     channel: Channel
+    step: int | None = Field(default=None, description="The approach step; null outside a plan.")
     revision: Revision
+
+
+class EarlierTouch(BaseModel):
+    step: int
+    day: int
+    channel: str = Field(description="email, linkedin or phone.")
+    purpose: TouchPurpose
+    talking_points: str
+    text: str | None = Field(description="The letter of that touch; null for a call.")
+
+
+class TouchContext(BaseModel):
+    """Where a letter sits in its approach plan, and what the reader got before it."""
+
+    step: int
+    total: int = Field(description="Touches in the whole sequence, to every contact.")
+    day: int = Field(description="Days after the sequence's first touch.")
+    purpose: TouchPurpose
+    talking_points: str = Field(description="What the plan says this touch adds.")
+    in_thread: bool = Field(
+        description="An email replying in the thread of the earlier email; it has no subject."
+    )
+    earlier: list[EarlierTouch] = Field(description="Earlier touches to this reader, oldest first.")
 
 
 class LetterBrief(BaseModel):
@@ -97,6 +122,10 @@ class LetterBrief(BaseModel):
         default=None,
         description="The sender's CV or company facts; every claim about the sender comes from it.",
     )
+    ask: str | None = Field(
+        default=None, description="The approach plan's ask; the letter makes exactly this ask."
+    )
+    touch: TouchContext | None = Field(default=None, description="Null outside an approach plan.")
     revision: Revision | None = None
     retry: RetryFeedback | None = None
 

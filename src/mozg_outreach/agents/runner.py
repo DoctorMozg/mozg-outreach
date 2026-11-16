@@ -1,7 +1,8 @@
 import asyncio
 import logging
 import os
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
@@ -18,6 +19,10 @@ from claude_agent_sdk import query as sdk_query
 from pydantic import BaseModel, ValidationError
 
 from mozg_outreach.agents.prompt import AgentPrompt
+from mozg_outreach.agents.toolkits import Toolkit, ToolkitSession, ToolkitUnavailable, mcp_tool_name
+
+# Tool calls whose `url` input is a page the agent read, for callers that check citations.
+PAGE_READS = frozenset({"WebFetch", mcp_tool_name("browser", "open")})
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +99,15 @@ class AgentOutputError(ValueError):
 class AgentRunner:
     """Runs one agent step as one Claude Code session with schema-enforced output."""
 
-    def __init__(self, settings: RunnerSettings, query_fn: QueryFn = sdk_query) -> None:
+    def __init__(
+        self,
+        settings: RunnerSettings,
+        query_fn: QueryFn = sdk_query,
+        toolkits: Mapping[str, Toolkit] | None = None,
+    ) -> None:
         self._settings = settings
         self._query = query_fn
+        self._toolkits = dict(toolkits or {})
         self._slots = asyncio.Semaphore(settings.max_concurrency)
         if os.environ.get("ANTHROPIC_API_KEY"):
             logger.warning(
@@ -114,10 +125,14 @@ class AgentRunner:
         on_event: EventSink | None = None,
     ) -> AgentResult[TResult]:
         workspace.mkdir(parents=True, exist_ok=True)
-        options = self._options(prompt, result_type, workspace, budget_usd)
+        unknown = [name for name in prompt.toolkits if name not in self._toolkits]
+        if unknown:
+            raise ValueError(f"{prompt.name} asks for unknown toolkits {unknown}")
         emit = on_event or (lambda _event: None)
 
-        async with self._slots:
+        async with self._slots, AsyncExitStack() as stack:
+            sessions = await self._open_toolkits(prompt, stack, emit)
+            options = self._options(prompt, result_type, workspace, budget_usd, sessions)
             logger.info("agent %s/%s started in %s", prompt.group, prompt.name, workspace)
             emit(AgentEvent(prompt.name, "started", prompt.model))
             result = await self._consume(prompt.name, render_input(payload), options, emit)
@@ -143,21 +158,42 @@ class AgentRunner:
             models=tuple((result.model_usage or {}).keys()),
         )
 
+    async def _open_toolkits(
+        self, prompt: AgentPrompt, stack: AsyncExitStack, emit: EventSink
+    ) -> dict[str, ToolkitSession]:
+        sessions: dict[str, ToolkitSession] = {}
+        for name in prompt.toolkits:
+            try:
+                sessions[name] = await stack.enter_async_context(self._toolkits[name].session())
+            except ToolkitUnavailable as exc:
+                # Toolkits only widen what an agent can read, so it still runs without one.
+                logger.warning("%s runs without the %s toolkit: %s", prompt.name, name, exc)
+                emit(AgentEvent(prompt.name, "text", f"{name} unavailable: {exc}"))
+        return sessions
+
     def _options(
         self,
         prompt: AgentPrompt,
         result_type: type[BaseModel],
         workspace: Path,
         budget_usd: float | None,
+        sessions: Mapping[str, ToolkitSession],
     ) -> ClaudeAgentOptions:
+        env = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+        for session in sessions.values():
+            env.update(session.env)
+        toolkit_tools = [name for s in sessions.values() for name in s.tool_names]
         return ClaudeAgentOptions(
             system_prompt=prompt.body,
             tools=list(prompt.tools),
-            allowed_tools=list(prompt.tools),
+            allowed_tools=[*prompt.tools, *toolkit_tools],
+            mcp_servers={name: s.server for name, s in sessions.items()},
+            # Only the servers given here: the user's own MCP config stays out of agent runs.
+            strict_mcp_config=True,
             permission_mode="dontAsk",
             output_format={"type": "json_schema", "schema": result_type.model_json_schema()},
             setting_sources=[],
-            env={"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"},
+            env=env,
             cwd=workspace,
             model=prompt.model,
             effort=prompt.effort,
@@ -174,7 +210,7 @@ class AgentRunner:
                 for block in message.content:
                     if isinstance(block, ToolUseBlock):
                         # Kept so a caller can check that a cited page was actually read.
-                        url = block.input.get("url") if block.name == "WebFetch" else None
+                        url = block.input.get("url") if block.name in PAGE_READS else None
                         emit(
                             AgentEvent(agent, "tool_use", block.name, url=str(url) if url else None)
                         )

@@ -101,12 +101,10 @@ Suggest 2-4 outreach angles to consider when making recommendations:
 
 ### Step 6: Define Source Hints
 
-Suggest what types of directories and sources the source researcher should prioritize:
+Give 1-3 hints for every sector in `target_profile.sectors`, each starting with the sector's name, for example "Law firms: Legal 500 UAE rankings". A separate researcher handles each sector and reads only its own hints, so a sector without hints starts blind.
 
-- Specific types of directories relevant to the goal
-- Industry events or conferences to check exhibitor lists
-- VC portfolios if targeting funded startups
-- Government programs if targeting a specific country
+- Prefer pages that list many companies as plain text: association or chamber member lists, ranking and award lists, public portal directories, trade-fair exhibitor lists, VC portfolios when targeting funded startups.
+- Name a government register only when its listing is public, not a search form or a login. Many registers render with JavaScript and come back empty.
 
 ### Step 7: Define Sender Voice
 

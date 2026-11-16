@@ -1,4 +1,5 @@
 import {
+  Accordion,
   Alert,
   Anchor,
   Badge,
@@ -16,13 +17,14 @@ import {
   Table,
   Text,
   Textarea,
+  TextInput,
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconArrowLeft, IconCheck, IconHandStop, IconPlayerPlay, IconPlayerStop, IconX } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useEffect, useRef, useState } from "react";
-import { call, get, type Json, type Project, type Run, type RunEvent, type RunStatus } from "../api";
+import { call, type FillReport, get, type Json, type Project, type Run, type RunEvent, type RunStatus } from "../api";
 import { Concerns, ErrorBox, pipelineLabel, Status } from "../components/common";
 import { href } from "../router";
 
@@ -49,6 +51,9 @@ const EVENT_KINDS = [
   "channels_found",
   "channels_saved",
   "fields_researched",
+  "approach",
+  "application",
+  "sent",
 ];
 
 const ACTIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(["pending", "running"]);
@@ -353,15 +358,102 @@ function FieldsDone({ run }: { run: Run }): ReactElement {
 
 type GateProps = { run: Run; gate: NonNullable<Run["pending_gate"]>; onDone: () => void };
 
+const GATE_TITLES: Record<string, string> = {
+  channels: "Approve the Telegram channels",
+  application: "Review and submit the application",
+};
+const FILL_SOURCE = { profile: "Your details", cv: "CV file", letter: "Cover letter", answerer: "Drafted from your CV" } as const;
+
 function Gate({ run, gate, onDone }: GateProps): ReactElement {
   return (
     <Card style={{ borderColor: "var(--mantine-color-yellow-filled)", borderWidth: 2 }}>
       <Group gap="xs" mb="md">
         <IconHandStop size={20} color="var(--mantine-color-yellow-filled)" />
-        <Title order={4}>{gate.kind === "channels" ? "Approve the Telegram channels" : `Approve the ${gate.kind}`}</Title>
+        <Title order={4}>{GATE_TITLES[gate.kind] ?? `Approve the ${gate.kind}`}</Title>
       </Group>
-      {gate.kind === "channels" ? <ChannelGate run={run} gate={gate} onDone={onDone} /> : <StrategyGate run={run} gate={gate} onDone={onDone} />}
+      {gate.kind === "channels" ? (
+        <ChannelGate run={run} gate={gate} onDone={onDone} />
+      ) : gate.kind === "application" ? (
+        <ApplicationGate run={run} gate={gate} onDone={onDone} />
+      ) : (
+        <StrategyGate run={run} gate={gate} onDone={onDone} />
+      )}
     </Card>
+  );
+}
+
+/** The form waits in a Chrome window; the run ends when the user submits there or says they won't. */
+function ApplicationGate({ run, gate, onDone }: GateProps): ReactElement {
+  const report = gate.payload.application as FillReport | null;
+  const [reason, setReason] = useState("");
+  const answer = useMutation({
+    mutationFn: (body: Json) => call<Run>("POST", `/api/runs/${run.id}/gate`, body),
+    onSuccess: onDone,
+  });
+  const missing = report?.for_user.filter((f) => f.required) ?? [];
+  return (
+    <Stack>
+      <Text size="sm">
+        The form is open in the Chrome window. Check every answer, fill what is left, and click Submit there yourself. When the
+        confirmation page appears the lead is marked as sent.
+      </Text>
+      {report && (
+        <>
+          <Text size="sm" c="dimmed">
+            {report.ats} form at{" "}
+            <Anchor href={report.url} target="_blank" rel="noreferrer">
+              {report.url}
+            </Anchor>
+          </Text>
+          {report.for_user.length > 0 && (
+            <Alert color={missing.length ? "yellow" : "gray"} title={`Left for you (${report.for_user.length}, ${missing.length} required)`}>
+              <List size="sm">
+                {report.for_user.map((f, n) => (
+                  <List.Item key={n}>
+                    <Text span fw={f.required ? 600 : 400} size="sm">
+                      {f.label || "Unlabelled field"}
+                    </Text>
+                    <Text span c="dimmed" size="sm">
+                      {" "}
+                      : {f.reason}
+                    </Text>
+                  </List.Item>
+                ))}
+              </List>
+            </Alert>
+          )}
+          {report.filled.length > 0 && (
+            <Accordion variant="contained">
+              <Accordion.Item value="filled">
+                <Accordion.Control>Filled ({report.filled.length})</Accordion.Control>
+                <Accordion.Panel>
+                  <List size="sm">
+                    {report.filled.map((f, n) => (
+                      <List.Item key={n}>
+                        {f.label}{" "}
+                        <Badge size="xs" variant="light">
+                          {FILL_SOURCE[f.source]}
+                        </Badge>
+                      </List.Item>
+                    ))}
+                  </List>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+          )}
+        </>
+      )}
+      <Group align="flex-end">
+        <Button leftSection={<IconCheck size={16} />} loading={answer.isPending} onClick={() => answer.mutate({ approve: true })}>
+          I submitted it
+        </Button>
+        <TextInput placeholder="Why not (optional)" value={reason} onChange={(e) => setReason(e.currentTarget.value)} />
+        <Button variant="default" loading={answer.isPending} onClick={() => answer.mutate({ approve: false, feedback: reason || null })}>
+          Not sending
+        </Button>
+      </Group>
+      <ErrorBox error={answer.error} />
+    </Stack>
   );
 }
 

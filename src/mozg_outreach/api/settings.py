@@ -5,6 +5,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from mozg_outreach.browser import BrowserSettings
+from mozg_outreach.mail import GmailSettings
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -14,6 +17,9 @@ class Settings(BaseModel):
     ui_dist: Path = REPO_ROOT / "ui" / "dist"
     max_parallel_runs: int = Field(default=2, ge=1)
     max_parallel_agents: int = Field(default=3, ge=1)
+    browser: BrowserSettings = Field(default_factory=BrowserSettings)
+    # None leaves Gmail off: no draft pushing and no polling.
+    gmail: GmailSettings | None = None
 
     @property
     def database(self) -> Path:
@@ -28,4 +34,11 @@ class Settings(BaseModel):
         default = Path.home() / ".local" / "share" / "mozg-outreach"
         home = Path(os.environ.get("MOZG_OUTREACH_HOME", default)).expanduser()
         runs = os.environ.get("MOZG_OUTREACH_MAX_RUNS")
-        return cls(home=home, max_parallel_runs=int(runs) if runs else 2)
+        # "chromium" uses Playwright's own build where Google Chrome isn't installed.
+        channel = os.environ.get("MOZG_OUTREACH_BROWSER", "chrome")
+        return cls(
+            home=home,
+            max_parallel_runs=int(runs) if runs else 2,
+            browser=BrowserSettings.model_validate({"channel": channel}),
+            gmail=GmailSettings.from_env(),
+        )

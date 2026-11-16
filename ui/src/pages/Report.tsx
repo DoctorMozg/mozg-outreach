@@ -23,11 +23,11 @@ import {
   Transition,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconColumns3, IconExternalLink, IconMail, IconSearch, IconSparkles, IconTable } from "@tabler/icons-react";
+import { IconColumns3, IconExternalLink, IconMail, IconRoute, IconSearch, IconSparkles, IconTable } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, enrichHint, get, type Graph, type Item, type Project, type Run } from "../api";
-import { ActivityBadge, Empty, ErrorBox, Score, Value } from "../components/common";
+import { ActivityBadge, Empty, ErrorBox, Score, StepBadge, Value } from "../components/common";
 import { GraphView } from "../components/GraphView";
 import { href } from "../router";
 
@@ -213,6 +213,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
                   </Text>
                   <Group gap={4} mt={2}>
                     <ActivityBadge activity={item.activity} projectId={project.id} />
+                    <StepBadge step={item.approach_step} />
                     {seeker && (
                       <Badge size="xs" variant="outline" color="gray">
                         {item.kind}
@@ -302,17 +303,20 @@ function ColumnPicker({ all, shown, onChange }: { all: string[]; shown: string[]
   );
 }
 
-/** Names what the letters step writes for the selected kinds. */
+/** Names what the letters step writes for the selected jobs and gigs. */
 function lettersFor(kinds: Set<Item["kind"]>): string {
-  const names = [kinds.has("company") && "letters", kinds.has("job") && "cover letters", kinds.has("gig") && "proposals"].filter(Boolean);
-  return `Write ${names.length ? names.join(" and ") : "letters"}`;
+  const names = [kinds.has("job") && "cover letters", kinds.has("gig") && "proposals"].filter(Boolean);
+  return `Write ${names.join(" and ")}`;
 }
 
 function BulkBar({ project, chosen }: { project: Project; chosen: Item[] }): ReactElement {
   // Gigs are answered on their own board, so there is nothing to enrich.
   const enrichable = chosen.filter((i) => i.kind !== "gig");
+  // A company's letters come from its approach plan, so companies re-plan instead.
+  const writable = chosen.filter((i) => i.kind !== "company");
+  const replannable = chosen.filter((i) => i.kind === "company" && i.enriched);
   const bulk = useMutation({
-    mutationFn: async ({ action, items }: { action: "enrich" | "letters"; items: Item[] }) => {
+    mutationFn: async ({ action, items }: { action: "enrich" | "letters" | "approach"; items: Item[] }) => {
       // One run per item; the server queues them behind its run limit.
       const results = await Promise.allSettled(items.map((i) => call("POST", `/api/items/${i.id}/${action}`)));
       const failed = results.filter((r) => r.status === "rejected").map((r) => String((r as PromiseRejectedResult).reason));
@@ -346,9 +350,18 @@ function BulkBar({ project, chosen }: { project: Project; chosen: Item[] }): Rea
                     Enrich {enrichable.length}
                   </Button>
                 )}
-                <Button size="xs" leftSection={<IconMail size={14} />} loading={bulk.isPending} onClick={() => bulk.mutate({ action: "letters", items: chosen })}>
-                  {lettersFor(new Set(chosen.map((i) => i.kind)))} for {chosen.length}
-                </Button>
+                {replannable.length > 0 && (
+                  <Tooltip label="Plans the approach again and writes a letter for each step not done yet">
+                    <Button size="xs" leftSection={<IconRoute size={14} />} loading={bulk.isPending} onClick={() => bulk.mutate({ action: "approach", items: replannable })}>
+                      Re-plan {replannable.length}
+                    </Button>
+                  </Tooltip>
+                )}
+                {writable.length > 0 && (
+                  <Button size="xs" leftSection={<IconMail size={14} />} loading={bulk.isPending} onClick={() => bulk.mutate({ action: "letters", items: writable })}>
+                    {lettersFor(new Set(writable.map((i) => i.kind)))} for {writable.length}
+                  </Button>
+                )}
               </Group>
               {bulk.error && (
                 <Text size="xs" c="red" mt={4}>
@@ -380,6 +393,7 @@ function LeadPreview({ item, onToggle, onEnrich, enriching }: PreviewProps): Rea
             {item.kind}
           </Badge>
           <ActivityBadge activity={item.activity} projectId={item.project_id} size="md" />
+          <StepBadge step={item.approach_step} size="md" />
           <Text size="sm" c="dimmed">
             {item.dated}
           </Text>

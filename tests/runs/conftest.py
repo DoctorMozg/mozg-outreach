@@ -5,6 +5,10 @@ from pathlib import Path
 import pytest
 
 from mozg_outreach.agents import PromptLibrary
+from mozg_outreach.apply.answers import Answerer
+from mozg_outreach.apply.desk import OnSent
+from mozg_outreach.apply.filler import Application
+from mozg_outreach.apply.models import ApplicantProfile, FilledField, FillReport, OpenField
 from mozg_outreach.domain import BriefFact, ProjectMode
 from mozg_outreach.pipelines.seeker.models import (
     JudgeResult,
@@ -54,6 +58,31 @@ class FakeFeed:
         return FetchResult(items=[item, *self.extra], cursor="2026-11-13T09:00:00+00:00")
 
 
+class FakeDesk:
+    """Stands in for the visible browser: records what it was asked to fill."""
+
+    def __init__(self) -> None:
+        self.prepared: list[tuple[int, str, Application]] = []
+        self.closed: list[int] = []
+        self.on_sent: OnSent | None = None
+
+    async def prepare(
+        self, item_id: int, url: str, application: Application, answerer: Answerer, on_sent: OnSent
+    ) -> FillReport:
+        self.prepared.append((item_id, url, application))
+        self.on_sent = on_sent
+        return FillReport(
+            ats="greenhouse",
+            url=url,
+            filled=[FilledField(label="First Name", source="profile")],
+            for_user=[OpenField(label="Gender", required=False, reason="demographic")],
+            concerns=["Check the notice period."],
+        )
+
+    async def close(self, item_id: int) -> None:
+        self.closed.append(item_id)
+
+
 class Harness:
     """A run manager over a temp database, with scripted agents and one fake feed."""
 
@@ -63,6 +92,7 @@ class Harness:
         # Kinds that need a real adapter; every other kind gets the fake feed.
         self.adapters: dict[str, Callable[[JsonObject], SourceAdapter]] = {}
         self.runner = runner or RecordedRunner({})
+        self.desk = FakeDesk()
         self.manager = RunManager(
             RunEnvironment(
                 db=db,
@@ -72,6 +102,7 @@ class Harness:
                 adapters=lambda kind, config: (
                     self.adapters[kind](config) if kind in self.adapters else self.feed
                 ),
+                applications=self.desk,
             ),
             FLOWS,
         )
@@ -84,13 +115,19 @@ class Harness:
         for name, results in script.items():
             self.runner._script.setdefault(name, []).extend(results)
 
-    def seeker_project(self, gigs: bool = False, facts: list[BriefFact] | None = None) -> int:
+    def seeker_project(
+        self,
+        gigs: bool = False,
+        facts: list[BriefFact] | None = None,
+        applicant: ApplicantProfile | None = None,
+    ) -> int:
         """A seeker project with a job feed; it searches jobs, and gigs when asked."""
         seeker = SeekerBrief(
             cv_text=CV_TEXT,
             preferences="Remote EU",
             facts=facts or [],
             gigs=SearchScope(recency_days=30) if gigs else None,
+            applicant=applicant,
         )
         with self.db.session() as session:
             brief: JsonObject = seeker.model_dump()

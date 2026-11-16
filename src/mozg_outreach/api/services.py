@@ -7,6 +7,8 @@ from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
 
 from mozg_outreach.agents import PromptLibrary, StepRunner
+from mozg_outreach.browser import BrowserService
+from mozg_outreach.mail.drafts import GmailDrafts
 from mozg_outreach.runs.flow import AdapterFactory
 from mozg_outreach.runs.manager import RunManager
 from mozg_outreach.storage.db import Database
@@ -21,6 +23,8 @@ class Services:
     prompts: PromptLibrary
     adapters: AdapterFactory
     home: Path
+    browser: BrowserService
+    gmail: GmailDrafts | None
 
 
 def services(request: Request) -> Services:

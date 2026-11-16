@@ -13,6 +13,13 @@ from mozg_outreach.letters.models import (
 from mozg_outreach.naturalize.models import NaturalizeResult
 from mozg_outreach.naturalize.naturalizer import Naturalizer
 from mozg_outreach.naturalize.validation import body_word_count
+from mozg_outreach.pipelines.biz.approach_models import (
+    ApproachPlan,
+    PlanContact,
+    PlannedTouch,
+    PlanRoute,
+    StoredApproach,
+)
 from mozg_outreach.pipelines.biz.enrichment_models import CompanyDossier
 from mozg_outreach.pipelines.biz.letter_briefs import angles_from
 from mozg_outreach.pipelines.biz.letters import (
@@ -58,7 +65,7 @@ async def write(
 
 
 def test_fixture_body_fits_the_email_budget() -> None:
-    assert 120 <= body_word_count(f"Hi Jane,\n\n{BODY}\n\nThanks,\nStan") <= 180
+    assert 60 <= body_word_count(f"Hi Jane,\n\n{BODY}\n\nThanks,\nStan") <= 100
 
 
 async def test_selected_company_gets_a_framed_naturalized_letter(
@@ -92,6 +99,51 @@ async def test_selected_company_gets_a_framed_naturalized_letter(
     assert brief.generic_inbox
     assert brief.reader_style == STYLE
     assert brief.hooks[0].signal.startswith(HOOK)
+
+
+async def test_an_inbox_touch_to_no_one_greets_whoever_reads_it(
+    request_: LetterRequest, tmp_path: Path
+) -> None:
+    inbox = PlanContact(
+        ref="inbox",
+        name=None,
+        title="Company inbox",
+        relevance="",
+        routes=[
+            PlanRoute(
+                ref="inbox.email1",
+                channel="email",
+                address="hello@katanamrp.com",
+                confidence="shared_inbox",
+            )
+        ],
+    )
+    touch = PlannedTouch(
+        step=1,
+        day=0,
+        contact_ref="inbox",
+        route_ref="inbox.email1",
+        purpose="open",
+        angle="cost",
+        hook_ref=None,
+        ask="Who looks after platform costs?",
+        talking_points="",
+    )
+    plan = ApproachPlan(
+        summary="", first_contact_ref="inbox", rationale="", touches=[touch], avoid=[], concerns=[]
+    )
+    approach = StoredApproach(plan=plan, contacts=[inbox], hooks=[], planned_on="2026-11-16")
+    final = f"Hello,\n\n{BODY}\n\nThanks,\nStan"
+
+    batch, runner = await write(
+        request_.model_copy(update={"approach": approach}),
+        {"expert-copywriter": [draft()], "expert-naturalizer": [naturalized(final)]},
+        tmp_path,
+    )
+
+    [letter] = batch.letters
+    assert (letter.recipient, letter.step, letter.text) == ("Katana team", 1, final)
+    assert "outreach-personality-profiler" not in runner.payloads, "no one to profile"
 
 
 async def test_invented_number_gets_one_retry_with_the_problem(

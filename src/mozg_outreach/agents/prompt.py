@@ -25,6 +25,7 @@ class AgentPrompt:
     max_turns: int | None
     effort: EffortLevel | None
     body: str
+    toolkits: tuple[str, ...] = ()
 
 
 class PromptLibrary:
@@ -69,6 +70,7 @@ class PromptLibrary:
             raise PromptError(f"{path}: unknown effort {effort!r}")
         max_turns = fields.get("maxTurns")
         declared = _TOOL_TOKEN.findall(fields.get("tools", ""))
+        toolkits = tuple(t.strip() for t in fields.get("toolkits", "").split(",") if t.strip())
 
         return AgentPrompt(
             group=path.parent.name,
@@ -78,4 +80,5 @@ class PromptLibrary:
             max_turns=int(max_turns) if max_turns else None,
             effort=cast("EffortLevel | None", effort),
             body="\n".join(lines[end + 1 :]).strip(),
+            toolkits=toolkits,
         )

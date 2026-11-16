@@ -74,7 +74,7 @@ class BriefWriter:
         return BriefDraft(brief=brief, concerns=[*draft.concerns, *dropped])
 
     async def seeker(self, cv_text: str, note: str, current: SeekerBrief | None) -> BriefDraft:
-        """Keeps the scopes of the project's current brief; the writer only reads the CV."""
+        """Keeps the scopes and applicant of the current brief; the writer only reads the CV."""
         draft = await self._steps.run(
             "shared",
             "seeker-brief-writer",
@@ -82,7 +82,7 @@ class BriefWriter:
             SeekerBriefDraft,
         )
         facts, dropped = self._sourced(draft.facts, need_source=False)
-        scopes = current.model_dump(include={"jobs", "gigs"}) if current else {}
+        scopes = current.model_dump(include={"jobs", "gigs", "applicant"}) if current else {}
         brief = SeekerBrief.model_validate(
             {"cv_text": cv_text, "preferences": draft.preferences, "facts": facts, **scopes}
         )

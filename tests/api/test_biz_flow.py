@@ -20,6 +20,13 @@ from .conftest import Api, biz_brief, sse_events
 
 
 @pytest.fixture
+def strategy(strategy: Strategy) -> Strategy:
+    """One target sector, so each round runs one source researcher and one scout."""
+    strategy.target_profile.sectors = strategy.target_profile.sectors[:1]
+    return strategy
+
+
+@pytest.fixture
 def proposal() -> FieldProposal:
     return load_fixture("field_proposal", FieldProposal)
 
@@ -53,7 +60,11 @@ def search_script(strategy: Strategy) -> dict[str, list[Scripted]]:
     return {
         "outreach-strategist": [strategy, strategy],
         "outreach-source-researcher": [two_sources],
-        "outreach-scout": [load_fixture("scout_results", list[ScoutResult])[0]],
+        # The second scout is the search round for a sector still short of its quota.
+        "outreach-scout": [
+            load_fixture("scout_results", list[ScoutResult])[0],
+            ScoutResult(companies=[], concerns=[]),
+        ],
         "field-researcher": [load_fixture("field_research", FieldResearchResult)] * 2,
         "fit-judge": [load_fixture("fit_verdict", FitVerdict)] * 2,
         "run-summarizer": [SUMMARY],
@@ -68,7 +79,9 @@ async def test_brief_to_scored_report_through_the_strategy_gate(
     api.script(search_script(strategy))
 
     run = await api.ok(
-        "POST", f"/api/projects/{project_id}/runs", {"options": {"limit": 5, "max_sources": 1}}
+        "POST",
+        f"/api/projects/{project_id}/runs",
+        {"options": {"limit": 5, "sources_per_sector": 1}},
     )
     run_id = int(str(run["id"]))
     parked = await api.settle(run_id)
@@ -91,7 +104,10 @@ async def test_brief_to_scored_report_through_the_strategy_gate(
     report = await api.get(f"/api/projects/{project_id}/items", list[ItemOut])
     assert len(report) == 2
     assert all(item.score_total is not None for item in report)
-    assert len(api.runner.payloads["outreach-scout"]) == 1, "max_sources caps the scouts"
+    scouts = [p.model_dump() for p in api.runner.payloads["outreach-scout"]]
+    assert scouts[0]["source"]["name"] == load_fixture("sources", SourceList).sources[0].name
+    assert scouts[1]["source"] is None, "a short sector gets a web-search round"
+    assert {c.title for c in report} <= set(scouts[1]["exclude_names"])
     researched = {f.id for f in proposal.spec.fields} & set(report[0].fields)
     assert researched, "researched field values reach the report"
     for item in report:
@@ -157,7 +173,7 @@ class TestRunSummary:
         del script["run-summarizer"]
         api.script(script)
 
-        done = await approved_run(api, strategy, {"max_sources": 1, "summary": False})
+        done = await approved_run(api, strategy, {"summary": False})
 
         assert done["status"] == "complete", done["error"]
         assert "run-summarizer" not in api.runner.payloads
@@ -171,7 +187,7 @@ class TestRunSummary:
         ]
         api.script(script)
 
-        done = await approved_run(api, strategy, {"max_sources": 1})
+        done = await approved_run(api, strategy, {})
 
         assert done["status"] == "complete", done["error"]
         state = done["state"]

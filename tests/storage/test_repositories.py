@@ -229,9 +229,16 @@ class TestDraftsAndInteractions:
             new = NewDraft(channel="email", recipient="Jane", subject="S", body=body, review=review)
             drafts.add(item_id, new)
         drafts.add(item_id, new.model_copy(update={"recipient": "Ann", "body": "other"}))
+        # Each approach step to the same person is its own letter with its own versions.
+        drafts.add(item_id, new.model_copy(update={"step": 2, "body": "follow-up"}))
 
-        rows = [(d.recipient, d.version, d.body) for d in drafts.for_item(item_id)]
-        assert rows == [("Ann", 1, "other"), ("Jane", 1, "first"), ("Jane", 2, "second")]
+        rows = [(d.recipient, d.step, d.version, d.body) for d in drafts.for_item(item_id)]
+        assert rows == [
+            ("Ann", None, 1, "other"),
+            ("Jane", None, 1, "first"),
+            ("Jane", None, 2, "second"),
+            ("Jane", 2, 1, "follow-up"),
+        ]
         assert drafts.for_item(item_id)[0].review["reader_calibration"] == "role priorities"
 
     def test_interactions_are_logged_in_order(self, session: Session, item_id: int) -> None:

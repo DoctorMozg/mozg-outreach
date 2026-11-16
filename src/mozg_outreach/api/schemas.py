@@ -9,6 +9,7 @@ from mozg_outreach.cvs.models import CvSummary
 from mozg_outreach.domain import EntityKind, IdentifierKind, ItemKind, ProjectMode, RunStatus
 from mozg_outreach.letters.models import Tone
 from mozg_outreach.naturalize.models import Channel
+from mozg_outreach.pipelines.biz.approach_models import ApproachStep
 from mozg_outreach.storage.models import JsonObject
 from mozg_outreach.storage.repositories import LeadActivity
 
@@ -119,6 +120,7 @@ class ItemOut(Row):
     dated: date = Field(description="Posted on, or the day a run first found the lead.")
     updated_at: datetime
     activity: LeadActivity | None = None
+    approach_step: ApproachStep | None = None
 
 
 class ItemPatch(BaseModel):
@@ -130,11 +132,16 @@ class DraftOut(Row):
     item_id: int
     channel: str
     recipient: str
+    step: int | None
     version: int
     subject: str | None
     body: str
     review: JsonObject
     created_at: datetime
+
+
+class StepDoneIn(BaseModel):
+    on: date | None = Field(default=None, description="When it was done; today when null.")
 
 
 class DraftRevisionIn(BaseModel):
@@ -146,8 +153,30 @@ class DraftEdit(BaseModel):
     body: str = Field(min_length=1)
 
 
+class MailThreadOut(Row):
+    """An email letter's Gmail draft and what the mailbox shows became of it."""
+
+    id: int
+    item_id: int
+    recipient: str
+    step: int | None
+    draft_id: int
+    address: str
+    pushed_at: datetime
+    sent_at: datetime | None
+    replied_at: datetime | None
+    bounced_at: datetime | None
+
+
+class MailStatusOut(BaseModel):
+    """The Gmail account drafts go to; null when Gmail isn't set up."""
+
+    address: str | None
+
+
 class InteractionIn(BaseModel):
-    kind: Literal["sent", "replied", "called", "met", "declined", "note"]
+    # "declined" is the user turning the lead down; "refused" is the other side doing so.
+    kind: Literal["sent", "replied", "bounced", "called", "met", "declined", "refused", "note"]
     note: str = ""
     happened_at: datetime | None = None
 
@@ -170,6 +199,7 @@ class ItemDetail(ItemOut):
     raw: JsonObject
     details: JsonObject
     drafts: list[DraftOut]
+    mail: list[MailThreadOut]
     interactions: list[InteractionOut]
     entities: list[LinkedEntity]
 

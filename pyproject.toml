@@ -13,8 +13,10 @@ dependencies = [
   "claude-agent-sdk>=0.2.182,<0.3",
   "fastapi>=0.115,<1",
   "httpx>=0.28,<1",
+  "playwright>=1.65,<2",
   "pydantic>=2.11,<3",
   "pypdf>=6,<7",
+  "python-dotenv>=1.1,<2",
   "segno>=1.6,<2",
   "sqlalchemy>=2.0.40,<3",
   "sse-starlette>=2.1,<4",
@@ -41,7 +43,7 @@ packages = ["src/mozg_outreach"]
 addopts = "-ra --strict-config --strict-markers -m 'not live'"
 testpaths = ["tests"]
 asyncio_mode = "auto"
-markers = ["live: calls the real Claude Code CLI and the web; run with `-m live`"]
+markers = ["live: calls the real Claude Code CLI, the web or Gmail; run with `-m live`"]
 
 [tool.ruff]
 line-length = 100

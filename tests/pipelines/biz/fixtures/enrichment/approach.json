@@ -1,0 +1,47 @@
+{
+  "avoid": [
+    "Don't pitch the sales team; the DACH roles are not our angle."
+  ],
+  "concerns": [],
+  "first_contact_ref": "inbox",
+  "rationale": "Jane Example owns the platform and the open platform roles, but the shared inbox is the only published route.",
+  "summary": "Katana publishes no personal address for its CTO, so the letter goes to hello@ addressed to Jane Example and asks to be forwarded. Two follow-ups add the hiring signal and then close the loop. Any reply, bounce or opt-out ends the sequence.",
+  "touches": [
+    {
+      "addressed_to": "c1",
+      "angle": "Platform capacity gap",
+      "ask": "Worth a 15-minute look at how we would take load off the platform team?",
+      "contact_ref": "inbox",
+      "day": 0,
+      "hook_ref": "h1",
+      "purpose": "open",
+      "route_ref": "inbox.email1",
+      "step": 1,
+      "talking_points": "The Series B extension means more customers on the same platform; we add capacity without new hires."
+    },
+    {
+      "addressed_to": "c1",
+      "angle": "Platform capacity gap",
+      "ask": "Could you point me to whoever owns platform hiring?",
+      "contact_ref": "inbox",
+      "day": 4,
+      "hook_ref": "h3",
+      "purpose": "follow_up",
+      "route_ref": "inbox.email1",
+      "step": 2,
+      "talking_points": "The open Senior Platform Engineer role shows the gap; we cover it while the hire is found."
+    },
+    {
+      "addressed_to": "c1",
+      "angle": "Cost down without slowing releases",
+      "ask": "Should I close this for now?",
+      "contact_ref": "inbox",
+      "day": 11,
+      "hook_ref": null,
+      "purpose": "breakup",
+      "route_ref": "inbox.email1",
+      "step": 3,
+      "talking_points": "Short close; leave the door open."
+    }
+  ]
+}

@@ -1,13 +1,17 @@
 """Biz search as phases: plan, strategy gate, sources, scout, assess and score, then summarize."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
+import httpx
 from pydantic import BaseModel, Field
 
 from mozg_outreach.agents import AgentOutputError, AgentRunError
 from mozg_outreach.domain import ItemCandidate
 from mozg_outreach.pipelines.biz.assessment import BizAssessment
 from mozg_outreach.pipelines.biz.assessment_models import AssessmentContext
+from mozg_outreach.pipelines.biz.directories import Directories, default_catalog
 from mozg_outreach.pipelines.biz.discovery import BizDiscovery, DiscoveryError
 from mozg_outreach.pipelines.biz.models import (
     BizBrief,
@@ -24,18 +28,23 @@ from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.scoring.biz import BizScoreInput, BizScorer
+from mozg_outreach.sources.base import USER_AGENT
 from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import Item
 from mozg_outreach.storage.repositories import ItemRepository
 
 logger = logging.getLogger(__name__)
 
+DIRECTORY_TIMEOUT_S = 30.0
+
 
 class BizOptions(BaseModel):
     limit: int = Field(default=20, ge=1, le=100)
     region: str | None = Field(default=None, description="Hard filter over the brief's regions.")
     climate: bool = Field(default=False, description="Research the market climate first.")
-    max_sources: int = Field(default=4, ge=1, le=10, description="Directories scouted by agents.")
+    sources_per_sector: int = Field(
+        default=1, ge=1, le=3, description="Directories found and scouted for each target sector."
+    )
     summary: bool = Field(default=True, description="Summarize patterns across the scored leads.")
 
 
@@ -93,29 +102,41 @@ approve_strategy = Approval[BizSearchState](
 )
 
 
+@asynccontextmanager
+async def _discovery(ctx: Ctx) -> AsyncIterator[BizDiscovery]:
+    async with httpx.AsyncClient(
+        headers={"User-Agent": USER_AGENT}, timeout=DIRECTORY_TIMEOUT_S, follow_redirects=True
+    ) as client:
+        yield BizDiscovery(ctx.steps, Directories(client, default_catalog()))
+
+
 async def sources(ctx: Ctx) -> PhaseResult:
-    found = await BizDiscovery(ctx.steps).find_sources(_strategy(ctx), _region(ctx, _brief(ctx)))
-    ctx.state.sources = found.sources[: ctx.state.options.max_sources]
+    async with _discovery(ctx) as discovery:
+        found = await discovery.find_sources(
+            _strategy(ctx), _region(ctx, _brief(ctx)), ctx.state.options.sources_per_sector
+        )
+    ctx.state.sources = found.sources
     ctx.state.concerns += found.concerns
     ctx.emit("sources", {"names": [s.name for s in found.sources]})
     return None
 
 
 async def scout(ctx: Ctx) -> PhaseResult:
-    outcome = await BizDiscovery(ctx.steps).scout(
-        _strategy(ctx),
-        ctx.state.sources,
-        region=_region(ctx, _brief(ctx)),
-        limit=ctx.state.options.limit,
-    )
-    ctx.state.candidates = outcome.candidates[: ctx.state.options.limit]
+    async with _discovery(ctx) as discovery:
+        outcome = await discovery.scout(
+            _strategy(ctx),
+            ctx.state.sources,
+            region=_region(ctx, _brief(ctx)),
+            limit=ctx.state.options.limit,
+        )
+    ctx.state.candidates = outcome.candidates
     ctx.state.concerns += outcome.concerns
     with ctx.db.session() as session:
         items = ItemRepository(session)
         ctx.state.item_ids = [
             items.upsert(ctx.project_id, ctx.run_id, c).id for c in ctx.state.candidates
         ]
-    ctx.emit("items", {"found": len(ctx.state.item_ids)})
+    ctx.emit("items", {"found": len(ctx.state.item_ids), "by_sector": outcome.mix})
     return None
 
 

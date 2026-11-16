@@ -1,0 +1,13 @@
+<title>Apply</title><form method="post" action="/apply">
+<label>Full name<input name="name"></label>
+<label>Email<input name="email" type="email"></label>
+<label>Current company<input name="org"></label>
+<label>LinkedIn URL<input name="urls[LinkedIn]"></label>
+<label>Resume/CV<input name="resume" type="file"></label>
+<fieldset><legend>Preferred work mode</legend>
+<label><input type="radio" name="cards[mode]" value="remote">Remote</label>
+<label><input type="radio" name="cards[mode]" value="office">Office</label></fieldset>
+<label>Office location<input role="combobox" name="cards[office]"></label>
+<label>Expected salary<input name="cards[salary]"></label>
+<label>Additional information<textarea name="comments"></textarea></label>
+<button>Submit</button></form>

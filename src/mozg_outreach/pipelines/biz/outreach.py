@@ -1,6 +1,7 @@
 """User-selected biz leads: enrich them, link their people in the registry, draft letters."""
 
 import logging
+from datetime import date
 from typing import get_args
 
 from sqlalchemy.orm import Session
@@ -10,6 +11,8 @@ from mozg_outreach.letters.models import RevisionTarget, SenderSettings
 from mozg_outreach.naturalize.models import Channel
 from mozg_outreach.naturalize.naturalizer import Naturalizer, VoiceContext
 from mozg_outreach.naturalize.voice import VoiceProfile
+from mozg_outreach.pipelines.biz.approach import ApproachPlanner, ApproachRequest
+from mozg_outreach.pipelines.biz.approach_models import StoredApproach
 from mozg_outreach.pipelines.biz.assessment_models import CompanyAssessment
 from mozg_outreach.pipelines.biz.enrichment import (
     BizEnrichment,
@@ -24,6 +27,7 @@ from mozg_outreach.pipelines.biz.letters import (
     LetterRequest,
 )
 from mozg_outreach.pipelines.biz.models import BizBrief, Strategy
+from mozg_outreach.pipelines.biz.regions import GCC_PLACES, mentions
 from mozg_outreach.pipelines.biz.registry_ingest import BizRegistryIngest
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.registry.ingest import IngestContext
@@ -42,6 +46,7 @@ logger = logging.getLogger(__name__)
 # Keys of the item's `details` sections this pipeline owns.
 DOSSIER = "dossier"
 ASSESSMENT = "assessment"
+APPROACH = "approach"
 
 
 class BizOutreach:
@@ -53,7 +58,7 @@ class BizOutreach:
     async def enrich(
         self, item: Item, strategy: Strategy, run_id: int | None = None
     ) -> CompanyDossier:
-        """Run the five enrichment agents, then rescore with the dossier and register its people."""
+        """Run the enrichment agents, store the dossier, rescore and register the people."""
         candidate = stored_candidate(item)
         dossier = await BizEnrichment(self._steps).enrich(brief_from_candidate(candidate, strategy))
         self._items.set_detail(item, DOSSIER, dossier)
@@ -66,6 +71,28 @@ class BizOutreach:
         self._rescore(item, strategy, dossier)
         logger.info("enriched %s: %d concerns", item.title, len(dossier.concerns))
         return dossier
+
+    async def plan_approach(self, item: Item, strategy: Strategy) -> StoredApproach:
+        """Plan who to contact, how and when, from the stored dossier."""
+        if DOSSIER not in item.details:
+            raise ValueError(f"item {item.id} is not enriched yet; enrich it before planning")
+        project = self._session.get(Project, item.project_id)
+        brief = BizBrief.model_validate(project.brief) if project and project.brief else None
+        approach = await ApproachPlanner(self._steps).plan(
+            ApproachRequest(
+                company=item.title,
+                fields=_fields(item),
+                dossier=CompanyDossier.model_validate(item.details[DOSSIER]),
+                strategy=strategy,
+                buyer_roles=brief.icp.buyer_roles if brief else [],
+                today=date.today(),
+                previous=StoredApproach.model_validate(item.details[APPROACH])
+                if APPROACH in item.details
+                else None,
+            )
+        )
+        self._items.set_detail(item, APPROACH, approach)
+        return approach
 
     async def write_letters(
         self, item: Item, strategy: Strategy, revision: RevisionTarget | None = None
@@ -95,6 +122,11 @@ class BizOutreach:
             else None,
             voices={channel: self._voice(channel) for channel in get_args(Channel)},
             revision=revision,
+            approach=StoredApproach.model_validate(item.details[APPROACH])
+            if APPROACH in item.details
+            else None,
+            opt_out=_in_gcc(item),
+            existing=self._step_texts(item.id),
         )
         writer = BizLetterWriter(self._steps, Naturalizer(self._steps))
         batch = await writer.write(request)
@@ -105,12 +137,17 @@ class BizOutreach:
                 NewDraft(
                     channel=letter.channel,
                     recipient=letter.recipient,
+                    step=letter.step,
                     subject=letter.subject,
                     body=letter.text,
                     review=letter.review,
                 ),
             )
         return batch
+
+    def _step_texts(self, item_id: int) -> dict[int, str]:
+        """The newest draft of each plan step; drafts come oldest version first."""
+        return {d.step: d.body for d in DraftRepository(self._session).for_item(item_id) if d.step}
 
     def _remember_domain(
         self, item: Item, candidate: ItemCandidate, dossier: CompanyDossier
@@ -152,3 +189,8 @@ def stored_candidate(item: Item) -> ItemCandidate:
     return ItemCandidate(
         kind=item.kind, dedup_key=item.dedup_key, title=item.title, fields=_fields(item)
     )
+
+
+def _in_gcc(item: Item) -> bool:
+    location = _fields(item).get("location")
+    return location is not None and mentions(str(location.value), GCC_PLACES)

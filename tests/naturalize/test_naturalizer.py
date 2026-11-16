@@ -5,6 +5,7 @@ import pytest
 from mozg_outreach.agents import AgentRunError, PromptLibrary
 from mozg_outreach.naturalize.models import NaturalizeInput, NaturalizeResult
 from mozg_outreach.naturalize.naturalizer import (
+    WORD_BUDGETS,
     Naturalizer,
     NaturalizeRequest,
     VoiceContext,
@@ -20,14 +21,10 @@ from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner, Scripted
 DRAFT = (
     "Hi Anna,\n\n"
     "Congratulations on the Series B extension. Furthermore, scaling a platform team in Tallinn "
-    "while keeping cloud spend in check is a delicate balance, and many teams find that costs "
-    "grow faster than revenue after a round. We help B2B SaaS teams cut AWS spend by 35% in "
-    "8 weeks without slowing releases. The engagement is fixed-price, so there are no "
-    "surprises, and your engineers stay focused on the roadmap while we handle the rightsizing, "
-    "the reserved capacity plan and the Kubernetes autoscaling work. For a Munich logistics "
-    "SaaS we reduced the AWS bill by 35% and kept every release on schedule. Would a 20-minute "
-    "call next week be useful to compare notes on your setup? I can share the before and after "
-    "numbers and the plan we used.\n\n"
+    "while keeping cloud spend in check is a delicate balance. We help B2B SaaS teams cut AWS "
+    "spend by 35% in 8 weeks without slowing releases, and the engagement is fixed-price. "
+    "Would a 20-minute call next week be useful? I can share the before and after numbers and "
+    "the plan we used.\n\n"
     "Thanks,\nMax"
 )
 REWRITE = DRAFT.replace("Furthermore, scaling", "Scaling").replace(
@@ -55,7 +52,13 @@ async def run(
 ) -> tuple[RewriteOutcome, RecordedRunner]:
     runner = RecordedRunner({"expert-naturalizer": script})
     naturalizer = Naturalizer(PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path))
-    request = NaturalizeRequest(text=DRAFT, channel="email", language="en", preserve=["Series B"])
+    request = NaturalizeRequest(
+        text=DRAFT,
+        channel="email",
+        language="en",
+        word_budget=WORD_BUDGETS["email"],
+        preserve=["Series B"],
+    )
     return await naturalizer.naturalize(request, voice), runner
 
 
@@ -72,7 +75,7 @@ async def test_dispatch_is_medium_with_budget_voice_and_exemplars(
     assert payload.severity == "medium"
     assert payload.length_tolerance_pct == 10
     assert payload.word_budget is not None
-    assert (payload.word_budget.min, payload.word_budget.max) == (120, 180)
+    assert (payload.word_budget.min, payload.word_budget.max) == (60, 100)
     assert payload.allowed_punctuation == ["semicolon"]
     assert payload.voice_profile is not None
     assert "Habits to keep:" in payload.voice_profile
@@ -126,7 +129,7 @@ class TestRetry:
         assert first.retry is None
         assert second.retry is not None
         assert second.retry.previous_attempt == too_short
-        assert any("budget 120-180" in p for p in second.retry.problems)
+        assert any("budget 60-100" in p for p in second.retry.problems)
 
     async def test_two_misses_keep_the_draft(self, voice: VoiceContext, tmp_path: Path) -> None:
         dropped = REWRITE.replace("Series B extension", "funding round")

@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from mozg_outreach.apply.desk import ApplyDesk
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.runs.events import RunLog
 from mozg_outreach.sources.base import SourceAdapter
@@ -48,6 +49,9 @@ class FlowContext[TState: RunState]:
     today: date
     workspace: Path
     adapters: AdapterFactory
+    applications: ApplyDesk | None = None
+    # Answers this run's own gate from outside the run task, such as a detected confirmation page.
+    answer_gate: Callable[[GateAnswer], None] | None = None
 
     def emit(self, kind: str, payload: JsonObject) -> None:
         self.log.append(self.run_id, kind, payload)

@@ -2,6 +2,7 @@
 name: outreach-contact-finder
 description: Finds contact information for a company — email addresses, phone numbers, key decision-makers with LinkedIn profiles, and social media presence.
 tools: WebFetch, WebSearch
+toolkits: browser
 model: sonnet
 effort: medium
 maxTurns: 40
@@ -44,6 +45,10 @@ When using WebSearch/WebFetch, enforce this source priority:
 **Banned sources**: Stack Overflow, AI-generated summaries, undated blog posts, forum threads, scraped lead lists without attribution, and social posts without a verifiable source trail.
 
 Put each source conflict or unverified claim in `concerns` as one plain sentence, for example "Source A says X but source B says Y" or "Could not confirm X against an authoritative source".
+
+## Browser
+
+When WebFetch returns an empty shell, asks to enable JavaScript, or the list loads on scroll or behind filters, open the page with `mcp__browser__open`. It returns the page's accessibility tree; `mcp__browser__click` follows a link, tab, "show more" or next-page button by its `ref`, `mcp__browser__type` fills a site's own search box (`submit` true runs it), and `mcp__browser__back` returns. Browsing is read-only: logins, forms that send data and private addresses are refused, and a refusal is a reason to try another page, not to retry. WebFetch stays the first choice because it is cheaper. A page read through the browser counts as fetched for quotes and `source_url`. When the browser tools are missing, carry on with WebFetch.
 
 ## Process
 
