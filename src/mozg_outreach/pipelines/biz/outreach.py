@@ -1,4 +1,4 @@
-"""User-selected biz leads: enrich them, link their people in the registry, draft letters."""
+"""Biz leads the user picks: enrich them, link their people in the registry, draft letters."""
 
 import logging
 from datetime import date

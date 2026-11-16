@@ -134,10 +134,9 @@ class TestLifecycle:
         assert stale.error == "interrupted: the server stopped mid-run"
 
 
-async def test_item_run_survives_its_item_being_unselected(
+async def test_a_lead_straight_from_the_search_can_be_enriched(
     harness: Harness, strategy: SeekerStrategy
 ) -> None:
-    """Selection gates starting a run; unticking the lead while it is queued must not fail it."""
     contacts = JobContacts(
         named_contact=None,
         careers_email="jobs@acme.example",
@@ -160,9 +159,7 @@ async def test_item_run_survives_its_item_being_unselected(
     harness.manager.answer_gate(search, GateAnswer(approve=True))
     await harness.manager.wait(search)
     with harness.db.session() as session:
-        item = session.scalars(select(Item)).one()
-        assert not item.selected
-        item_id = item.id
+        item_id = session.scalars(select(Item)).one().id
 
     enrich = harness.manager.start(project_id, "seeker.enrich", {"item_id": item_id})
     await harness.manager.wait(enrich)

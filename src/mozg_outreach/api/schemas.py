@@ -114,17 +114,12 @@ class ItemOut(Row):
     fields: JsonObject
     score_total: float | None
     score: JsonObject | None
-    selected: bool
     enriched: bool
     enriched_at: datetime | None
     dated: date = Field(description="Posted on, or the day a run first found the lead.")
     updated_at: datetime
     activity: LeadActivity | None = None
     approach_step: ApproachStep | None = None
-
-
-class ItemPatch(BaseModel):
-    selected: bool
 
 
 class DraftOut(Row):

@@ -1,7 +1,7 @@
 import { Accordion, Alert, Anchor, Badge, type BadgeProps, Card, Group, List, Text, Tooltip } from "@mantine/core";
 import { IconAlertTriangle, IconExternalLink, IconInfoCircle } from "@tabler/icons-react";
 import type { ReactElement, ReactNode } from "react";
-import type { Activity, ApproachStep, FieldValue, Mode, RunStatus } from "../api";
+import type { Activity, ApproachStep, FieldValue, Item, Mode, RunStatus } from "../api";
 
 export function ErrorBox({ error }: { error: unknown }): ReactElement | null {
   if (!error) return null;
@@ -114,6 +114,19 @@ export function StepBadge({ step, size = "xs" }: { step: ApproachStep | null; si
       <Badge size={size} variant="light" color={color}>
         step {step.step}/{step.total}
         {step.channel ? ` · ${STEP_CHANNELS[step.channel]}` : ""} · {when}
+      </Badge>
+    </Tooltip>
+  );
+}
+
+/** Marks a lead whose people, contacts and signals were researched; hover shows when. */
+export function EnrichedBadge({ item, size = "xs" }: { item: Pick<Item, "enriched" | "enriched_at">; size?: BadgeProps["size"] }): ReactElement | null {
+  if (!item.enriched) return null;
+  const when = item.enriched_at ? `Enriched on ${new Date(item.enriched_at).toLocaleDateString()}` : "Enriched";
+  return (
+    <Tooltip label={when}>
+      <Badge size={size} variant="light" color="teal">
+        enriched
       </Badge>
     </Tooltip>
   );

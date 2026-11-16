@@ -29,9 +29,7 @@ from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner
 @pytest.fixture
 def item(session: Session, project: Project, run: Run) -> Item:
     katana = dedup_companies(load_fixture("scout_results", list[ScoutResult])[0].companies)[0]
-    row = ItemRepository(session).upsert(project.id, run.id, katana)
-    row.selected = True
-    return row
+    return ItemRepository(session).upsert(project.id, run.id, katana)
 
 
 @pytest.fixture
@@ -41,7 +39,7 @@ def outreach(session: Session, tmp_path: Path) -> tuple[BizOutreach, RecordedRun
     return BizOutreach(session, steps), runner
 
 
-async def test_selected_item_becomes_enriched_scored_and_drafted(
+async def test_item_becomes_enriched_scored_and_drafted(
     session: Session,
     project: Project,
     item: Item,

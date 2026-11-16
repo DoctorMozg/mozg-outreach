@@ -68,7 +68,7 @@ def test_fixture_body_fits_the_email_budget() -> None:
     assert 60 <= body_word_count(f"Hi Jane,\n\n{BODY}\n\nThanks,\nStan") <= 100
 
 
-async def test_selected_company_gets_a_framed_naturalized_letter(
+async def test_company_gets_a_framed_naturalized_letter(
     request_: LetterRequest, tmp_path: Path
 ) -> None:
     final = f"Hi Jane,\n\n{BODY.replace('Congrats on', 'Congratulations on')}\n\nThanks,\nStan"

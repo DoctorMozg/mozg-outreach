@@ -132,7 +132,6 @@ class Item(Base):
     score: Mapped[JsonObject | None]
     # Pipeline-specific sections (fit verdict, dossier), keyed by name and stored as JSON.
     details: Mapped[JsonObject] = mapped_column(default=dict)
-    selected: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 

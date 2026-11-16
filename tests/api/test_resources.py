@@ -151,7 +151,7 @@ class TestProjects:
         project_id = await api.project("seeker")
         with api.services.db.session() as session:
             rows = [
-                Item(project_id=project_id, kind=ItemKind.JOB, dedup_key=k, title=k, selected=True)
+                Item(project_id=project_id, kind=ItemKind.JOB, dedup_key=k, title=k)
                 for k in ("a", "b")
             ]
             session.add_all(rows)
@@ -198,20 +198,17 @@ class TestProjects:
             assert sighting is not None
             assert (sighting.project_id, sighting.run_id) == (None, None)
 
-    async def test_item_actions_need_selection_and_a_pipeline(self, api: Api) -> None:
+    async def test_item_actions_need_a_pipeline(self, api: Api) -> None:
         project_id = await api.project("seeker")
         with api.services.db.session() as session:
             item = Item(project_id=project_id, kind=ItemKind.GIG, dedup_key="g", title="Gig")
             session.add(item)
             session.flush()
             item_id = item.id
-        assert (await api.client.post(f"/api/items/{item_id}/letters")).status_code == 409
-        await api.ok("PATCH", f"/api/items/{item_id}", {"selected": True})
         assert (await api.client.post(f"/api/items/{item_id}/enrich")).status_code == 409
         assert (await api.client.post(f"/api/items/{item_id}/approach")).status_code == 409
         assert (await api.client.post(f"/api/items/{item_id}/apply")).status_code == 409
         detail = await api.ok("GET", f"/api/items/{item_id}")
-        assert detail["selected"] is True
         assert detail["drafts"] == []
 
     async def test_item_reports_when_it_was_last_enriched(self, api: Api) -> None:

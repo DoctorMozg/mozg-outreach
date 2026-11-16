@@ -13,7 +13,6 @@ import {
   Select,
   SegmentedControl,
   Stack,
-  Switch,
   Tabs,
   Text,
   Textarea,
@@ -41,7 +40,7 @@ import {
   type Run,
   type StoredApproach,
 } from "../api";
-import { ActivityBadge, Empty, ErrorBox, INTERACTION_LABELS, type InteractionKind, interactionLabel, Score, StepBadge } from "../components/common";
+import { ActivityBadge, Empty, EnrichedBadge, ErrorBox, INTERACTION_LABELS, type InteractionKind, interactionLabel, Score, StepBadge } from "../components/common";
 import { Diff } from "../components/Diff";
 import { href } from "../router";
 import { Axes, FieldList } from "./Report";
@@ -82,6 +81,7 @@ export function ItemView({ id }: { id: number }): ReactElement {
           {i.kind}
         </Badge>
         <ActivityBadge activity={i.activity} projectId={i.project_id} size="lg" />
+        <EnrichedBadge item={i} size="lg" />
         <StepBadge step={i.approach_step} size="lg" />
         <Text size="sm" c="dimmed">
           {i.dated}
@@ -97,7 +97,7 @@ export function ItemView({ id }: { id: number }): ReactElement {
         </Grid.Col>
         <Grid.Col span={{ base: 12, lg: 5 }}>
           <Stack>
-            <Actions item={i} onChange={refresh} />
+            <Actions item={i} />
             {i.kind !== "company" && <CvPick item={i} onChange={refresh} />}
             {i.score && (
               <Card>
@@ -194,7 +194,6 @@ function Approach({ item, onChange, onOpenDraft }: ApproachProps): ReactElement 
       size="xs"
       variant="default"
       leftSection={<IconRoute size={14} />}
-      disabled={!item.selected}
       loading={replan.isPending}
       onClick={() => replan.mutate()}
     >
@@ -439,11 +438,7 @@ function CvPick({ item, onChange }: { item: ItemDetail; onChange: () => void }):
   );
 }
 
-function Actions({ item, onChange }: { item: ItemDetail; onChange: () => void }): ReactElement {
-  const select = useMutation({
-    mutationFn: (selected: boolean) => call("PATCH", `/api/items/${item.id}`, { selected }),
-    onSuccess: onChange,
-  });
+function Actions({ item }: { item: ItemDetail }): ReactElement {
   const start = useMutation({
     mutationFn: (action: "enrich" | "letters" | "apply") => call<Run>("POST", `/api/items/${item.id}/${action}`),
     onSuccess: (run) => (window.location.hash = href.run(run.id)),
@@ -451,14 +446,12 @@ function Actions({ item, onChange }: { item: ItemDetail; onChange: () => void })
   const enrich = enrichHint(item);
   return (
     <Card>
-      <Group justify="space-between">
-        <Switch label="Selected" checked={item.selected} onChange={(e) => select.mutate(e.currentTarget.checked)} />
+      <Group justify="flex-end">
         <Group gap="xs">
           {item.kind !== "gig" && (
             <Button
               variant="default"
               leftSection={<IconSparkles size={16} />}
-              disabled={!item.selected}
               loading={start.isPending && start.variables === "enrich"}
               onClick={() => start.mutate("enrich")}
             >
@@ -468,7 +461,6 @@ function Actions({ item, onChange }: { item: ItemDetail; onChange: () => void })
           {item.kind !== "company" && (
             <Button
               leftSection={<IconMail size={16} />}
-              disabled={!item.selected}
               loading={start.isPending && start.variables === "letters"}
               onClick={() => start.mutate("letters")}
             >
@@ -480,8 +472,7 @@ function Actions({ item, onChange }: { item: ItemDetail; onChange: () => void })
               <Button
                 variant="default"
                 leftSection={<IconForms size={16} />}
-                disabled={!item.selected}
-                loading={start.isPending && start.variables === "apply"}
+                  loading={start.isPending && start.variables === "apply"}
                 onClick={() => start.mutate("apply")}
               >
                 Fill application
@@ -490,17 +481,12 @@ function Actions({ item, onChange }: { item: ItemDetail; onChange: () => void })
           )}
         </Group>
       </Group>
-      {!item.selected && (
-        <Text size="sm" c="dimmed" mt="xs">
-          Select the lead to enrich it or draft letters.
-        </Text>
-      )}
       {enrich.note && item.kind !== "gig" && (
         <Text size="sm" c="dimmed" mt="xs">
           {enrich.note}
         </Text>
       )}
-      <ErrorBox error={select.error ?? start.error} />
+      <ErrorBox error={start.error} />
     </Card>
   );
 }
@@ -522,7 +508,7 @@ function Drafts({ item, onSaved, tab, onTab }: DraftsProps): ReactElement {
     return (
       <Card>
         <Empty icon={<IconMail size={32} />} title="No drafts yet">
-          {item.selected ? how : "Select the lead, then write letters for it."}
+          {how}
         </Empty>
       </Card>
     );

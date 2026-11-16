@@ -153,8 +153,6 @@ async def test_one_search_reports_jobs_and_gigs_and_drafts_a_letter_for_each(
         gig_fields = items[ItemKind.GIG].fields
         assert FieldValue.model_validate(gig_fields["pay"]).value == "EUR 700/day"
         assert FieldValue.model_validate(gig_fields["duration"]).value == "8 weeks"
-        for item in items.values():
-            item.selected = True
         ids = {kind: item.id for kind, item in items.items()}
 
     letters = {
@@ -302,7 +300,7 @@ class TestReuseLastStrategy:
 
 
 async def search_one_job(harness: Harness, strategy: SeekerStrategy) -> tuple[int, int]:
-    """A finished search that reported the feed's one job, selected; project and item ids."""
+    """A finished search that reported the feed's one job; project and item ids."""
     project_id = harness.seeker_project()
     harness.script(
         {
@@ -317,7 +315,6 @@ async def search_one_job(harness: Harness, strategy: SeekerStrategy) -> tuple[in
     assert (await finish(harness, search)).status == RunStatus.COMPLETE
     with harness.db.session() as session:
         job = session.scalars(select(Item)).one()
-        job.selected = True
         return project_id, job.id
 
 

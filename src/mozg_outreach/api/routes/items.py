@@ -17,7 +17,6 @@ from mozg_outreach.api.schemas import (
     InteractionOut,
     ItemDetail,
     ItemOut,
-    ItemPatch,
     LinkedEntity,
     RunOut,
     StepDoneIn,
@@ -108,20 +107,10 @@ async def get_item(item_id: int, svc: Svc) -> ItemDetail:
         )
 
 
-@router.patch("/items/{item_id}")
-async def select_item(item_id: int, body: ItemPatch, svc: Svc) -> ItemOut:
-    with svc.db.session() as session:
-        item = get_or_404(session, Item, item_id)
-        item.selected = body.selected
-        return item_outs(session, [item])[0]
-
-
 def _start_item_run(svc: Services, item_id: int, action: ItemActionName) -> RunOut:
     with svc.db.session() as session:
         item = get_or_404(session, Item, item_id)
         project = get_or_404(session, Project, item.project_id)
-        if not item.selected:
-            raise HTTPException(409, f"item {item_id} is not selected")
     pipeline = ITEM_ACTIONS[item.kind].pipeline(action)
     if pipeline is None:
         raise HTTPException(409, f"{item.kind} items have no {action} step")

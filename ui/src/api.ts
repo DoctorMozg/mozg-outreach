@@ -89,7 +89,6 @@ export interface Item {
   fields: Record<string, FieldValue>;
   score_total: number | null;
   score: { total: number | null; axes: ScoreAxis[]; blockers: string[] } | null;
-  selected: boolean;
   enriched: boolean;
   /** Null for a lead never enriched, or enriched before timestamps were kept. */
   enriched_at: string | null;

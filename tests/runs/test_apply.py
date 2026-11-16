@@ -24,7 +24,6 @@ def job(harness: Harness, project_id: int) -> int:
             dedup_key="https://jobs.acme.example/backend",
             title="Senior Backend Engineer",
             details={"listing": listing(apply_url=APPLY_URL).model_dump(mode="json")},
-            selected=True,
         )
         session.add(item)
         session.flush()

@@ -27,7 +27,7 @@ import { IconColumns3, IconExternalLink, IconMail, IconRoute, IconSearch, IconSp
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, enrichHint, get, type Graph, type Item, type Project, type Run } from "../api";
-import { ActivityBadge, Empty, ErrorBox, Score, StepBadge, Value } from "../components/common";
+import { ActivityBadge, Empty, EnrichedBadge, ErrorBox, Score, StepBadge, Value } from "../components/common";
 import { GraphView } from "../components/GraphView";
 import { href } from "../router";
 
@@ -84,23 +84,23 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
     queryFn: () => get<Item[]>(`/api/projects/${project.id}/items?${new URLSearchParams({ ...range, sort }).toString()}`),
   });
   const [query, setQuery] = useState("");
-  const [onlySelected, setOnlySelected] = useState(false);
+  const [onlyEnriched, setOnlyEnriched] = useState(false);
+  // Ticked rows for the bulk bar; they live only on this page.
+  const [ticked, setTicked] = useState<ReadonlySet<number>>(new Set());
+  const tick = (id: number): void =>
+    setTicked((was) => {
+      const next = new Set(was);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   const [kind, setKind] = useState<Item["kind"] | "all">("all");
   const [openId, setOpenId] = useState<number | null>(null);
   const allColumns = [...new Set((items.data ?? []).flatMap((i) => Object.keys(i.fields)))];
   const [picked, setPicked] = useStoredColumns(project.id);
   const columns = (picked ?? allColumns.slice(0, DEFAULT_COLUMNS)).filter((c) => allColumns.includes(c));
 
-  const select = useMutation({
-    mutationFn: (item: Item) => call<Item>("PATCH", `/api/items/${item.id}`, { selected: !item.selected }),
-    onSuccess: () => client.invalidateQueries({ queryKey: ["items", project.id] }),
-  });
   const enrich = useMutation({
-    mutationFn: async (item: Item) => {
-      // The server enriches only selected leads, so starting one from the list selects it.
-      if (!item.selected) await call("PATCH", `/api/items/${item.id}`, { selected: true });
-      return call<Run>("POST", `/api/items/${item.id}/enrich`);
-    },
+    mutationFn: (item: Item) => call<Run>("POST", `/api/items/${item.id}/enrich`),
     onSuccess: (run, item) => {
       void client.invalidateQueries({ queryKey: ["items", project.id] });
       void client.invalidateQueries({ queryKey: ["runs", project.id] });
@@ -115,10 +115,10 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
 
   const needle = query.trim().toLowerCase();
   const rows = (items.data ?? []).filter(
-    (i) => (!onlySelected || i.selected) && (kind === "all" || i.kind === kind) && (!needle || i.title.toLowerCase().includes(needle)),
+    (i) => (!onlyEnriched || i.enriched) && (kind === "all" || i.kind === kind) && (!needle || i.title.toLowerCase().includes(needle)),
   );
-  // Bulk actions take only the selected rows on screen, so a filter never hides what they touch.
-  const chosen = rows.filter((i) => i.selected);
+  // Bulk actions take only the ticked rows on screen, so a filter never hides what they touch.
+  const chosen = rows.filter((i) => ticked.has(i.id));
   const seeker = project.mode === "seeker";
   const open = items.data?.find((i) => i.id === openId) ?? null;
 
@@ -155,7 +155,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
               ]}
             />
           )}
-          <Switch size="sm" label="Selected only" checked={onlySelected} onChange={(e) => setOnlySelected(e.currentTarget.checked)} />
+          <Switch size="sm" label="Enriched only" checked={onlyEnriched} onChange={(e) => setOnlyEnriched(e.currentTarget.checked)} />
         </Group>
         <Group gap="xs">
           <Select
@@ -172,7 +172,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
           <ColumnPicker all={allColumns} shown={columns} onChange={setPicked} />
         </Group>
       </Group>
-      <ErrorBox error={items.error ?? select.error ?? enrich.error} />
+      <ErrorBox error={items.error ?? enrich.error} />
       <ScrollArea type="auto">
         <Table highlightOnHover stickyHeader verticalSpacing="sm" miw={760}>
           <Table.Thead>
@@ -197,12 +197,12 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
             {rows.map((item) => (
               <Table.Tr
                 key={item.id}
-                bg={item.selected ? "var(--mantine-primary-color-light)" : undefined}
+                bg={ticked.has(item.id) ? "var(--mantine-primary-color-light)" : undefined}
                 style={{ cursor: "pointer" }}
                 onClick={() => setOpenId(item.id)}
               >
                 <Table.Td onClick={(e) => e.stopPropagation()}>
-                  <Checkbox checked={item.selected} onChange={() => select.mutate(item)} aria-label={`Select ${item.title}`} />
+                  <Checkbox checked={ticked.has(item.id)} onChange={() => tick(item.id)} aria-label={`Tick ${item.title}`} />
                 </Table.Td>
                 <Table.Td>
                   <Score value={item.score_total} />
@@ -213,6 +213,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
                   </Text>
                   <Group gap={4} mt={2}>
                     <ActivityBadge activity={item.activity} projectId={project.id} />
+                    <EnrichedBadge item={item} />
                     <StepBadge step={item.approach_step} />
                     {seeker && (
                       <Badge size="xs" variant="outline" color="gray">
@@ -250,9 +251,9 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
           </Table.Tbody>
         </Table>
       </ScrollArea>
-      <BulkBar project={project} chosen={chosen} />
+      <BulkBar project={project} chosen={chosen} onStarted={() => setTicked(new Set())} />
       <Drawer opened={open !== null} onClose={() => setOpenId(null)} position="right" size="xl" title={<Text fw={650}>{open?.title}</Text>}>
-        {open && <LeadPreview item={open} onToggle={() => select.mutate(open)} onEnrich={() => enrich.mutate(open)} enriching={enriching(open)} />}
+        {open && <LeadPreview item={open} onEnrich={() => enrich.mutate(open)} enriching={enriching(open)} />}
       </Drawer>
     </Card>
   );
@@ -303,13 +304,13 @@ function ColumnPicker({ all, shown, onChange }: { all: string[]; shown: string[]
   );
 }
 
-/** Names what the letters step writes for the selected jobs and gigs. */
+/** Names what the letters step writes for the ticked jobs and gigs. */
 function lettersFor(kinds: Set<Item["kind"]>): string {
   const names = [kinds.has("job") && "cover letters", kinds.has("gig") && "proposals"].filter(Boolean);
   return `Write ${names.join(" and ")}`;
 }
 
-function BulkBar({ project, chosen }: { project: Project; chosen: Item[] }): ReactElement {
+function BulkBar({ project, chosen, onStarted }: { project: Project; chosen: Item[]; onStarted: () => void }): ReactElement {
   // Gigs are answered on their own board, so there is nothing to enrich.
   const enrichable = chosen.filter((i) => i.kind !== "gig");
   // A company's letters come from its approach plan, so companies re-plan instead.
@@ -325,6 +326,7 @@ function BulkBar({ project, chosen }: { project: Project; chosen: Item[] }): Rea
     },
     onSuccess: (count) => {
       notifications.show({ color: "indigo", message: `${count} runs started` });
+      onStarted();
       window.location.hash = href.project(project.id, "runs");
     },
   });
@@ -336,7 +338,7 @@ function BulkBar({ project, chosen }: { project: Project; chosen: Item[] }): Rea
             <Card shadow="lg" py="sm" px="md" withBorder>
               <Group gap="sm">
                 <Text fw={600} size="sm">
-                  {chosen.length} selected
+                  {chosen.length} ticked
                 </Text>
                 <Divider orientation="vertical" />
                 {enrichable.length > 0 && (
@@ -378,12 +380,11 @@ function BulkBar({ project, chosen }: { project: Project; chosen: Item[] }): Rea
 
 interface PreviewProps {
   item: Item;
-  onToggle: () => void;
   onEnrich: () => void;
   enriching: boolean;
 }
 
-function LeadPreview({ item, onToggle, onEnrich, enriching }: PreviewProps): ReactElement {
+function LeadPreview({ item, onEnrich, enriching }: PreviewProps): ReactElement {
   return (
     <Stack>
       <Group justify="space-between">
@@ -393,13 +394,13 @@ function LeadPreview({ item, onToggle, onEnrich, enriching }: PreviewProps): Rea
             {item.kind}
           </Badge>
           <ActivityBadge activity={item.activity} projectId={item.project_id} size="md" />
+          <EnrichedBadge item={item} size="md" />
           <StepBadge step={item.approach_step} size="md" />
           <Text size="sm" c="dimmed">
             {item.dated}
           </Text>
         </Group>
         <Group gap="xs">
-          <Switch label="Selected" checked={item.selected} onChange={onToggle} />
           {item.kind !== "gig" && (
             <Button size="xs" variant="default" leftSection={<IconSparkles size={14} />} loading={enriching} onClick={onEnrich}>
               {enrichHint(item).label}

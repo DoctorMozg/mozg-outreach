@@ -16,7 +16,7 @@ from .test_seeker import finish
 
 @pytest.fixture
 def katana(harness: Harness) -> int:
-    """A selected company from a finished biz search whose state holds the strategy."""
+    """A company from a finished biz search whose state holds the strategy."""
     strategy = load_fixture("strategy", Strategy)
     with harness.db.session() as session:
         project = Project(name="Biz", mode=ProjectMode.BIZ, sender_name="Stan")
@@ -31,7 +31,6 @@ def katana(harness: Harness) -> int:
         session.flush()
         company = dedup_companies(load_fixture("scout_results", list[ScoutResult])[0].companies)[0]
         item = ItemRepository(session).upsert(project.id, search.id, company)
-        item.selected = True
         session.flush()
         return item.id
 

@@ -18,7 +18,7 @@ flowchart LR
     F --> S
     S --> R["Run<br/>strategy gate"]:::run
     R --> P["Scored report"]:::run
-    P --> E["Enrich<br/>selected leads"]:::ai
+    P --> E["Enrich<br/>chosen leads"]:::ai
     E --> L["Letters, naturalized<br/>to your voice"]:::letter
     P -. "people, companies" .-> G[("Registry<br/>shared by all projects")]:::reg
     E -.-> G
@@ -64,12 +64,12 @@ Open <http://127.0.0.1:8742>. The server has no auth, because it drives your Cla
 1. On the **Sources** tab, check that web search is listed (every project gets it by default).
 1. On **Runs**, start a run. When it shows `awaiting_gate`, review the strategy, edit it if needed and approve.
 1. When the run finishes, open the **Report** tab. Leads are scored, and each field links to its source and a quote.
-1. Open a lead, tick **selected**, then **Enrich** and **Write letters**. The first pass is a draft you can edit and save.
+1. Open a lead and click **Enrich**. It researches the company, plans who to contact, how and when, and drafts a letter for each email or LinkedIn step. Edit a draft or ask for a change, and mark each step done as you make it: the list shows the next step and how many days are left. Tick several leads in the list to enrich or re-plan them together.
 1. Browse **Registry** for people and companies, their sources, merge suggestions and the graph.
 
 Before step 6, open **Voice** and paste messages you wrote yourself, per channel (`email`, `dm`, `cover_letter`, `proposal`). Add style rules, one per line, and build the profile. Your rules win over inferred style. Set your name and tone (`warm`, `neutral` or `formal`) in the **Sender** section of the Brief tab: they pick the salutation and sign-off of every letter.
 
-Seeker projects work the same way without the fields step. **Write with AI** takes your CV pasted as text instead of a URL, and the brief picks jobs, gigs or both. Gigs have no enrich action: you go from selected gig to proposal.
+Seeker projects work the same way without the fields step. **Write with AI** takes your CV pasted as text instead of a URL, and the brief picks jobs, gigs or both. Gigs have no enrich action: you go straight from a gig to its proposal.
 
 The project page also has a **Delete project** button. After a second click it removes the project's runs, report and drafts. People and companies stay in the registry.
 

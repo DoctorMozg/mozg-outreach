@@ -1,4 +1,4 @@
-"""Work on one selected item: enrich it, or draft its letters, cover letter or proposal."""
+"""Work on one item: enrich it, or draft its letters, cover letter or proposal."""
 
 import logging
 from typing import Literal
