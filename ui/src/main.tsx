@@ -14,6 +14,7 @@ import { EntityView, Registry } from "./pages/Registry";
 import { RunView } from "./pages/RunView";
 import { Voice } from "./pages/Voice";
 import { Cvs } from "./pages/Cvs";
+import { Settings } from "./pages/Settings";
 import { type Route, useRoute } from "./router";
 import { theme } from "./theme";
 
@@ -33,6 +34,8 @@ function Page({ route }: { route: Route }): ReactElement {
       return <Cvs />;
     case "registry":
       return <Registry />;
+    case "settings":
+      return <Settings />;
     case "entity":
       return <EntityView id={route.id} />;
     case "projects":

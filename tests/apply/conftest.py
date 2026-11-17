@@ -15,6 +15,7 @@ PAGES = {
     "https://jobs.lever.co/acme/1234/apply": "lever_form.html",
     "https://acme.wd3.myworkdayjobs.com/en-US/careers/job/1": "workday.html",
     "https://careers.acme.example/apply": "autosubmit_form.html",
+    "https://careers.acme.example/jobs/2": "listing_page.html",
 }
 PAGE_DIR = Path(__file__).parent / "pages"
 

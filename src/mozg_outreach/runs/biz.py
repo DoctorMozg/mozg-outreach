@@ -26,6 +26,7 @@ from mozg_outreach.pipelines.biz.registry_ingest import BizRegistryIngest
 from mozg_outreach.pipelines.biz.summary import BizRunSummarizer, SummaryRequest, summary_item
 from mozg_outreach.pipelines.summary import RunSummary, best_first
 from mozg_outreach.registry.ingest import IngestContext
+from mozg_outreach.runs.auto_enrich import start_enrichments
 from mozg_outreach.runs.flow import Approval, FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs
 from mozg_outreach.scoring.biz import BizScoreInput, BizScorer
@@ -133,8 +134,13 @@ async def scout(ctx: Ctx) -> PhaseResult:
     ctx.state.concerns += outcome.concerns
     with ctx.db.session() as session:
         # Earlier runs may have saved a company under its domain or an older form of its name.
-        ctx.state.candidates = CompanyDuplicates(session, ctx.project_id).known(outcome.candidates)
+        known = CompanyDuplicates(session, ctx.project_id).known(outcome.candidates)
         items = ItemRepository(session)
+        # Assessment is paid per company, and an archived lead stays as the user left it.
+        archived = items.archived_keys(ctx.project_id)
+        ctx.state.candidates = [c for c in known if c.dedup_key not in archived]
+        if len(ctx.state.candidates) < len(known):
+            logger.info("skipping %d archived companies", len(known) - len(ctx.state.candidates))
         ctx.state.item_ids = [
             items.upsert(ctx.project_id, ctx.run_id, c).id for c in ctx.state.candidates
         ]
@@ -211,6 +217,11 @@ async def summarize(ctx: Ctx) -> PhaseResult:
     return None
 
 
+async def auto_enrich(ctx: Ctx) -> PhaseResult:
+    start_enrichments(ctx, ctx.state.item_ids)
+    return None
+
+
 BIZ_SEARCH = FlowSpec[BizSearchState](
     pipeline="biz.search",
     state_type=BizSearchState,
@@ -221,6 +232,7 @@ BIZ_SEARCH = FlowSpec[BizSearchState](
         Phase("scout", scout),
         Phase("assess", assess),
         Phase("summarize", summarize),
+        Phase("auto_enrich", auto_enrich),
     ),
     blocker=_blocker,
 )

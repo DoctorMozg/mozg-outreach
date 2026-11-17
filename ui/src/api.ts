@@ -92,6 +92,8 @@ export interface Item {
   enriched: boolean;
   /** Null for a lead never enriched, or enriched before timestamps were kept. */
   enriched_at: string | null;
+  /** Archived leads leave the report and later searches skip them. */
+  archived_at: string | null;
   /** Posted on, or the day a run first found the lead (YYYY-MM-DD). */
   dated: string;
   updated_at: string;
@@ -131,9 +133,10 @@ export interface Activity {
 
 /** Label and cost note for a lead's enrich action; running it again repeats paid searches. */
 export function enrichHint(item: Item): { label: string; note: string | null } {
-  // A company's enrichment also plans the approach and drafts its letters.
-  const extra = item.kind === "company" ? ", replans the approach and drafts new letter versions" : "";
-  if (!item.enriched) return { label: "Enrich", note: item.kind === "company" ? "Enrichment researches the company, plans the approach and drafts the letters." : null };
+  // A company's enrichment also plans the approach and drafts its letters; a job's drafts its cover letter.
+  const extra = item.kind === "company" ? ", replans the approach and drafts new letter versions" : item.kind === "job" ? " and drafts a new cover letter version" : "";
+  const first = { company: "Enrichment researches the company, plans the approach and drafts the letters.", job: "Enrichment finds who to send it to and drafts the cover letter.", gig: null }[item.kind];
+  if (!item.enriched) return { label: "Enrich", note: first };
   const when = item.enriched_at ? ` on ${new Date(item.enriched_at).toLocaleDateString()}` : "";
   return { label: "Enrich again", note: `Already enriched${when}; running it again repeats the paid searches${extra}.` };
 }
@@ -347,6 +350,11 @@ function detailText(detail: unknown): string {
   return JSON.stringify(detail);
 }
 
+/** Settings shared by every project; a null minimum turns auto-enrichment off. */
+export interface UserSettings {
+  auto_enrich_min_score: number | null;
+}
+
 export async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
     method,
@@ -443,6 +451,8 @@ export interface PlannedTouch {
   hook_ref: string | null;
   ask: string;
   talking_points: string;
+  /** A LinkedIn connection request; a note is at most 200 characters, "no_note" has no draft. */
+  connection?: "note" | "no_note" | null;
 }
 
 /** Who to contact, how and when, stored on an enriched company as `details.approach`. */

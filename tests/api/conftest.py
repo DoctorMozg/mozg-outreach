@@ -15,6 +15,7 @@ from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.fields import FieldProposal
 from mozg_outreach.storage.models import JsonObject
 from mozg_outreach.storage.repositories import FieldSpecRepository
+from tests.conftest import auto_enrich_off
 from tests.pipelines.biz.conftest import FIXTURES, FakeSites, load_fixture
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner, Scripted
 from tests.runs.conftest import FakeFeed
@@ -98,7 +99,9 @@ async def open_api(
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            yield Api(app, client, runner)
+            opened = Api(app, client, runner)
+            auto_enrich_off(opened.services.db)
+            yield opened
 
 
 @pytest.fixture

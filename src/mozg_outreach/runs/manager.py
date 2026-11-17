@@ -172,7 +172,7 @@ class RunManager:
 
     def _context(self, run: Run, flow: AnyFlow) -> FlowContext[RunState]:
         workspace = self._env.workspaces / f"project-{run.project_id}"
-        log, run_id = self.log, run.id
+        log, run_id, project_id = self.log, run.id, run.project_id
 
         def on_event(event: AgentEvent) -> None:
             log.append(
@@ -193,6 +193,7 @@ class RunManager:
             sites=self._env.sites,
             profiles=self._env.profiles,
             answer_gate=lambda answer: self.answer_gate(run_id, answer),
+            start_run=lambda pipeline, state: self.start(project_id, pipeline, state),
         )
 
     def _save(

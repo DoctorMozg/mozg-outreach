@@ -5,15 +5,23 @@ import pytest
 from sqlalchemy.orm import Session
 
 from mozg_outreach.domain import ProjectMode
+from mozg_outreach.settings.store import SettingsStore, UserSettings
 from mozg_outreach.storage.db import Database
 from mozg_outreach.storage.models import Project, Run
 from tests.cvs.pdfs import CV_LINES, make_pdf
+
+
+def auto_enrich_off(database: Database) -> None:
+    """Searches would otherwise start enrichment runs nobody scripted; tests switch it on."""
+    with database.session() as session:
+        SettingsStore(session).save(UserSettings(auto_enrich_min_score=None))
 
 
 @pytest.fixture
 def db(tmp_path: Path) -> Database:
     database = Database(tmp_path / "outreach.db")
     database.migrate()
+    auto_enrich_off(database)
     return database
 
 

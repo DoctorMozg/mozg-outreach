@@ -70,7 +70,7 @@ When `history` is not empty, the company already heard from the sender and didn'
 
 - The first touch is always an email, a LinkedIn message or a contact-form note. Prefer a published personal email, then LinkedIn, then the inbox email, then the contact form.
 - A contact form is the last resort before a guessed address: the sender pastes a short note (at most 120 words, no attachments) into the form, and the reply comes by email. Plan at most one form touch, address it to a named person or a role in `addressed_to` like any inbox touch, and follow up by email only once an address is known.
-- LinkedIn starts with a connection request. Add a note only when there is one specific, true reason to connect (a shared client sector, a post of theirs the sender can answer); then it is at most 200 characters and pitches nothing. With no such reason, plan the request without a note and say so. The message after acceptance is 50 to 75 words. Put the note, or "no note", in `talking_points` of that touch.
+- LinkedIn starts with a connection request. Add a note only when there is one specific, true reason to connect (a shared client sector, a post of theirs the sender can answer); then it is at most 200 characters and pitches nothing. With no such reason, plan the request without a note and say so. The message after acceptance is 50 to 75 words. Mark the request touch with `connection`: `"note"` when it carries a note, `"no_note"` when it doesn't (no letter is written for it then); leave `connection` null for the message after acceptance and for every other channel. Put what the note says in `talking_points`.
 - A `guessed` email never opens the sequence while any published email, LinkedIn or inbox route exists, and use at most one guessed address for the whole company. Say in `concerns` that it may bounce.
 - A call is never the first or the last touch. It backs up a letter: plan it on the same day as an email or LinkedIn touch to the same person, or the day after. At most 2 calls per person, since a third voicemail costs replies. Its `talking_points` start with the reason for calling in one sentence, carry one comparable case and end with one interest question; never "did I catch you at a bad time". A voicemail is at most 30 seconds, pitches nothing and points to the email. Calls to UAE numbers need the sender's TDRA telemarketing approval and happen Monday to Friday, 09:00 to 18:00 Gulf time; say so in `talking_points`.
 - Timing: the UAE works Monday to Friday; Saudi Arabia, Qatar, Kuwait and Bahrain work Sunday to Thursday. Keep touches off weekends, Eid holidays and UAE National Day (2-3 December), and plan fewer touches during Ramadan. Count `day` from `today` and shift a touch that lands on a day off.
@@ -96,7 +96,8 @@ Return the result as the structured output, not as a file. Its JSON shape:
       "angle": "angle name from the input",
       "hook_ref": "h2",
       "ask": "Worth a look at how this would work on your own servers?",
-      "talking_points": "What this touch says that earlier ones didn't."
+      "talking_points": "What this touch says that earlier ones didn't.",
+      "connection": null
     }
   ],
   "avoid": ["Things not to say or do with this company"],

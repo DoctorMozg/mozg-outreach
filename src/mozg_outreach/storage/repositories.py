@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -32,6 +32,7 @@ class ReportFilter(BaseModel):
     since: date | None = None
     until: date | None = None
     sort: Literal["score", "date"] = "score"
+    archived: bool = Field(default=False, description="True lists only the archived leads.")
 
 
 class FieldSpecConflictError(ValueError):
@@ -141,6 +142,29 @@ class ItemRepository:
         self.merge_fields(item, candidate.fields)
         return item
 
+    def archived_keys(self, project_id: int) -> set[str]:
+        """Dedup keys of the project's archived leads, which searches leave alone."""
+        return set(
+            self._session.scalars(
+                select(Item.dedup_key).where(
+                    Item.project_id == project_id, Item.archived_at.is_not(None)
+                )
+            )
+        )
+
+    def archive(self, item_ids: list[int], archived: bool) -> list[Item]:
+        """Archives or restores the items; raises LookupError naming any unknown id."""
+        items = list(self._session.scalars(select(Item).where(Item.id.in_(item_ids))))
+        missing = sorted(set(item_ids) - {i.id for i in items})
+        if missing:
+            raise LookupError(f"no items {missing}")
+        for item in items:
+            # Archiving twice keeps the first date.
+            item.archived_at = (item.archived_at or utcnow()) if archived else None
+        self._session.flush()
+        logger.info("%s %d items", "archived" if archived else "restored", len(items))
+        return items
+
     def merge_fields(self, item: Item, fields: dict[str, FieldValue]) -> None:
         dumped: JsonObject = {k: v.model_dump(mode="json") for k, v in fields.items()}
         item.fields = {**item.fields, **dumped}
@@ -166,7 +190,10 @@ class ItemRepository:
             i
             for i in self._session.scalars(
                 select(Item)
-                .where(Item.project_id == project_id)
+                .where(
+                    Item.project_id == project_id,
+                    Item.archived_at.is_not(None) if view.archived else Item.archived_at.is_(None),
+                )
                 .order_by(Item.score_total.desc().nulls_last(), Item.title)
             )
             if (view.since is None or i.dated >= view.since)

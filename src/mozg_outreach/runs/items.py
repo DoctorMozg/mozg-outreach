@@ -33,10 +33,11 @@ from mozg_outreach.pipelines.seeker.proposals import ProposalRequest, ProposalWr
 from mozg_outreach.pipelines.seeker.screening import listing_text
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.registry.ingest import IngestContext
+from mozg_outreach.runs.auto_enrich import ENRICH_PIPELINES
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.runs.inputs import ProjectInputs, load_voice, search_state
 from mozg_outreach.runs.seeker import CONTACTS, listing_of
-from mozg_outreach.storage.models import Draft, Item, Project
+from mozg_outreach.storage.models import ENRICHED_AT, Draft, Item, Project, utcnow
 from mozg_outreach.storage.repositories import DraftRepository, ItemRepository, NewDraft
 
 
@@ -187,6 +188,7 @@ async def seeker_enrich(ctx: Ctx) -> PhaseResult:
     with ctx.db.session() as session:
         row = _row(session, ctx.state.item_id)
         ItemRepository(session).set_detail(row, CONTACTS, contacts)
+        row.details = {**row.details, ENRICHED_AT: utcnow().isoformat()}
         context = IngestContext(project_id=row.project_id, run_id=ctx.run_id, item_id=row.id)
         LeadRegistryIngest(session).contacts(contacts, context)
     ctx.state.concerns += contacts.concerns
@@ -257,6 +259,19 @@ async def seeker_letter(ctx: Ctx) -> PhaseResult:
     return None
 
 
+async def seeker_enrich_letter(ctx: Ctx) -> PhaseResult:
+    """A job's enrichment ends with its cover letter, as a company's ends with its letters."""
+    with ctx.db.session() as session:
+        project = session.get(Project, ctx.project_id)
+        sender = project.sender_name if project else None
+    if not sender:
+        ctx.state.concerns.append(
+            "No cover letter yet: set the sender name in the project settings, then write it."
+        )
+        return None
+    return await seeker_letter(ctx)
+
+
 def _single(pipeline: str, phase: Phase[ItemState]) -> FlowSpec[ItemState]:
     return FlowSpec[ItemState](pipeline=pipeline, state_type=ItemState, phases=(phase,))
 
@@ -278,7 +293,11 @@ ITEM_FLOWS = (
         state_type=ItemState,
         phases=(Phase("approach", biz_approach), Phase("letters", biz_enrich_letters)),
     ),
-    _single("seeker.enrich", Phase("contacts", seeker_enrich)),
+    FlowSpec[ItemState](
+        pipeline="seeker.enrich",
+        state_type=ItemState,
+        phases=(Phase("contacts", seeker_enrich), Phase("letter", seeker_enrich_letter)),
+    ),
     _single("seeker.letters", Phase("letter", seeker_letter)),
 )
 
@@ -305,10 +324,10 @@ class ItemAction(BaseModel):
 
 ITEM_ACTIONS = {
     ItemKind.COMPANY: ItemAction(
-        enrich="biz.enrich", letters="biz.letters", approach="biz.approach"
+        enrich=ENRICH_PIPELINES[ItemKind.COMPANY], letters="biz.letters", approach="biz.approach"
     ),
     ItemKind.JOB: ItemAction(
-        enrich="seeker.enrich", letters="seeker.letters", apply="seeker.apply"
+        enrich=ENRICH_PIPELINES[ItemKind.JOB], letters="seeker.letters", apply="seeker.apply"
     ),
     ItemKind.GIG: ItemAction(enrich=None, letters="seeker.letters"),
 }

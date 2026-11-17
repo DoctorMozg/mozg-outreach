@@ -4,7 +4,9 @@ from pydantic import SecretStr
 
 from mozg_outreach.pipelines.biz.profile_search import (
     BraveProfiles,
+    ProfileHit,
     ProfileSearchError,
+    best_profile,
     names_person,
 )
 
@@ -63,3 +65,64 @@ async def test_a_refused_search_raises() -> None:
 def test_names_ignore_honorifics_accents_and_middle_names() -> None:
     assert names_person("Dr. José María Pérez", "Jose Perez | LinkedIn")
     assert not names_person("Jose Perez", "Jose Martinez")
+
+
+class TestWrongPeople:
+    """Shaped like real Brave results for a Dubai audit firm; people and firms are invented."""
+
+    FIRM = "Zorvex Chartered Accountants"
+
+    def test_a_namesake_working_elsewhere_is_rejected(self) -> None:
+        namesake = ProfileHit(
+            url="https://www.linkedin.com/in/farid-rana-example",
+            title="Farid Rana - Sr Engineer - Northwind Systems | LinkedIn",
+            snippet="Chartered engineer. Accountants and auditors are my clients.",
+        )
+        assert best_profile([namesake], "Farid Ul Hamid Rana", self.FIRM) is None
+
+    def test_profession_words_are_not_the_company(self) -> None:
+        auditor = ProfileHit(
+            url="https://au.linkedin.com/in/omar-saeed-example",
+            title="Omar Saeed | LinkedIn",
+            snippet="Chartered Accountants Australia and New Zealand member.",
+        )
+        assert best_profile([auditor], "Omar Saeed", self.FIRM) is None
+
+    def test_the_brand_in_the_employer_slot_is_accepted(self) -> None:
+        director = ProfileHit(
+            url="https://ae.linkedin.com/in/farid-ul-hamid-rana-example",
+            title=f"Farid Ul Hamid Rana - Director - {self.FIRM} | LinkedIn",
+            snippet="",
+        )
+        assert best_profile([director], "Farid Ul Hamid Rana", self.FIRM) is not None
+
+    async def test_a_first_name_alone_is_not_searched(self) -> None:
+        seen: list[httpx.Request] = []
+        assert await brave(seen).find("Omar", self.FIRM) is None
+        assert seen == []
+
+    def test_a_first_name_alone_never_matches_a_result(self) -> None:
+        omar = ProfileHit(
+            url="https://www.linkedin.com/in/omar-zorvex-example",
+            title="Omar - General Manager - Zorvex | LinkedIn",
+            snippet="",
+        )
+        assert best_profile([omar], "Omar", self.FIRM) is None
+
+    @pytest.mark.parametrize(
+        ("name", "company", "title"),
+        [
+            (
+                "Mila Orlova",
+                "Brightline Advocates",
+                "Mila Orlova - Legal Associate - Harbor Point Advocates | LinkedIn",
+            ),
+            ("Sara Hamdan", "Dubai Airport Free Zone Authority", "Sara Hamdan - Dubai CommerCity"),
+        ],
+        ids=["same profession", "same city"],
+    )
+    def test_sharing_a_profession_or_city_is_not_working_there(
+        self, name: str, company: str, title: str
+    ) -> None:
+        hit = ProfileHit(url="https://www.linkedin.com/in/someone", title=title, snippet="")
+        assert best_profile([hit], name, company) is None

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from playwright.async_api import BrowserContext, Page, Playwright, async_playwright
 from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from mozg_outreach.apply.answers import Answerer
 from mozg_outreach.apply.desk import OnSent
@@ -24,7 +25,9 @@ CONFIRMATION = re.compile(
     re.IGNORECASE,
 )
 WATCH_SECONDS = 2.0
-LOAD_MS = 30_000
+OPEN_MS = 30_000
+# Ads, trackers and lazy images can keep a page from ever finishing; the form is there long before.
+SETTLE_MS = 10_000
 
 
 class ApplyBrowser:
@@ -48,9 +51,15 @@ class ApplyBrowser:
         page = await context.new_page()
         self._pages[item_id] = page
         try:
-            await page.goto(url, wait_until="load", timeout=LOAD_MS)
+            await page.goto(url, wait_until="domcontentloaded", timeout=OPEN_MS)
         except PlaywrightError as exc:
             raise FormError(f"could not open {url}: {str(exc).splitlines()[0]}") from exc
+        try:
+            await page.wait_for_load_state("load", timeout=SETTLE_MS)
+        except PlaywrightTimeoutError:
+            logger.info(
+                "item %d: %s still loading after %d ms; filling anyway", item_id, url, SETTLE_MS
+            )
         report = await FormFiller(answerer).fill(page, application)
         await page.bring_to_front()
         self._watchers[item_id] = asyncio.create_task(self._watch(item_id, page, on_sent))

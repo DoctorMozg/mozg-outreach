@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from mozg_outreach.api.routes.runs import ensure_idle, run_out
 from mozg_outreach.api.schemas import (
+    ArchiveIn,
     DraftEdit,
     DraftOut,
     DraftRevisionIn,
@@ -176,6 +177,17 @@ def _idle_company(svc: Services, session: Session, item_id: int) -> Item:
 async def apply_to_job(item_id: int, svc: Svc) -> RunOut:
     """Fills the job's application form in a visible browser; the user reviews and submits."""
     return _start_item_run(svc, item_id, "apply")
+
+
+@router.post("/items/archive")
+async def archive_items(body: ArchiveIn, svc: Svc) -> list[ItemOut]:
+    """Archived leads leave the report; restoring brings them back with everything they had."""
+    with svc.db.session() as session:
+        try:
+            items = ItemRepository(session).archive(body.item_ids, body.archived)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return item_outs(session, items)
 
 
 @router.put("/items/{item_id}/people/linkedin", status_code=204)

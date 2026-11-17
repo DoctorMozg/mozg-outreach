@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from sqlalchemy import select
 
 from mozg_outreach.agents import AgentRunError
@@ -8,11 +9,22 @@ from mozg_outreach.pipelines.leads.enrichment import IDENTITY
 from mozg_outreach.pipelines.seeker.models import JobContacts, SeekerStrategy
 from mozg_outreach.runs.flow import GateAnswer
 from mozg_outreach.runs.seeker import CONTACTS, JUDGMENT, LISTING
+from mozg_outreach.settings.store import SettingsStore, UserSettings
 from mozg_outreach.storage.db import Database
-from mozg_outreach.storage.models import Entity, Item, ItemLink, Run, SourceConfig
+from mozg_outreach.storage.models import (
+    Draft,
+    Entity,
+    Item,
+    ItemLink,
+    Project,
+    Run,
+    SourceConfig,
+)
 from mozg_outreach.storage.repositories import ItemRepository
-from tests.pipelines.conftest import HangingRunner
+from tests.pipelines.conftest import HangingRunner, Scripted
 from tests.pipelines.leads.conftest import company, identity, person
+from tests.pipelines.seeker.test_letters import BODY
+from tests.runs.test_seeker import letter
 
 from .conftest import FEED_URL, Harness, judged
 
@@ -134,39 +146,151 @@ class TestLifecycle:
         assert stale.error == "interrupted: the server stopped mid-run"
 
 
-async def test_a_lead_straight_from_the_search_can_be_enriched(
-    harness: Harness, strategy: SeekerStrategy
-) -> None:
-    contacts = JobContacts(
-        named_contact=None,
-        careers_email="jobs@acme.example",
-        careers_email_source="https://acme.example/careers",
-        linkedin_company=None,
-        pattern_guesses=[],
-        apply_url=None,
-        concerns=[],
-    )
+CAREERS = JobContacts(
+    named_contact=None,
+    careers_email="jobs@acme.example",
+    careers_email_source="https://acme.example/careers",
+    linkedin_company=None,
+    pattern_guesses=[],
+    apply_url=None,
+    concerns=[],
+)
+
+
+async def search_jobs(harness: Harness, project_id: int) -> Run:
+    """Runs a job search, approving the strategy when it asks; a later search reuses it."""
+    run_id = harness.manager.start(project_id, "seeker.search", {})
+    await harness.manager.wait(run_id)
+    if run_row(harness, run_id).status == RunStatus.AWAITING_GATE:
+        harness.manager.answer_gate(run_id, GateAnswer(approve=True))
+        await harness.manager.wait(run_id)
+    return run_row(harness, run_id)
+
+
+def job_script(
+    strategy: SeekerStrategy, letters: dict[str, list[Scripted]]
+) -> dict[str, list[Scripted]]:
+    """One search that finds and identifies one job, and what enriching it needs."""
+    return {
+        "seeker-strategist": [strategy],
+        "seeker-judge": [judged()],
+        "lead-identifier": [identity()],
+        "job-contact-finder": [CAREERS],
+        **letters,
+    }
+
+
+async def enrich_found_job(
+    harness: Harness,
+    strategy: SeekerStrategy,
+    letters: dict[str, list[Scripted]],
+    sender: str | None,
+) -> tuple[Run, int]:
+    """Finds one job with a search, then enriches it; returns the enrich run and the item."""
     project_id = harness.seeker_project()
-    harness.script(
-        {
-            "seeker-strategist": [strategy],
-            "seeker-judge": [judged()],
-            "job-contact-finder": [contacts],
-        }
-    )
-    search = harness.manager.start(project_id, "seeker.search", {})
-    await harness.manager.wait(search)
-    harness.manager.answer_gate(search, GateAnswer(approve=True))
-    await harness.manager.wait(search)
+    with harness.db.session() as session:
+        session.get_one(Project, project_id).sender_name = sender
+    harness.script(job_script(strategy, letters))
+    search = await search_jobs(harness, project_id)
+    assert search.status == RunStatus.COMPLETE, search.error
     with harness.db.session() as session:
         item_id = session.scalars(select(Item)).one().id
-
     enrich = harness.manager.start(project_id, "seeker.enrich", {"item_id": item_id})
     await harness.manager.wait(enrich)
-    done = run_row(harness, enrich)
-    assert done.status == RunStatus.COMPLETE, done.error
+    return run_row(harness, enrich), item_id
+
+
+class TestJobEnrichment:
+    async def test_finds_contacts_and_writes_the_cover_letter(
+        self, harness: Harness, strategy: SeekerStrategy
+    ) -> None:
+        script = letter("Dear Hiring Team,", BODY)
+        done, item_id = await enrich_found_job(harness, strategy, script, "Stan Petrov")
+
+        assert done.status == RunStatus.COMPLETE, done.error
+        with harness.db.session() as session:
+            enriched = session.get_one(Item, item_id)
+            stored = JobContacts.model_validate(enriched.details[CONTACTS])
+            assert stored.careers_email == "jobs@acme.example"
+            [draft] = session.scalars(select(Draft)).all()
+            assert (draft.channel, draft.review["address"]) == ("cover_letter", "jobs@acme.example")
+            assert draft.subject is not None
+            assert draft.subject.startswith("Application: ")
+
+    async def test_without_a_sender_name_it_keeps_the_contacts_and_says_why(
+        self, harness: Harness, strategy: SeekerStrategy
+    ) -> None:
+        done, item_id = await enrich_found_job(harness, strategy, {}, None)
+
+        assert done.status == RunStatus.COMPLETE, done.error
+        concerns = done.state["concerns"]
+        assert isinstance(concerns, list)
+        assert any("set the sender name" in c for c in concerns)
+        with harness.db.session() as session:
+            assert CONTACTS in session.get_one(Item, item_id).details
+            assert session.scalars(select(Draft)).all() == []
+
+
+def set_minimum(harness: Harness, minimum: int | None) -> None:
     with harness.db.session() as session:
-        enriched = session.get(Item, item_id)
-        assert enriched is not None
-        stored = JobContacts.model_validate(enriched.details[CONTACTS])
-        assert stored.careers_email == "jobs@acme.example"
+        SettingsStore(session).save(UserSettings(auto_enrich_min_score=minimum))
+
+
+async def finished_enrichments(harness: Harness) -> list[Run]:
+    with harness.db.session() as session:
+        ids = list(session.scalars(select(Run.id).where(Run.pipeline == "seeker.enrich")))
+    for run_id in ids:
+        await harness.manager.wait(run_id)
+    return [run_row(harness, run_id) for run_id in ids]
+
+
+class TestAutoEnrichment:
+    """The scripted job scores 83.5."""
+
+    async def test_a_search_enriches_a_lead_at_the_minimum(
+        self, harness: Harness, strategy: SeekerStrategy
+    ) -> None:
+        project_id = harness.seeker_project()
+        set_minimum(harness, 80)
+        harness.script(job_script(strategy, letter("Dear Hiring Team,", BODY)))
+
+        search = await search_jobs(harness, project_id)
+
+        assert search.status == RunStatus.COMPLETE, search.error
+        [enrich] = await finished_enrichments(harness)
+        assert enrich.status == RunStatus.COMPLETE, enrich.error
+        with harness.db.session() as session:
+            item = session.scalars(select(Item)).one()
+            assert enrich.state["item_id"] == item.id
+            assert item.enriched
+            [draft] = session.scalars(select(Draft)).all()
+            assert draft.channel == "cover_letter"
+
+    @pytest.mark.parametrize("minimum", [84, None], ids=["below the minimum", "switched off"])
+    async def test_otherwise_the_search_starts_nothing(
+        self, harness: Harness, strategy: SeekerStrategy, minimum: int | None
+    ) -> None:
+        project_id = harness.seeker_project()
+        set_minimum(harness, minimum)
+        harness.script(job_script(strategy, {}))
+
+        search = await search_jobs(harness, project_id)
+
+        assert search.status == RunStatus.COMPLETE, search.error
+        assert await finished_enrichments(harness) == []
+
+    async def test_a_lead_found_again_after_enrichment_is_not_enriched_twice(
+        self, harness: Harness, strategy: SeekerStrategy
+    ) -> None:
+        project_id = harness.seeker_project()
+        set_minimum(harness, 80)
+        harness.script(job_script(strategy, letter("Dear Hiring Team,", BODY)))
+        await search_jobs(harness, project_id)
+        await finished_enrichments(harness)
+        harness.script(job_script(strategy, {}))
+
+        again = await search_jobs(harness, project_id)
+
+        assert again.status == RunStatus.COMPLETE, again.error
+        assert again.state["item_ids"], "the second search scored the lead again"
+        assert len(await finished_enrichments(harness)) == 1

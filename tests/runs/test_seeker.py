@@ -256,6 +256,36 @@ async def test_only_the_best_leads_are_identified(
     assert len(harness.runner.payloads["lead-identifier"]) == 1
 
 
+async def test_a_later_search_leaves_an_archived_job_alone(
+    harness: Harness, strategy: SeekerStrategy
+) -> None:
+    project_id = harness.seeker_project()
+    harness.script(
+        {
+            "seeker-strategist": [strategy, strategy],
+            "seeker-judge": [JudgeResult(judgments=[judgment(FEED_URL)], concerns=[])],
+        }
+    )
+
+    async def search() -> Run:
+        run_id = harness.manager.start(project_id, "seeker.search", {"options": OPTIONS})
+        await harness.manager.wait(run_id)
+        harness.manager.answer_gate(run_id, GateAnswer(approve=True))
+        return await finish(harness, run_id)
+
+    await search()
+    with harness.db.session() as session:
+        [item] = session.scalars(select(Item)).all()
+        item.archived_at = NOW
+    again = await search()
+
+    assert again.status == RunStatus.COMPLETE, again.error
+    assert len(harness.runner.payloads["seeker-judge"]) == 1
+    with harness.db.session() as session:
+        [item] = session.scalars(select(Item)).all()
+        assert item.archived_at is not None
+
+
 async def test_boards_an_enabled_feed_already_covers_are_not_scouted(
     harness: Harness, strategy: SeekerStrategy
 ) -> None:

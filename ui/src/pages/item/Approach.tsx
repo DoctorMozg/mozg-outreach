@@ -157,8 +157,13 @@ function TouchTitle({ touch, contacts }: { touch: PlannedTouch; contacts: Map<st
         {touch.purpose.replace("_", "-")}
       </Badge>
       <Text size="sm">
-        {route ? CHANNEL_LABEL[route.channel] : touch.route_ref} to {who}
+        {touch.connection ? "LinkedIn connection request" : route ? CHANNEL_LABEL[route.channel] : touch.route_ref} to {who}
       </Text>
+      {touch.connection && (
+        <Badge size="xs" variant="outline" color="gray">
+          {touch.connection === "note" ? "note, max 200 characters" : "no note: click Connect on the profile"}
+        </Badge>
+      )}
       {route && (
         <Text size="xs" c={route.confidence === "guessed" ? "orange" : "dimmed"}>
           {route.address.startsWith("http") ? (

@@ -21,6 +21,7 @@ from mozg_outreach.agents import (
     StepRunner,
 )
 from mozg_outreach.api.routes import briefs, cvs, items, mail, projects, registry, runs, voice
+from mozg_outreach.api.routes import settings as settings_routes
 from mozg_outreach.api.services import Services
 from mozg_outreach.api.settings import Settings
 from mozg_outreach.apply.browser import ApplyBrowser
@@ -143,7 +144,7 @@ def create_app(
     app.add_exception_handler(MailDraftError, _error(409))
     app.add_exception_handler(StepError, _error(409))
     app.add_exception_handler(MailError, _error(502))
-    for module in (projects, briefs, runs, items, cvs, voice, registry, mail):
+    for module in (projects, briefs, runs, items, cvs, voice, registry, mail, settings_routes):
         app.include_router(module.router)
     if settings.ui_dist.is_dir():
         app.mount("/", StaticFiles(directory=settings.ui_dist, html=True), name="ui")

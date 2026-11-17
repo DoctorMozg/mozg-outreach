@@ -61,7 +61,9 @@ class ColdRules:
         self._brief = brief
         touch = brief.touch
         # A reader's first letter is an opener whether or not an approach plan placed it.
-        self._opener = touch is None or touch.purpose == "open"
+        # A connection note asks nothing; the message after acceptance does.
+        note = touch is not None and touch.connection_note
+        self._opener = (touch is None or touch.purpose == "open") and not note
         self._follow_up = touch is not None and touch.purpose != "open"
         self._entities = [
             e

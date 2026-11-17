@@ -23,7 +23,7 @@ import {
   Transition,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconColumns3, IconExternalLink, IconMail, IconRoute, IconSearch, IconSparkles, IconTable } from "@tabler/icons-react";
+import { IconArchive, IconArchiveOff, IconColumns3, IconExternalLink, IconMail, IconRoute, IconSearch, IconSparkles, IconTable } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, enrichHint, get, type Graph, type Item, type Project, type Run } from "../api";
@@ -80,10 +80,11 @@ function Connections({ project, range }: { project: Project; range: Record<strin
 function Leads({ project, range }: { project: Project; range: Record<string, string> }): ReactElement {
   const client = useQueryClient();
   const [sort, setSort] = useState<"score" | "date">("score");
-  const key = ["items", project.id, range, sort];
+  const [archived, setArchived] = useState(false);
+  const key = ["items", project.id, range, sort, archived];
   const items = useQuery({
     queryKey: key,
-    queryFn: () => get<Item[]>(`/api/projects/${project.id}/items?${new URLSearchParams({ ...range, sort }).toString()}`),
+    queryFn: () => get<Item[]>(`/api/projects/${project.id}/items?${new URLSearchParams({ ...range, sort, archived: String(archived) }).toString()}`),
   });
   const [query, setQuery] = useState("");
   const [onlyEnriched, setOnlyEnriched] = useState(false);
@@ -125,7 +126,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
   const seeker = project.mode === "seeker";
   const open = items.data?.find((i) => i.id === openId) ?? null;
 
-  if (items.data?.length === 0) {
+  if (items.data?.length === 0 && !archived) {
     return (
       <Empty icon={<IconTable size={36} />} title="No leads yet">
         Run a search and its scored leads land here.
@@ -160,6 +161,15 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
           )}
           <Switch size="sm" label="Enriched only" checked={onlyEnriched} onChange={(e) => setOnlyEnriched(e.currentTarget.checked)} />
           {!seeker && <Switch size="sm" label="Re-plan due" checked={onlyReplan} onChange={(e) => setOnlyReplan(e.currentTarget.checked)} />}
+          <Switch
+            size="sm"
+            label="Archived"
+            checked={archived}
+            onChange={(e) => {
+              setArchived(e.currentTarget.checked);
+              setTicked(new Set());
+            }}
+          />
         </Group>
         <Group gap="xs">
           <Select
@@ -255,7 +265,16 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
           </Table.Tbody>
         </Table>
       </ScrollArea>
-      <BulkBar project={project} chosen={chosen} onStarted={() => setTicked(new Set())} />
+      <BulkBar
+        project={project}
+        chosen={chosen}
+        archivedView={archived}
+        onStarted={() => setTicked(new Set())}
+        onArchived={() => {
+          setTicked(new Set());
+          void client.invalidateQueries({ queryKey: ["items", project.id] });
+        }}
+      />
       <Drawer opened={open !== null} onClose={() => setOpenId(null)} position="right" size="xl" title={<Text fw={650}>{open?.title}</Text>}>
         {open && <LeadPreview item={open} onEnrich={() => enrich.mutate(open)} enriching={enriching(open)} />}
       </Drawer>
@@ -314,7 +333,22 @@ function lettersFor(kinds: Set<Item["kind"]>): string {
   return `Write ${names.join(" and ")}`;
 }
 
-function BulkBar({ project, chosen, onStarted }: { project: Project; chosen: Item[]; onStarted: () => void }): ReactElement {
+interface BulkBarProps {
+  project: Project;
+  chosen: Item[];
+  archivedView: boolean;
+  onStarted: () => void;
+  onArchived: () => void;
+}
+
+function BulkBar({ project, chosen, archivedView, onStarted, onArchived }: BulkBarProps): ReactElement {
+  const archive = useMutation({
+    mutationFn: (archived: boolean) => call("POST", "/api/items/archive", { item_ids: chosen.map((i) => i.id), archived }),
+    onSuccess: (_, archived) => {
+      notifications.show({ color: "gray", message: `${chosen.length} leads ${archived ? "archived" : "restored"}` });
+      onArchived();
+    },
+  });
   // Gigs are answered on their own board, so there is nothing to enrich.
   const enrichable = chosen.filter((i) => i.kind !== "gig");
   // A company's letters come from its approach plan, so companies re-plan instead.
@@ -345,7 +379,12 @@ function BulkBar({ project, chosen, onStarted }: { project: Project; chosen: Ite
                   {chosen.length} ticked
                 </Text>
                 <Divider orientation="vertical" />
-                {enrichable.length > 0 && (
+                <Tooltip label={archivedView ? "Back to the report" : "Hides them from the report; later searches skip them"}>
+                  <Button size="xs" variant="default" leftSection={archivedView ? <IconArchiveOff size={14} /> : <IconArchive size={14} />} loading={archive.isPending} onClick={() => archive.mutate(!archivedView)}>
+                    {archivedView ? "Restore" : "Archive"} {chosen.length}
+                  </Button>
+                </Tooltip>
+                {!archivedView && enrichable.length > 0 && (
                   <Button
                     size="xs"
                     variant="default"
@@ -356,22 +395,22 @@ function BulkBar({ project, chosen, onStarted }: { project: Project; chosen: Ite
                     Enrich {enrichable.length}
                   </Button>
                 )}
-                {replannable.length > 0 && (
+                {!archivedView && replannable.length > 0 && (
                   <Tooltip label="Plans the approach again and writes a letter for each step not done yet">
                     <Button size="xs" leftSection={<IconRoute size={14} />} loading={bulk.isPending} onClick={() => bulk.mutate({ action: "approach", items: replannable })}>
                       Re-plan {replannable.length}
                     </Button>
                   </Tooltip>
                 )}
-                {writable.length > 0 && (
+                {!archivedView && writable.length > 0 && (
                   <Button size="xs" leftSection={<IconMail size={14} />} loading={bulk.isPending} onClick={() => bulk.mutate({ action: "letters", items: writable })}>
                     {lettersFor(new Set(writable.map((i) => i.kind)))} for {writable.length}
                   </Button>
                 )}
               </Group>
-              {bulk.error && (
+              {(bulk.error ?? archive.error) && (
                 <Text size="xs" c="red" mt={4}>
-                  {bulk.error.message}
+                  {(bulk.error ?? archive.error)?.message}
                 </Text>
               )}
             </Card>

@@ -1,0 +1,18 @@
+<title>Data Engineer at Acme</title>
+<nav>
+  <div id="newsletter" style="display: none">
+    <label>Your email<input name="newsletter" type="email"></label>
+    <label><input type="checkbox" name="weekly">Weekly digest</label>
+  </div>
+  <div hidden><label>Keyword<input name="q"></label></div>
+  <label style="visibility: hidden">Coupon<input name="coupon"></label>
+</nav>
+<h1>Data Engineer</h1>
+<form method="post" action="/apply">
+  <label>Full name<input name="name"></label>
+  <label>Email<input name="email" type="email"></label>
+  <label>Resume/CV<input name="resume" type="file" style="display: none"></label>
+  <label><input type="checkbox" name="relocate" style="opacity: 0">Open to relocation?</label>
+  <label>Why Acme?<textarea name="why"></textarea></label>
+  <button>Submit</button>
+</form>

@@ -76,6 +76,11 @@ class PlannedTouch(BaseModel):
         description="The single ask, e.g. 'Worth a look?'; no meeting on a first letter."
     )
     talking_points: str = Field(description="What this touch says that the earlier ones didn't.")
+    connection: Literal["note", "no_note"] | None = Field(
+        default=None,
+        description="A LinkedIn connection request, with a note or without one; null for a "
+        "message to a connection and for every other channel.",
+    )
 
 
 class PastSequence(BaseModel):

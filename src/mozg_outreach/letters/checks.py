@@ -13,7 +13,7 @@ from mozg_outreach.naturalize.punctuation import PunctuationChecker
 from mozg_outreach.naturalize.validation import body_word_count
 
 ProblemKind = Literal[
-    "subject", "frame", "word_budget", "punctuation", "markdown", "number", "cold_rule"
+    "subject", "frame", "word_budget", "length", "punctuation", "markdown", "number", "cold_rule"
 ]
 
 # A digit after a letter is part of a term (B2B, Q3, EC2), not a figure to verify.
@@ -55,6 +55,10 @@ class LetterChecker:
         if not budget.min <= words <= budget.max:
             detail = f"body has {words} words, budget {budget.min}-{budget.max}"
             problems.append(LetterProblem(kind="word_budget", detail=detail))
+        limit = self._brief.max_chars
+        if limit is not None and len(text) > limit:
+            detail = f"{len(text)} characters with greeting and sign-off, limit {limit}"
+            problems.append(LetterProblem(kind="length", detail=detail))
         for issue in self._punctuation.check("\n".join([subject or "", text])):
             detail = f"{issue.name} {issue.char!r}"
             problems.append(LetterProblem(kind="punctuation", detail=detail))

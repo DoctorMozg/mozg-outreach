@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -27,6 +28,7 @@ from mozg_outreach.pipelines.biz.letters import (
     BizLetterWriter,
     LetterBatch,
     LetterRequest,
+    RegionRules,
 )
 from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.steps import PipelineSteps
@@ -313,3 +315,112 @@ async def test_a_second_persons_first_letter_knows_who_heard_first(
     briefs = [b for b in runner.payloads["expert-copywriter"] if isinstance(b, LetterBrief)]
     seen = {(b.recipient.name, b.touch.step): b.touch.others_contacted for b in briefs if b.touch}
     assert seen == {("Ann Lee", 1): [], ("Bob Ray", 2): ["Ann Lee"], ("Bob Ray", 3): []}
+
+
+NOTE = (
+    "Congratulations on the Katana platform launch. I build tooling for manufacturing teams "
+    "in Dubai and would like to follow how it goes."
+)
+# Within the word budget, yet past 200 characters once framed.
+LONG_NOTE = (
+    "Congratulations on the remarkable manufacturing platform expansion announcement. "
+    "Manufacturing operations conversations interest me considerably, particularly "
+    "infrastructure modernization, distributed warehouse orchestration and transformation."
+)
+
+
+type Connection = Literal["note", "no_note"] | None
+
+
+class TestConnectionRequests:
+    @pytest.fixture
+    def linkedin(self) -> PlanContact:
+        return PlanContact(
+            ref="c1",
+            name="Ann Lee",
+            title="CEO",
+            relevance="",
+            routes=[
+                PlanRoute(
+                    ref="c1.linkedin",
+                    channel="linkedin",
+                    address="https://www.linkedin.com/in/ann-lee",
+                    confidence="linkedin",
+                )
+            ],
+        )
+
+    def approach(self, contact: PlanContact, *steps: tuple[int, Connection]) -> StoredApproach:
+        touches = [
+            PlannedTouch(
+                step=step,
+                day=3 * (step - 1),
+                contact_ref="c1",
+                route_ref="c1.linkedin",
+                purpose="open",
+                angle="cost",
+                hook_ref=None,
+                ask="",
+                talking_points="Congratulate her on the launch.",
+                connection=connection,
+            )
+            for step, connection in steps
+        ]
+        plan = ApproachPlan(
+            summary="", first_contact_ref="c1", rationale="", touches=touches, avoid=[], concerns=[]
+        )
+        return StoredApproach(plan=plan, contacts=[contact], hooks=[], planned_on="2026-11-17")
+
+    async def test_a_note_fits_linkedins_200_characters_and_offers_no_opt_out(
+        self, request_: LetterRequest, linkedin: PlanContact, tmp_path: Path
+    ) -> None:
+        # Gulf readers get "Hello", not "Hi".
+        final = f"Hello Ann,\n\n{NOTE}\n\nThanks,\nStan"
+        long = f"Hello Ann,\n\n{LONG_NOTE}\n\nThanks,\nStan"
+        assert len(long) > 200 >= len(final)
+        request = request_.model_copy(
+            update={
+                "approach": self.approach(linkedin, (1, "note")),
+                "region": RegionRules(gulf=True),
+            }
+        )
+        script: dict[str, list[Scripted]] = {
+            "outreach-personality-profiler": [STYLE],
+            "expert-copywriter": [draft(LONG_NOTE, subject=None), draft(NOTE, subject=None)],
+            "expert-naturalizer": [naturalized(final)],
+        }
+
+        batch, runner = await write(request, script, tmp_path)
+
+        [letter] = batch.letters
+        # No opt-out line, though Gulf letters otherwise always carry one.
+        assert letter.text == final
+        first, retry = [
+            b for b in runner.payloads["expert-copywriter"] if isinstance(b, LetterBrief)
+        ]
+        assert first.max_chars == 200
+        assert first.touch is not None
+        assert first.touch.connection_note
+        assert retry.retry is not None
+        assert any("limit 200" in p for p in retry.retry.problems)
+
+    async def test_a_request_without_a_note_gets_no_letter(
+        self, request_: LetterRequest, linkedin: PlanContact, tmp_path: Path
+    ) -> None:
+        message = f"Hi Ann,\n\n{BODY}\n\nThanks,\nStan"
+        request = request_.model_copy(
+            update={"approach": self.approach(linkedin, (1, "no_note"), (2, None))}
+        )
+        script: dict[str, list[Scripted]] = {
+            "outreach-personality-profiler": [STYLE],
+            "expert-copywriter": [draft(subject=None)],
+            "expert-naturalizer": [naturalized(message)],
+        }
+
+        batch, runner = await write(request, script, tmp_path)
+
+        assert [letter.step for letter in batch.letters] == [2]
+        [brief] = [b for b in runner.payloads["expert-copywriter"] if isinstance(b, LetterBrief)]
+        assert brief.max_chars is None
+        assert brief.touch is not None
+        assert [(e.step, e.text) for e in brief.touch.earlier] == [(1, None)]

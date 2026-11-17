@@ -1,8 +1,10 @@
+from datetime import UTC, datetime
+
 import pytest
 
 from mozg_outreach.agents import AgentRunError
 from mozg_outreach.api.schemas import ItemDetail, ItemOut
-from mozg_outreach.domain import RunStatus
+from mozg_outreach.domain import ItemKind, RunStatus
 from mozg_outreach.pipelines.biz.assessment_models import FitVerdict
 from mozg_outreach.pipelines.biz.models import (
     BriefReview,
@@ -12,7 +14,7 @@ from mozg_outreach.pipelines.biz.models import (
 )
 from mozg_outreach.pipelines.fields import FieldProposal, FieldResearchResult
 from mozg_outreach.pipelines.summary import Pattern, RunSummary
-from mozg_outreach.storage.models import JsonObject, Run
+from mozg_outreach.storage.models import Item, JsonObject, Run
 from tests.pipelines.biz.conftest import load_fixture
 from tests.pipelines.conftest import Scripted
 
@@ -118,6 +120,41 @@ async def test_brief_to_scored_report_through_the_strategy_gate(
     assert state["summary"] == SUMMARY.model_dump(mode="json")
     sent = api.runner.payloads["run-summarizer"][0].model_dump()
     assert {i["id"] for i in sent["items"]} == {item.id for item in report}
+
+
+async def test_an_archived_company_found_again_is_not_assessed_again(
+    api: Api, strategy: Strategy, proposal: FieldProposal
+) -> None:
+    project_id = await api.project(brief=biz_brief())
+    await accepted_spec(api, project_id, proposal)
+    with api.services.db.session() as session:
+        session.add(
+            Item(
+                project_id=project_id,
+                kind=ItemKind.COMPANY,
+                dedup_key="katana-earlier",
+                title="Katana",
+                archived_at=datetime(2026, 11, 16, tzinfo=UTC),
+            )
+        )
+    api.script(search_script(strategy))
+
+    run = await api.ok(
+        "POST",
+        f"/api/projects/{project_id}/runs",
+        {"options": {"limit": 5, "sources_per_sector": 1}},
+    )
+    run_id = int(str(run["id"]))
+    await api.settle(run_id)
+    await api.ok("POST", f"/api/runs/{run_id}/gate", {"approve": True})
+    done = await api.settle(run_id)
+
+    assert done["status"] == "complete", done["error"]
+    report = await api.get(f"/api/projects/{project_id}/items", list[ItemOut])
+    assert [i.title for i in report] == ["Blackwall (formerly BotGuard)"]
+    assert len(api.runner.payloads["fit-judge"]) == 1
+    archived = await api.get(f"/api/projects/{project_id}/items?archived=true", list[ItemOut])
+    assert [(i.title, i.score_total) for i in archived] == [("Katana", None)]
 
 
 class TestNeedsAcceptedFields:

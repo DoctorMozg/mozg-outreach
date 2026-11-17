@@ -1,5 +1,5 @@
 import { Accordion, Anchor, Badge, Button, Card, Code, Grid, Group, Select, Stack, Text, TextInput, Timeline, Title, Tooltip } from "@mantine/core";
-import { IconArrowLeft, IconDownload, IconForms, IconMail, IconSparkles } from "@tabler/icons-react";
+import { IconArchive, IconArchiveOff, IconArrowLeft, IconDownload, IconForms, IconMail, IconSparkles } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, type Cv, type CvChoice, enrichHint, get, type ItemDetail, type Run } from "../api";
@@ -43,6 +43,11 @@ export function ItemView({ id }: { id: number }): ReactElement {
         <ActivityBadge activity={i.activity} projectId={i.project_id} size="lg" />
         <EnrichedBadge item={i} size="lg" />
         <StepBadge step={i.approach_step} size="lg" />
+        {i.archived_at && (
+          <Badge size="lg" variant="light" color="gray">
+            Archived
+          </Badge>
+        )}
         <Text size="sm" c="dimmed">
           {i.dated}
         </Text>
@@ -58,7 +63,7 @@ export function ItemView({ id }: { id: number }): ReactElement {
         </Grid.Col>
         <Grid.Col span={{ base: 12, lg: 5 }}>
           <Stack>
-            <Actions item={i} />
+            <Actions item={i} onArchived={refresh} />
             {i.kind !== "company" && <CvPick item={i} onChange={refresh} />}
             {i.score && (
               <Card>
@@ -196,7 +201,11 @@ function CvPick({ item, onChange }: { item: ItemDetail; onChange: () => void }):
   );
 }
 
-function Actions({ item }: { item: ItemDetail }): ReactElement {
+function Actions({ item, onArchived }: { item: ItemDetail; onArchived: () => void }): ReactElement {
+  const archive = useMutation({
+    mutationFn: () => call("POST", "/api/items/archive", { item_ids: [item.id], archived: !item.archived_at }),
+    onSuccess: onArchived,
+  });
   const start = useMutation({
     mutationFn: (action: "enrich" | "letters" | "apply") => call<Run>("POST", `/api/items/${item.id}/${action}`),
     onSuccess: (run) => (window.location.hash = href.run(run.id)),
@@ -206,6 +215,11 @@ function Actions({ item }: { item: ItemDetail }): ReactElement {
     <Card>
       <Group justify="flex-end">
         <Group gap="xs">
+          <Tooltip label={item.archived_at ? "Back to the report" : "Hides it from the report; later searches skip it"}>
+            <Button variant="subtle" color="gray" leftSection={item.archived_at ? <IconArchiveOff size={16} /> : <IconArchive size={16} />} loading={archive.isPending} onClick={() => archive.mutate()}>
+              {item.archived_at ? "Restore" : "Archive"}
+            </Button>
+          </Tooltip>
           {item.kind !== "gig" && (
             <Button
               variant="default"
@@ -244,7 +258,7 @@ function Actions({ item }: { item: ItemDetail }): ReactElement {
           {enrich.note}
         </Text>
       )}
-      <ErrorBox error={start.error} />
+      <ErrorBox error={start.error ?? archive.error} />
     </Card>
   );
 }

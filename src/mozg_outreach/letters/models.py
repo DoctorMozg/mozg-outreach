@@ -116,6 +116,10 @@ class TouchContext(BaseModel):
         default_factory=list,
         description="People at the company the sender wrote to before this reader's first letter.",
     )
+    connection_note: bool = Field(
+        default=False,
+        description="The note on a LinkedIn connection request: no pitch, no ask, max_chars.",
+    )
 
 
 class LetterBrief(BaseModel):
@@ -129,6 +133,10 @@ class LetterBrief(BaseModel):
     )
     word_budget: WordBudget = Field(description="Body words, without salutation and sign-off.")
     subject_max_chars: int | None = Field(description="Null when the channel has no subject.")
+    max_chars: int | None = Field(
+        default=None,
+        description="Characters of the whole letter with greeting and sign-off; null for none.",
+    )
     angles: list[Angle] = Field(min_length=1)
     hooks: list[Hook] = Field(min_length=1)
     verified_entities: list[str] = Field(

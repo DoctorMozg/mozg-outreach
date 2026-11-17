@@ -21,13 +21,24 @@ MIN_INTERVAL = 1.1
 RESULTS = 10
 MIN_FIRM_WORD = 4
 _HONORIFICS = frozenset({"dr", "mr", "mrs", "ms", "miss", "prof", "eng", "sir", "dame"})
-# Words in company names that also appear in unrelated profiles.
+# Words in company names that also appear in unrelated profiles, professions included.
 _GENERIC = frozenset(
     {"the", "and", "group", "company", "holding", "holdings", "international", "global"}
     | {"llc", "llp", "ltd", "inc", "plc", "fz", "fze", "fzco", "dmcc", "pjsc", "co"}
     | {"partners", "legal", "law", "consultants", "consulting", "services", "solutions"}
+    | {"chartered", "accountants", "accountant", "accounting", "audit", "auditors", "auditing"}
+    | {"tax", "advisory", "engineering", "engineers", "technologies", "technology", "tech"}
+    | {"software", "digital", "systems", "medical", "clinic", "clinics", "healthcare"}
+    | {"trading", "contracting", "properties", "real", "estate", "investments", "capital"}
+    | {"management", "marketing", "media", "design", "studio", "labs", "agency"}
+    | {"advocates", "lawyers", "solicitors", "attorneys", "firm", "office", "centre", "center"}
+    # Places name half the region's employers.
+    | {"dubai", "abu", "dhabi", "sharjah", "ajman", "emirates", "uae", "gulf", "middle", "east"}
+    | {"saudi", "arabia", "riyadh", "jeddah", "doha", "qatar", "bahrain", "kuwait", "oman"}
 )
 _TAG = re.compile(r"<[^>]+>")
+# LinkedIn titles read "Name - Role - Employer | LinkedIn".
+_TITLE_PARTS = re.compile(r"\s+[-\u2013\u2014\u00b7|]\s+")
 
 
 class ProfileSearchError(Exception):
@@ -54,6 +65,9 @@ class BraveProfiles:
         self._last = 0.0
 
     async def find(self, name: str, company: str) -> ProfileHit | None:
+        if len(_first_and_last(name)) < 2:
+            logger.info("no linkedin search for %r: a single name matches too many people", name)
+            return None
         person = " ".join(t for t in name.split() if _plain(t).strip(".") not in _HONORIFICS)
         query = f'site:linkedin.com/in "{person}" {company}'
         results = await self._search(query)
@@ -93,8 +107,10 @@ class BraveProfiles:
 
 
 def best_profile(results: list[ProfileHit], name: str, company: str) -> ProfileHit | None:
-    """The first profile whose result names both the person and the company."""
+    """The first profile whose result names the person and the company as current employer."""
     # "Al" in Al-Futtaim would match half the region's surnames, the person's own included.
+    if len(_first_and_last(name)) < 2:
+        return None
     own = _tokens(name)
     firm = {t for t in _tokens(company) - _GENERIC - own if len(t) >= MIN_FIRM_WORD}
     firm = firm or _tokens(company) - own
@@ -102,9 +118,18 @@ def best_profile(results: list[ProfileHit], name: str, company: str) -> ProfileH
         url = profile_url(result.url)
         if url is None or not names_person(name, result.title):
             continue
+        employer = _employer(result.title)
+        if employer is not None and not firm & _tokens(employer):
+            continue  # a namesake, or someone who has moved on
         if firm & ((_tokens(result.title) | _tokens(result.snippet)) - own):
             return result.model_copy(update={"url": url})
     return None
+
+
+def _employer(title: str) -> str | None:
+    """The employer slot of a "Name - Role - Employer | LinkedIn" title, when it has one."""
+    parts = [p for p in _TITLE_PARTS.split(title) if p.strip().lower() != "linkedin"]
+    return parts[-1] if len(parts) >= 3 else None
 
 
 def names_person(name: str, text: str) -> bool:

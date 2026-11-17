@@ -56,6 +56,8 @@ class FlowContext[TState: RunState]:
     profiles: ProfileFinder | None = None
     # Answers this run's own gate from outside the run task, such as a detected confirmation page.
     answer_gate: Callable[[GateAnswer], None] | None = None
+    # Starts another run in the same project, such as a search enriching its best leads.
+    start_run: Callable[[str, JsonObject], int] | None = None
 
     def emit(self, kind: str, payload: JsonObject) -> None:
         self.log.append(self.run_id, kind, payload)

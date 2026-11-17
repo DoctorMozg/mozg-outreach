@@ -15,6 +15,9 @@
     if (by) return by.split(/\s+/).map((id) => text(document.getElementById(id))).join(" ").trim();
     return (el.getAttribute("placeholder") || el.getAttribute("name") || "").trim();
   };
+  // Job pages carry closed menus, filters and modals; their fields can't be filled and aren't the form.
+  // A file input hidden behind a styled button still takes files, so it stays.
+  const rendered = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
   const fields = [];
   const groups = new Map();
   let n = 0;
@@ -23,6 +26,7 @@
     const type = (el.getAttribute("type") || (tag === "input" ? "text" : tag)).toLowerCase();
     if (["hidden", "submit", "button", "image", "reset", "search", "password"].includes(type)) continue;
     if (el.disabled || el.readOnly) continue;
+    if (type !== "file" && !rendered(el)) continue;
     const required = el.required || el.getAttribute("aria-required") === "true";
     if (type === "radio") {
       const key = el.name || `radio-${n}`;

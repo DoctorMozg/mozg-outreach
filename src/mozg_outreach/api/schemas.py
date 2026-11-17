@@ -117,6 +117,7 @@ class ItemOut(Row):
     score: JsonObject | None
     enriched: bool
     enriched_at: datetime | None
+    archived_at: datetime | None
     dated: date = Field(description="Posted on, or the day a run first found the lead.")
     updated_at: datetime
     activity: LeadActivity | None = None
@@ -348,6 +349,11 @@ class CvUploadOut(BaseModel):
 class CvPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     summary: CvSummary | None = None
+
+
+class ArchiveIn(BaseModel):
+    item_ids: list[int] = Field(min_length=1, max_length=500)
+    archived: bool = Field(description="False restores the leads to the report.")
 
 
 class ProfileLinkIn(BaseModel):

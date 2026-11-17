@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from mozg_outreach.api.routes import registry as registry_routes
@@ -11,6 +12,7 @@ from mozg_outreach.naturalize.voice import VoiceNotes
 from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.sources.factory import DEFAULT_SOURCES
 from mozg_outreach.storage.models import (
+    AppSettings,
     Draft,
     Entity,
     Item,
@@ -59,6 +61,7 @@ class TestRuns:
             "scout",
             "assess",
             "summarize",
+            "auto_enrich",
         ]
         assert pipelines["biz.letters"] == ["letters"]
         assert pipelines["biz.approach"] == ["approach", "letters"]
@@ -411,6 +414,38 @@ class TestDates:
         graph = await api.get(f"/api/graph?project_id={project_id}&since=2026-11-01", GraphOut)
         assert {n.id for n in graph.nodes} == {f"i{ids['new']}", f"i{ids['found']}"}
 
+    async def test_archived_leads_leave_the_report_until_restored(self, api: Api) -> None:
+        project_id = await api.project(brief=biz_brief())
+        with api.services.db.session() as session:
+            ids = self.seed(session, project_id)
+        url = f"/api/projects/{project_id}/items"
+        old = ids["old"]
+
+        archived = await api.client.post(
+            "/api/items/archive", json={"item_ids": [old], "archived": True}
+        )
+        assert archived.status_code == 200
+        assert archived.json()[0]["archived_at"] is not None
+
+        assert [i.title for i in await api.get(url, list[ItemOut])] == ["found", "new"]
+        assert [i.title for i in await api.get(f"{url}?archived=true", list[ItemOut])] == ["old"]
+
+        await api.client.post("/api/items/archive", json={"item_ids": [old], "archived": False})
+        assert len(await api.get(url, list[ItemOut])) == 3
+
+    async def test_archiving_an_unknown_lead_changes_nothing(self, api: Api) -> None:
+        project_id = await api.project(brief=biz_brief())
+        with api.services.db.session() as session:
+            ids = self.seed(session, project_id)
+
+        refused = await api.client.post(
+            "/api/items/archive", json={"item_ids": [ids["old"], 999], "archived": True}
+        )
+
+        assert refused.status_code == 404
+        assert "999" in refused.text
+        assert len(await api.get(f"/api/projects/{project_id}/items", list[ItemOut])) == 3
+
     async def test_registry_lists_entities_seen_since_a_date(self, api: Api) -> None:
         project_id = await api.project(brief=biz_brief())
         with api.services.db.session() as session:
@@ -428,3 +463,25 @@ def sighting(entity_id: int, seen_at: datetime) -> Sighting:
         source_url="https://a.example",
         seen_at=seen_at,
     )
+
+
+class TestSettings:
+    async def test_a_fresh_install_auto_enriches_from_80(self, api: Api) -> None:
+        with api.services.db.session() as session:
+            session.execute(delete(AppSettings))
+
+        assert await api.ok("GET", "/api/settings") == {"auto_enrich_min_score": 80}
+
+    async def test_saved_settings_come_back(self, api: Api) -> None:
+        for minimum in (70, None):
+            saved = await api.ok("PUT", "/api/settings", {"auto_enrich_min_score": minimum})
+            assert saved == {"auto_enrich_min_score": minimum}
+            assert await api.ok("GET", "/api/settings") == saved
+
+    async def test_a_score_over_100_is_refused(self, api: Api) -> None:
+        await api.ok("PUT", "/api/settings", {"auto_enrich_min_score": 75})
+
+        refused = await api.client.put("/api/settings", json={"auto_enrich_min_score": 101})
+
+        assert refused.status_code == 422
+        assert await api.ok("GET", "/api/settings") == {"auto_enrich_min_score": 75}

@@ -116,6 +116,18 @@ class LetterComposer:
             ),
             job.voice,
         )
+        limit = brief.max_chars
+        if limit is not None and len(outcome.text) > limit >= len(attempt.text):
+            # The limit is the platform's, so a longer rewrite can't be sent at all.
+            note = f"Naturalized version ran past {limit} characters, original kept."
+            outcome = outcome.model_copy(
+                update={
+                    "text": attempt.text,
+                    "reverted": True,
+                    "changes": [],
+                    "review_notes": [*outcome.review_notes, note],
+                }
+            )
         subject = attempt.draft.subject
         notes = [*job.notes, *choice.notes, *attempt.draft.concerns, *outcome.review_notes]
         if outcome.reverted and outcome.damage:

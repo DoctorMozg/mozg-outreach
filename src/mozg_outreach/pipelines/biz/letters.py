@@ -50,6 +50,9 @@ TOUCH_BUDGETS: dict[TouchPurpose, WordBudget] = {
     "follow_up": WordBudget(min=40, max=110),
     "breakup": WordBudget(min=30, max=70),
 }
+# LinkedIn caps a connection request's note at 200 characters, greeting and name included.
+CONNECT_NOTE_CHARS = 200
+CONNECT_NOTE_BUDGET = WordBudget(min=10, max=26)
 
 
 class RegionRules(BaseModel):
@@ -177,6 +180,7 @@ class BizLetterWriter:
                     in_thread=planned.in_thread,
                     earlier=list(earlier),
                     others_contacted=list(dict.fromkeys(others)) if not earlier else [],
+                    connection_note=touch.connection == "note",
                 )
                 addressee = Addressee(
                     contact=sequence.contact,
@@ -241,6 +245,7 @@ class BizLetterWriter:
         contact, route = addressee.contact, addressee.route
         angles, hooks, ask = _plan_choices(request, evidence, addressee)
         threaded = touch is not None and touch.in_thread
+        note = touch is not None and touch.connection_note
         brief = LetterBrief(
             channel=route.channel,
             language=BIZ_LANGUAGE,
@@ -251,7 +256,8 @@ class BizLetterWriter:
                 relevance=contact.relevance,
             ),
             generic_inbox=route.generic_inbox,
-            word_budget=_budget(route.channel, touch),
+            word_budget=CONNECT_NOTE_BUDGET if note else _budget(route.channel, touch),
+            max_chars=CONNECT_NOTE_CHARS if note else None,
             # A reply in the thread takes the sent letter's subject.
             subject_max_chars=SUBJECT_MAX_CHARS
             if route.channel == "email" and not threaded
@@ -321,6 +327,9 @@ def _frame(request: LetterRequest, addressee: Addressee, touch: TouchContext | N
     frame = LetterFrame.build(
         route.channel, request.sender.tone, party, BIZ_LANGUAGE, casual_hi=not region.gulf
     )
+    if touch is not None and touch.connection_note:
+        # 200 characters leave no room for the opt-out; the message after acceptance carries it.
+        return frame
     emailed = touch is not None and any(e.channel == "email" for e in touch.earlier)
     first_email = route.channel == "email" and not emailed
     if first_email or region.gulf:

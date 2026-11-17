@@ -39,6 +39,7 @@ from mozg_outreach.pipelines.summary import (
     SeekerSummaryInput,
     stored_items,
 )
+from mozg_outreach.runs.auto_enrich import start_enrichments
 from mozg_outreach.runs.flow import (
     Approval,
     FlowContext,
@@ -395,14 +396,20 @@ def _save_cursors(ctx: Ctx, cursors: dict[str, str | None]) -> None:
 
 async def screen(ctx: Ctx) -> PhaseResult:
     screening = _search(ctx).screen(ctx.state.scouted, _strategy(ctx), _brief(ctx), ctx.today)
-    ctx.state.kept = screening.kept
+    with ctx.db.session() as session:
+        archived = ItemRepository(session).archived_keys(ctx.project_id)
+    # The judge is paid per listing, and an archived lead stays as the user left it.
+    ctx.state.kept = [listing for listing in screening.kept if listing.key not in archived]
+    if len(ctx.state.kept) < len(screening.kept):
+        logger.info("skipping %d archived listings", len(screening.kept) - len(ctx.state.kept))
     ctx.state.excluded = screening.excluded[:MAX_EXCLUDED_KEPT]
     reasons = Counter(e.reason for e in screening.excluded)
-    kept = Counter(listing.kind for listing in screening.kept)
+    kept = Counter(listing.kind for listing in ctx.state.kept)
     ctx.emit(
         "screened",
         {
             "kept": len(ctx.state.kept),
+            "archived": len(screening.kept) - len(ctx.state.kept),
             "kept_by_kind": dict(kept),
             "over_limit": sum(screening.over_limit.values()),
             "excluded": dict(reasons),
@@ -483,6 +490,11 @@ async def summarize(ctx: Ctx) -> PhaseResult:
     return None
 
 
+async def auto_enrich(ctx: Ctx) -> PhaseResult:
+    start_enrichments(ctx, ctx.state.item_ids)
+    return None
+
+
 def _open(session: Session, item_ids: list[int]) -> list[Item]:
     """Scored items no deal-breaker ruled out; researching the others is paid work nobody uses."""
     stored = [session.get(Item, i) for i in item_ids]
@@ -539,6 +551,7 @@ SEEKER_SEARCH = FlowSpec[SeekerSearchState](
         Phase("identify", identify),
         Phase("fields", fields),
         Phase("summarize", summarize),
+        Phase("auto_enrich", auto_enrich),
     ),
     blocker=_blocker,
 )

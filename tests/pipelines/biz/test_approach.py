@@ -1,5 +1,6 @@
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -56,7 +57,14 @@ CONTACTS = [
 HOOKS = [PlanHook(ref="h1", hook=Hook(signal="Opened a Dubai office", source="news"))]
 
 
-def touch(step: int, day: int, contact_ref: str, route_ref: str, **extra: str) -> PlannedTouch:
+def touch(
+    step: int,
+    day: int,
+    contact_ref: str,
+    route_ref: str,
+    connection: Literal["note", "no_note"] | None = None,
+    **extra: str,
+) -> PlannedTouch:
     fields = {"angle": ANGLE, "hook_ref": "h1", **extra}
     return PlannedTouch(
         step=step,
@@ -66,6 +74,7 @@ def touch(step: int, day: int, contact_ref: str, route_ref: str, **extra: str) -
         purpose="open" if step == 1 else "follow_up",
         ask="Worth a look?",
         talking_points="",
+        connection=connection,
         **fields,
     )
 
@@ -106,6 +115,7 @@ class TestValidator:
             (touch(2, 31, "c1", "c1.linkedin"), "past the 30-day sequence"),
             (touch(2, 1, "c1", "c1.linkedin"), "less than 2 days"),
             (touch(2, 0, "c3", "c3.linkedin"), "same company is touched that day"),
+            (touch(2, 4, "c1", "c1.email", connection="note"), "needs a LinkedIn route"),
         ],
     )
     def test_a_broken_touch_is_dropped_with_a_reason(self, bad: PlannedTouch, reason: str) -> None:
@@ -363,6 +373,20 @@ class TestPlannedSequences:
         assert all(t.letter and t.letter.generic_inbox for t in second.touches)
         assert first.named
         assert second.named
+
+    def test_a_connection_request_without_a_note_has_no_letter(self) -> None:
+        touches = [
+            touch(1, 0, "c3", "c3.linkedin", connection="no_note"),
+            touch(2, 3, "c3", "c3.linkedin"),
+        ]
+        approach = StoredApproach(
+            plan=plan(*touches, first="c3"), contacts=CONTACTS, hooks=HOOKS, planned_on="2026-11-17"
+        )
+        [sequence] = planned_sequences(approach, "Acme")
+        assert [(t.touch.step, t.letter is not None) for t in sequence.touches] == [
+            (1, False),
+            (2, True),
+        ]
 
     def test_an_inbox_touch_to_no_one_goes_to_the_company_team(self) -> None:
         inbox = contact("inbox", route("inbox.email1", "email", "shared_inbox"))

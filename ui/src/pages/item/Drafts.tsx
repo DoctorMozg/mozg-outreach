@@ -25,7 +25,12 @@ export function Drafts({ item, onSaved, tab, onTab }: DraftsProps): ReactElement
   for (const d of item.drafts) threads.set(draftKey(d), [...(threads.get(draftKey(d)) ?? []), d]);
   const names = [...threads.keys()];
   if (names.length === 0) {
-    const how = item.kind === "company" ? "Enrich the company: its approach plan writes a letter for each step." : `${WRITE_LABEL[item.kind]} from the panel on the right.`;
+    const how =
+      item.kind === "company"
+        ? "Enrich the company: its approach plan writes a letter for each step."
+        : item.kind === "job"
+          ? "Enrich the job: it finds who to send it to and drafts the cover letter."
+          : `${WRITE_LABEL[item.kind]} from the panel on the right.`;
     return (
       <Card>
         <Empty icon={<IconMail size={32} />} title="No drafts yet">

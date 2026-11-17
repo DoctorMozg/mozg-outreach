@@ -306,6 +306,8 @@ class ApproachValidator:
             return f"day {touch.day} is past the {MAX_DAYS}-day sequence"
         if len(kept) - len(self._done) >= self._max_touches:
             return f"more than {self._max_touches} touches"
+        if touch.connection is not None and route.channel != "linkedin":
+            return "a connection request needs a LinkedIn route"
         if not kept and route.channel not in OPENING_CHANNELS:
             return "the first touch must be an email, a LinkedIn message or a contact-form note"
         return self._pacing(touch, kept) or self._route_rules(
@@ -547,7 +549,8 @@ def planned_sequences(approach: StoredApproach, company: str) -> list[ReaderSequ
                     confidence=route.confidence,
                     generic_inbox=touch.contact_ref == INBOX,
                 )
-                if channel
+                # A request without a note has nothing to write; the user clicks Connect.
+                if channel and touch.connection != "no_note"
                 else None,
                 in_thread=route.channel == "email" and route.address in emailed,
             )

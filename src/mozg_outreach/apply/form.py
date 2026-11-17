@@ -1,11 +1,13 @@
 """Reads an application form and fills it without ever submitting it."""
 
+import asyncio
 import logging
 from collections.abc import Awaitable
 from pathlib import Path
 
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Frame, Locator, Page, Route
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from pydantic import TypeAdapter
 
 from mozg_outreach.apply.ats import GENERIC, Ats, ats_for
@@ -17,6 +19,9 @@ MARK = "data-mozg-field"
 SCAN_SCRIPT = (Path(__file__).parent / "scan.js").read_text(encoding="utf-8")
 GUARD_SCRIPT = (Path(__file__).parent / "guard.js").read_text(encoding="utf-8")
 _FIELDS = TypeAdapter(list[FormField])
+# A field that isn't editable within this is left to the applicant instead of stalling the fill.
+ACTION_MS = 5_000
+SCRIPT_SECONDS = 10.0
 
 
 class FormError(RuntimeError):
@@ -36,7 +41,11 @@ async def locate_form(page: Page) -> tuple[Ats, Frame]:
 
 async def scan(frame: Frame) -> list[FormField]:
     try:
-        raw = await frame.evaluate(SCAN_SCRIPT, MARK)
+        raw = await asyncio.wait_for(frame.evaluate(SCAN_SCRIPT, MARK), SCRIPT_SECONDS)
+    except TimeoutError as exc:
+        raise FormError(
+            f"the page at {frame.url} did not answer within {SCRIPT_SECONDS:g} s"
+        ) from exc
     except PlaywrightError as exc:
         raise FormError(f"could not read the form at {frame.url}: {exc}") from exc
     return _FIELDS.validate_python(raw)
@@ -52,24 +61,24 @@ class SafeActor:
         target = self._locate(field)
         match field.kind:
             case "select":
-                await self._do(target.select_option(value=value), field)
+                await self._do(target.select_option(value=value, timeout=ACTION_MS), field)
             case "radio":
                 choice = self._frame.locator(f'[{MARK}="{field.id}"][value="{_css(value)}"]')
-                await self._do(choice.check(), field)
+                await self._do(choice.check(timeout=ACTION_MS), field)
             case "checkbox":
-                await self._do(target.set_checked(value == "yes"), field)
+                await self._do(target.set_checked(value == "yes", timeout=ACTION_MS), field)
             case "file":
                 raise FormError(f"{field.label!r} takes a file; use attach")
             case "combobox":
                 raise FormError(f"{field.label!r} is a custom dropdown the applicant picks")
             case _:
                 text = value[: field.max_length] if field.max_length else value
-                await self._do(target.fill(text), field)
+                await self._do(target.fill(text, timeout=ACTION_MS), field)
 
     async def attach(self, field: FormField, path: Path) -> None:
         if field.kind != "file":
             raise FormError(f"{field.label!r} is not a file field")
-        await self._do(self._locate(field).set_input_files(path), field)
+        await self._do(self._locate(field).set_input_files(path, timeout=ACTION_MS), field)
 
     def _locate(self, field: FormField) -> Locator:
         return self._frame.locator(f'[{MARK}="{field.id}"]').first
@@ -77,6 +86,10 @@ class SafeActor:
     async def _do(self, action: Awaitable[object], field: FormField) -> None:
         try:
             await action
+        except PlaywrightTimeoutError as exc:
+            raise FormError(
+                f"{field.label!r} could not be filled within {ACTION_MS / 1000:g} s"
+            ) from exc
         except PlaywrightError as exc:
             raise FormError(f"could not fill {field.label!r}: {str(exc).splitlines()[0]}") from exc
 
@@ -107,7 +120,13 @@ class SubmitGuard:
 
     async def _switch(self, *, on: bool) -> int:
         try:
-            return int(await self._frame.evaluate(GUARD_SCRIPT, on))
+            return int(
+                await asyncio.wait_for(self._frame.evaluate(GUARD_SCRIPT, on), SCRIPT_SECONDS)
+            )
+        except TimeoutError as exc:
+            raise FormError(
+                f"the page at {self._frame.url} did not answer within {SCRIPT_SECONDS:g} s"
+            ) from exc
         except PlaywrightError as exc:
             raise FormError(f"could not guard the form at {self._frame.url}: {exc}") from exc
 

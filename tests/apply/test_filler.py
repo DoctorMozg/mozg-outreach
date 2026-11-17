@@ -1,7 +1,13 @@
+import asyncio
+from dataclasses import dataclass
+
+import pytest
 from playwright.async_api import Frame, Page
 
+from mozg_outreach.apply import filler, form
 from mozg_outreach.apply.filler import FormFiller
-from mozg_outreach.apply.form import MARK
+from mozg_outreach.apply.form import MARK, FormError, SafeActor, scan
+from mozg_outreach.apply.models import AnswerInput, AnswerSet
 from tests.apply.conftest import EMBED, PROFILE, ScriptedAnswerer, Traffic, application
 from tests.browser.conftest import requires_chrome
 
@@ -126,3 +132,73 @@ async def test_the_guard_is_gone_when_the_applicant_submits(page: tuple[Page, Tr
     await tab.wait_for_load_state()
 
     assert "POST https://jobs.lever.co/apply" in traffic.requests
+
+
+async def test_fields_the_page_hides_are_neither_asked_nor_filled(
+    page: tuple[Page, Traffic],
+) -> None:
+    tab, _ = page
+    await tab.goto("https://careers.acme.example/jobs/2")
+    answerer = ScriptedAnswerer({"Why Acme?": "Pricing.", "Open to relocation?": "yes"})
+
+    report = await FormFiller(answerer).fill(tab, application())
+
+    [asked] = answerer.asked
+    assert [q.label for q in asked.questions] == ["Open to relocation?", "Why Acme?"]
+    filled = {f.label for f in report.filled}
+    assert filled == {"Full name", "Email", "Resume/CV", "Open to relocation?", "Why Acme?"}
+    assert await tab.eval_on_selector("input[name=resume]", "el => el.files.length") == 1
+    assert await tab.is_checked("input[name=relocate]"), "a styled checkbox is still ticked"
+    labels = {f.label for f in report.for_user}
+    assert labels.isdisjoint({"Your email", "Weekly digest", "Keyword", "Coupon"})
+
+
+class TestTimeLimits:
+    async def test_a_field_that_never_becomes_editable_is_left_quickly(
+        self, page: tuple[Page, Traffic], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(form, "ACTION_MS", 300)
+        tab, _ = page
+        await tab.goto("https://jobs.lever.co/acme/1234/apply")
+        fields = await scan(tab.main_frame)
+        name = next(f for f in fields if f.label == "Full name")
+        await tab.eval_on_selector("input[name=name]", "el => { el.style.display = 'none'; }")
+
+        with pytest.raises(FormError, match=r"could not be filled within 0\.3 s"):
+            await asyncio.wait_for(SafeActor(tab.main_frame).fill(name, "Max"), timeout=5)
+
+    async def test_fields_left_when_the_budget_runs_out_go_to_the_applicant(
+        self, page: tuple[Page, Traffic], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(filler, "FILL_SECONDS", 0.0)
+        tab, _ = page
+        await tab.goto("https://jobs.lever.co/acme/1234/apply")
+
+        report = await FormFiller(ScriptedAnswerer({})).fill(tab, application())
+
+        assert report.filled == []
+        reasons = {f.label: f.reason for f in report.for_user}
+        assert "ran out of time" in reasons["Full name"]
+        assert await tab.input_value("input[name=name]") == ""
+
+    async def test_the_answerer_thinking_does_not_use_up_the_budget(
+        self, page: tuple[Page, Traffic], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(filler, "FILL_SECONDS", 1.0)
+        tab, _ = page
+        await tab.goto("https://jobs.lever.co/acme/1234/apply")
+        answerer = SlowAnswerer({"Preferred work mode": "Remote"}, delay=1.5)
+
+        report = await FormFiller(answerer).fill(tab, application())
+
+        assert "Preferred work mode" in {f.label for f in report.filled}
+        assert await tab.is_checked("input[value=remote]")
+
+
+@dataclass
+class SlowAnswerer(ScriptedAnswerer):
+    delay: float = 0.0
+
+    async def answer(self, request: AnswerInput) -> AnswerSet:
+        await asyncio.sleep(self.delay)
+        return await super().answer(request)

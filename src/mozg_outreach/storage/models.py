@@ -132,12 +132,15 @@ class Item(Base):
     score: Mapped[JsonObject | None]
     # Pipeline-specific sections (fit verdict, dossier), keyed by name and stored as JSON.
     details: Mapped[JsonObject] = mapped_column(default=dict)
+    # Archived leads leave the report, and later searches skip them before any paid step.
+    archived_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
     @property
     def enriched(self) -> bool:
-        return "dossier" in self.details
+        # A company's enrichment builds a dossier; a job's finds who to send the letter to.
+        return "dossier" in self.details or "contacts" in self.details
 
     @property
     def enriched_at(self) -> datetime | None:
@@ -356,3 +359,13 @@ class MergeSuggestion(Base):
     reason: Mapped[str] = mapped_column(String(300))
     status: Mapped[str] = mapped_column(String(20), default="pending")
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class AppSettings(Base):
+    """The one row of settings that apply to every project."""
+
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    values: Mapped[JsonObject] = mapped_column(default=dict)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)

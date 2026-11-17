@@ -1,5 +1,6 @@
 """Fills one application form for the applicant to review and submit by hand."""
 
+import asyncio
 import logging
 import re
 import tempfile
@@ -23,6 +24,9 @@ from mozg_outreach.apply.models import (
 from mozg_outreach.apply.policy import protected_reason
 
 logger = logging.getLogger(__name__)
+
+# Past this, the fields still open go to the applicant so the run never stalls on one page.
+FILL_SECONDS = 90.0
 
 
 @dataclass(frozen=True)
@@ -79,6 +83,7 @@ class _Fill:
     def __init__(self, actor: SafeActor, application: Application) -> None:
         self._actor = actor
         self._app = application
+        self._deadline = asyncio.get_running_loop().time() + FILL_SECONDS
         self.filled: list[FilledField] = []
         self.for_user: list[OpenField] = []
         self.concerns: list[str] = []
@@ -113,6 +118,8 @@ class _Fill:
         if not questions:
             return
         by_id = {q.id: q for q in questions}
+        loop = asyncio.get_running_loop()
+        asked_at = loop.time()
         result = await answerer.answer(
             AnswerInput(
                 job_title=self._app.job_title,
@@ -122,6 +129,8 @@ class _Fill:
                 questions=[question(q) for q in questions],
             )
         )
+        # The budget is for the page; the agent's thinking time doesn't count against it.
+        self._deadline += loop.time() - asked_at
         self.concerns.extend(result.concerns)
         answered: set[str] = set()
         for answer in result.answers:
@@ -157,6 +166,8 @@ class _Fill:
             await self._put(form_field, self._app.letter, "letter")
 
     async def _put(self, form_field: FormField, value: str, source: FillSource) -> None:
+        if self._out_of_time(form_field):
+            return
         try:
             await self._actor.fill(form_field, value)
         except FormError as exc:
@@ -165,12 +176,20 @@ class _Fill:
         self.filled.append(FilledField(label=form_field.label, source=source))
 
     async def _attach(self, form_field: FormField, path: Path, source: FillSource) -> None:
+        if self._out_of_time(form_field):
+            return
         try:
             await self._actor.attach(form_field, path)
         except FormError as exc:
             self._leave(form_field, str(exc))
             return
         self.filled.append(FilledField(label=form_field.label, source=source))
+
+    def _out_of_time(self, form_field: FormField) -> bool:
+        if asyncio.get_running_loop().time() < self._deadline:
+            return False
+        self._leave(form_field, f"filling ran out of time after {FILL_SECONDS:g} s")
+        return True
 
     def _leave(self, form_field: FormField, reason: str) -> None:
         self.for_user.append(
