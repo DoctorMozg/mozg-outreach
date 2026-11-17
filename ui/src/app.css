@@ -39,3 +39,49 @@
   text-decoration: line-through;
   margin-right: 2px;
 }
+
+/* Graph labels are DOM nodes over the WebGL canvas, so they use the app font and theme. */
+.graph-label {
+  max-width: 160px;
+  overflow: hidden;
+  font-family: var(--mantine-font-family);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--mantine-color-text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-shadow:
+    0 0 3px var(--mantine-color-body),
+    0 0 3px var(--mantine-color-body),
+    0 0 6px var(--mantine-color-body);
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 150ms ease;
+}
+
+.graph-label-lead {
+  font-weight: 600;
+}
+
+.graph-label-hidden {
+  opacity: 0;
+}
+
+.graph-label-focus {
+  font-weight: 700;
+  color: var(--mantine-color-orange-filled);
+}
+
+.graph-label-hovered {
+  max-width: none;
+}
+
+.float-tooltip-kap {
+  font-family: var(--mantine-font-family) !important;
+  font-size: 12px !important;
+  padding: 4px 8px !important;
+  border-radius: var(--mantine-radius-sm) !important;
+  color: var(--mantine-color-white) !important;
+  background: var(--mantine-color-dark-6) !important;
+}
