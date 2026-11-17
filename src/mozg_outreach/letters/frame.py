@@ -181,8 +181,14 @@ class LetterFrame(BaseModel):
         head, found, tail = letter.rstrip().rpartition(f"\n{ending}")
         if not found or tail:
             raise ValueError(f"letter does not end with {ending!r}")
-        blocks = [head.rstrip(), self.opt_out, ending, self.card]
+        blocks = [head.rstrip(), self.opt_out, *self._signed()]
         return "\n\n".join(b for b in blocks if b)
+
+    def _signed(self) -> list[str | None]:
+        """A card that opens with the sender's name replaces the bare first name under the close."""
+        if self.card and self.card.split()[0] == self.signature:
+            return [f"{self.closing}\n{self.card}"]
+        return [self._ending(), self.card]
 
     def _ending(self) -> str:
         return f"{self.closing}\n{self.signature}"

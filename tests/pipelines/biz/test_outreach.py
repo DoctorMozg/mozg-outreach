@@ -306,9 +306,9 @@ async def test_a_german_sequence_signs_offers_to_stop_once_and_warns_about_conse
     card = "Stan\nFounder, Stan Cloud"
     assert opener.body.endswith(
         f"{WORDINGS['en'].opt_out}\nHow I handle your data: stan.example/privacy\n\n"
-        f"Best regards,\nStan\n\n{card}"
+        f"Best regards,\n{card}"
     )
-    assert [d.body.endswith(f"Best regards,\nStan\n\n{card}") for d in follow_ups] == [True, True]
+    assert [d.body.endswith(f"Best regards,\n{card}") for d in follow_ups] == [True, True]
     assert all(WORDINGS["en"].opt_out not in d.body for d in follow_ups)
     notes = [DraftReview.model_validate(d.review).review_notes for d in [opener, *follow_ups]]
     assert all(GERMANY_CONSENT in n for n in notes)

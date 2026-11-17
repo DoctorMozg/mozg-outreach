@@ -104,14 +104,22 @@ class TestOptOut:
 class TestCard:
     CARD = "Stan Petrov\nFounder, Acme\nacme.example | linkedin.com/in/stan"
 
-    def test_the_card_goes_under_the_sign_off(self) -> None:
+    def test_the_card_signs_the_letter_without_repeating_the_name(self) -> None:
         frame = LetterFrame.build("email", "neutral", PARTY, "en").with_opt_out("en")
         frame = frame.model_copy(update={"card": self.CARD})
 
         finished = frame.finish(frame.assemble("Body."))
 
-        assert finished.endswith(f"Best regards,\nStan\n\n{self.CARD}")
-        assert f"{frame.opt_out}\n\nBest regards," in finished
+        assert finished.endswith(f"{frame.opt_out}\n\nBest regards,\n{self.CARD}")
+        assert finished.count("Stan") == 1
+
+    def test_a_card_not_opening_with_the_name_goes_under_the_sign_off(self) -> None:
+        frame = LetterFrame.build("email", "neutral", PARTY, "en")
+        frame = frame.model_copy(update={"card": "Founder, Acme"})
+
+        finished = frame.finish(frame.assemble("Body."))
+
+        assert finished.endswith("Best regards,\nStan\n\nFounder, Acme")
 
     def test_the_card_reads_like_a_signature(self) -> None:
         card = SenderCard(
