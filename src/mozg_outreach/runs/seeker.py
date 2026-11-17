@@ -30,6 +30,7 @@ from mozg_outreach.pipelines.seeker.models import (
     SeekerBrief,
     SeekerStrategy,
 )
+from mozg_outreach.pipelines.seeker.screening import StackGate
 from mozg_outreach.pipelines.seeker.search import SeekerSearch, load_boards, to_candidate
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.seeker.telegram_posts import TelegramPosts, TelegramRequest
@@ -419,9 +420,22 @@ async def screen(ctx: Ctx) -> PhaseResult:
 
 
 async def judge(ctx: Ctx) -> PhaseResult:
-    if ctx.state.kept:
-        ctx.state.judgments = await _search(ctx).judge(ctx.state.kept, _strategy(ctx))
-        ctx.state.concerns += ctx.state.judgments.concerns
+    if not ctx.state.kept:
+        return None
+    judgments = await _search(ctx).judge(ctx.state.kept, _strategy(ctx))
+    ctx.state.judgments = judgments
+    ctx.state.concerns += judgments.concerns
+    # A required skill must be what the work is mainly done in, not a passing mention.
+    gate = StackGate(_strategy(ctx))
+    checked = [
+        (listing, gate.check(listing, judgments.by_key.get(listing.key)))
+        for listing in ctx.state.kept
+    ]
+    off_stack = [excluded for _, excluded in checked if excluded is not None]
+    ctx.state.kept = [listing for listing, excluded in checked if excluded is None]
+    ctx.state.excluded = [*ctx.state.excluded, *off_stack][:MAX_EXCLUDED_KEPT]
+    logger.info("stack gate excluded %d of %d judged listings", len(off_stack), len(checked))
+    ctx.emit("stack_checked", {"kept": len(ctx.state.kept), "excluded": len(off_stack)})
     return None
 
 

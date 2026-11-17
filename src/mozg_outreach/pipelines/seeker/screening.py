@@ -13,6 +13,7 @@ from mozg_outreach.pipelines.seeker.models import (
     Excluded,
     ExcludedReason,
     Listing,
+    ListingJudgment,
     PlacePreferences,
     SeekerStrategy,
     SkillRules,
@@ -110,6 +111,22 @@ class ListingScreener:
             detail = f"names none of: {', '.join(missing)}"
             return Excluded(listing=listing, reason="missing_must_have", detail=detail)
         return listing
+
+
+class StackGate:
+    """After judging: a required skill must be among the work's main technologies, not a mention."""
+
+    def __init__(self, skills: SkillRules) -> None:
+        self._skills = SkillMatcher(skills)
+
+    def check(self, listing: Listing, judgment: ListingJudgment | None) -> Excluded | None:
+        # Without a judgment, or when the judge couldn't tell, the screening's verdict stands.
+        if judgment is None or not judgment.primary_stack:
+            return None
+        main = ", ".join(judgment.primary_stack)
+        if self._skills.match(main).gate_passed:
+            return None
+        return Excluded(listing=listing, reason="secondary_stack", detail=f"mainly {main}")
 
 
 def listing_text(listing: Listing) -> str:

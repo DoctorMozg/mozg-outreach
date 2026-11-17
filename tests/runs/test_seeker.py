@@ -112,6 +112,47 @@ async def test_leads_a_deal_breaker_ruled_out_are_not_identified(
         assert len(session.scalars(select(Item)).all()) == 2, "the blocked lead is still reported"
 
 
+async def test_a_job_that_only_mentions_a_required_skill_is_dropped_after_judging(
+    harness: Harness, strategy: SeekerStrategy
+) -> None:
+    project_id = harness.seeker_project()
+    harness.feed.extra.append(
+        SourceItem(
+            source="greenhouse",
+            source_item_id="acme/2",
+            url=OTHER_URL,
+            kind="job",
+            title="Go Engineer",
+            raw_text="Go and Kubernetes platform work, some Python scripting. Remote in the EU.",
+            raw_payload={},
+            published_at=NOW,
+            fetched_at=NOW,
+            org_name="Acme",
+            location="Remote - EU",
+        )
+    )
+    go_job = judgment(OTHER_URL, primary_stack=["Go", "Kubernetes"])
+    harness.script(
+        {
+            "seeker-strategist": [strategy],
+            "seeker-judge": [JudgeResult(judgments=[judgment(FEED_URL), go_job], concerns=[])],
+            "lead-identifier": [identity(company())],
+        }
+    )
+    search = harness.manager.start(project_id, "seeker.search", {"options": OPTIONS})
+    await harness.manager.wait(search)
+    harness.manager.answer_gate(search, GateAnswer(approve=True))
+    done = await finish(harness, search)
+
+    assert done.status == RunStatus.COMPLETE, done.error
+    with harness.db.session() as session:
+        titles = [i.title for i in session.scalars(select(Item)).all()]
+    assert len(titles) == 1
+    assert "Go Engineer" not in titles
+    state = SeekerSearchState.model_validate(done.state)
+    assert [(e.listing.url, e.reason) for e in state.excluded] == [(OTHER_URL, "secondary_stack")]
+
+
 async def test_one_search_reports_jobs_and_gigs_and_drafts_a_letter_for_each(
     harness: Harness, strategy: SeekerStrategy
 ) -> None:

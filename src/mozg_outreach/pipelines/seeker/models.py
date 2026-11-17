@@ -38,6 +38,7 @@ ExcludedReason = Literal[
     "attribute_blocklist",
     "location_mismatch",
     "missing_must_have",
+    "secondary_stack",
 ]
 
 
@@ -364,6 +365,10 @@ class ListingJudgment(BaseModel):
     scope_evidence: str
     discipline: Discipline | None = Field(description="The work's own discipline; null if unclear.")
     engagement_type: EngagementType | None
+    primary_stack: list[str] = Field(
+        default_factory=list,
+        description="The work's main languages and core technologies; empty if none are named.",
+    )
     deal_breaker_hits: list[str] = Field(description="User deal-breakers the text mentions.")
     summary: str = Field(description="One sentence on why this does or doesn't fit.")
 

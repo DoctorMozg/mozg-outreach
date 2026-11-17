@@ -52,6 +52,7 @@ Return exactly one judgment per listing, in input order. Copy `key` unchanged.
   - `consulting_advisory`: an audit, advisory, workshop, diagnostic or interim engagement with a discrete outcome.
   - `fractional_retainer`: an ongoing part-time leadership retainer (a fractional CTO, CMO or head of design for a recurring monthly fee). A discrete consulting engagement is `consulting_advisory`, not this.
   - `null` when the text does not make it clear.
+- `primary_stack`: up to four languages and core technologies the work is mainly done in, read from the title and the main duties, e.g. `["Python", "PostgreSQL"]` for a Python backend role or `["TypeScript", "React", "Python"]` for a full-stack one. Leave out anything listed only as a plus, mentioned in passing ("some Python scripting"), or named as part of the company's wider stack. Use an empty list when the text names no technology.
 - `deal_breaker_hits`: the deal-breaker strings, copied verbatim from the input list, that the text matches. A deal-breaker matches only when the text states it or clearly implies it. Missing information never matches: a gig that gives no duration does not hit a duration deal-breaker, and a listing that says nothing about location or remote work does not hit a remote one. Use an empty list when none match, and never add a string that is not in `deal_breakers`.
 - `summary`: one factual sentence on what the work asks for and how it relates to this candidate's stack, seniority and discipline. State facts, not a verdict.
 - `concerns` (top level): one plain sentence for each listing too thin to judge or with conflicting details. Empty when none.
@@ -72,6 +73,7 @@ Return the result as the structured output, not as a file. Its JSON shape:
       "scope_evidence": "Responsibilities are listed; no start date.",
       "discipline": "engineering",
       "engagement_type": "full_time",
+      "primary_stack": ["Rust"],
       "deal_breaker_hits": ["on-call rotation"],
       "summary": "A senior Rust and PostgreSQL backend role that matches the candidate's stack, with an on-call rotation."
     },
@@ -84,6 +86,7 @@ Return the result as the structured output, not as a file. Its JSON shape:
       "scope_evidence": "Pilot in week 6 and full cutover in week 8 are both stated.",
       "discipline": "engineering",
       "engagement_type": "project_gig",
+      "primary_stack": ["Go"],
       "deal_breaker_hits": [],
       "summary": "A fixed 8-week payments API migration to Kafka that matches the candidate's Go and PostgreSQL stack."
     }
@@ -97,6 +100,7 @@ Return the result as the structured output, not as a file. Its JSON shape:
 - Any score, rank, total or fit percentage in the output.
 - A `key` that was changed, or a listing missing from `judgments`.
 - A `deal_breaker_hits` string that is not verbatim from the input.
+- A language in `primary_stack` that the listing only mentions as a plus or in passing.
 - A `counterparty` based on what you remember about a company or board instead of the text.
 - A `seniority` or `discipline` copied from the candidate instead of read from the listing.
 - `scope_clarity` marked `clear` without both the work and a timeline.

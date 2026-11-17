@@ -2,10 +2,10 @@ import pytest
 
 from mozg_outreach.pipelines.seeker.eligibility import EligibilityChecker, places_in
 from mozg_outreach.pipelines.seeker.models import SeekerStrategy
-from mozg_outreach.pipelines.seeker.screening import ListingScreener, ScreenRules
+from mozg_outreach.pipelines.seeker.screening import ListingScreener, ScreenRules, StackGate
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher, _pattern
 
-from .conftest import TODAY, listing, scouted
+from .conftest import TODAY, judgment, listing, scouted
 
 
 @pytest.fixture
@@ -155,3 +155,32 @@ class TestScreener:
                 "names none of: Python, PostgreSQL or MySQL",
             ),
         }
+
+
+class TestStackGate:
+    @pytest.mark.parametrize(
+        ("main", "kept"),
+        [
+            (["Python", "Django"], True),
+            (["Go", "Postgres"], True),
+            (["Go", "Kubernetes"], False),
+            ([], True),
+        ],
+        ids=["required-skill", "synonym-of-or-group", "mention-only", "judge-unsure"],
+    )
+    def test_a_required_skill_must_be_among_the_main_ones(
+        self, strategy: SeekerStrategy, main: list[str], kept: bool
+    ) -> None:
+        job = listing()
+
+        excluded = StackGate(strategy).check(job, judgment(job.key, primary_stack=main))
+
+        assert (excluded is None) is kept
+        if excluded:
+            assert (excluded.reason, excluded.detail) == (
+                "secondary_stack",
+                "mainly Go, Kubernetes",
+            )
+
+    def test_an_unjudged_listing_is_kept(self, strategy: SeekerStrategy) -> None:
+        assert StackGate(strategy).check(listing(), None) is None

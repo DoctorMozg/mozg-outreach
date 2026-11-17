@@ -41,6 +41,7 @@ const EVENT_KINDS = [
   "scored",
   "collected",
   "screened",
+  "stack_checked",
   "brief_review",
   "fields_proposed",
   "draft",
