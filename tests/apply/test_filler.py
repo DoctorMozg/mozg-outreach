@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 from playwright.async_api import Frame, Page
@@ -22,7 +23,7 @@ def form_of(page: Page) -> Frame:
 
 class TestGreenhouseEmbed:
     async def test_fills_standard_fields_files_and_answers_in_the_iframe(
-        self, page: tuple[Page, Traffic]
+        self, page: tuple[Page, Traffic], tmp_path: Path
     ) -> None:
         tab, traffic = page
         await tab.goto("https://careers.acme.example/jobs/1")
@@ -30,7 +31,7 @@ class TestGreenhouseEmbed:
             {WHY: "Real-time pricing is what I build.", "Years of Python": "6+"}
         )
 
-        report = await FormFiller(answerer).fill(tab, application())
+        report = await FormFiller(answerer).fill(tab, application(), tmp_path)
 
         form = form_of(tab)
         assert report.ats == "greenhouse"
@@ -38,8 +39,12 @@ class TestGreenhouseEmbed:
         assert await form.input_value("#email") == "max@example.com"
         assert await form.input_value("#q1") == "Real-time pricing is what I build."
         assert await form.input_value("#q2") == "13"
-        files = await form.eval_on_selector("#resume", "el => [...el.files].map(f => f.name)")
-        assert files == ["Max Example CV.pdf"]
+        files = await form.eval_on_selector(
+            "#resume", "el => [...el.files].map(f => [f.name, f.size])"
+        )
+        assert files == [["Max Example CV.pdf", len(application().cv_pdf or b"")]], (
+            "the upload still has its bytes once filling is done"
+        )
         letter = await form.eval_on_selector("#cover_letter", "el => el.files[0].name")
         assert letter == "Max Example cover letter.txt"
         photo = await form.eval_on_selector("#photo", "el => el.files[0].name")
@@ -49,13 +54,13 @@ class TestGreenhouseEmbed:
         assert not [r for r in traffic.requests if r.startswith("POST")]
 
     async def test_protected_questions_stay_empty_and_never_reach_the_agent(
-        self, page: tuple[Page, Traffic]
+        self, page: tuple[Page, Traffic], tmp_path: Path
     ) -> None:
         tab, _ = page
         await tab.goto("https://careers.acme.example/jobs/1")
         answerer = ScriptedAnswerer({})
 
-        report = await FormFiller(answerer).fill(tab, application())
+        report = await FormFiller(answerer).fill(tab, application(), tmp_path)
 
         asked = {q.label for q in answerer.asked[0].questions}
         assert asked == {WHY, "Years of Python"}
@@ -71,13 +76,13 @@ class TestGreenhouseEmbed:
         assert not await form.is_checked("input[name=gdpr]")
 
     async def test_a_rejected_answer_is_left_with_the_reason(
-        self, page: tuple[Page, Traffic]
+        self, page: tuple[Page, Traffic], tmp_path: Path
     ) -> None:
         tab, _ = page
         await tab.goto("https://careers.acme.example/jobs/1")
         answerer = ScriptedAnswerer({"Years of Python": "about 7"})
 
-        report = await FormFiller(answerer).fill(tab, application(letter=None))
+        report = await FormFiller(answerer).fill(tab, application(letter=None), tmp_path)
 
         reasons = {f.label: f.reason for f in report.for_user}
         assert "'about 7' is not one of the options" in reasons["Years of Python"]
@@ -85,12 +90,14 @@ class TestGreenhouseEmbed:
         assert reasons[WHY] == "the CV doesn't answer it"
 
 
-async def test_lever_fills_by_name_and_leaves_dropdowns_and_pay(page: tuple[Page, Traffic]) -> None:
+async def test_lever_fills_by_name_and_leaves_dropdowns_and_pay(
+    page: tuple[Page, Traffic], tmp_path: Path
+) -> None:
     tab, _ = page
     await tab.goto("https://jobs.lever.co/acme/1234/apply")
     answerer = ScriptedAnswerer({"Preferred work mode": "Remote"})
 
-    report = await FormFiller(answerer).fill(tab, application())
+    report = await FormFiller(answerer).fill(tab, application(), tmp_path)
 
     assert report.ats == "lever"
     assert await tab.input_value("input[name=name]") == "Max Example"
@@ -102,22 +109,24 @@ async def test_lever_fills_by_name_and_leaves_dropdowns_and_pay(page: tuple[Page
     assert reasons["Current company"] == "your profile has no current company"
 
 
-async def test_workday_is_left_to_the_applicant(page: tuple[Page, Traffic]) -> None:
+async def test_workday_is_left_to_the_applicant(page: tuple[Page, Traffic], tmp_path: Path) -> None:
     tab, _ = page
     await tab.goto("https://acme.wd3.myworkdayjobs.com/en-US/careers/job/1")
 
-    report = await FormFiller(ScriptedAnswerer({})).fill(tab, application())
+    report = await FormFiller(ScriptedAnswerer({})).fill(tab, application(), tmp_path)
 
     assert report.filled == []
     assert "account per employer" in report.for_user[0].reason
     assert await tab.locator(f"[{MARK}]").count() == 0
 
 
-async def test_a_form_that_submits_itself_is_stopped(page: tuple[Page, Traffic]) -> None:
+async def test_a_form_that_submits_itself_is_stopped(
+    page: tuple[Page, Traffic], tmp_path: Path
+) -> None:
     tab, traffic = page
     await tab.goto("https://careers.acme.example/apply")
 
-    report = await FormFiller(ScriptedAnswerer({"Team": "Data"})).fill(tab, application())
+    report = await FormFiller(ScriptedAnswerer({"Team": "Data"})).fill(tab, application(), tmp_path)
     # The page's submit used to start after the guard was gone; give it time to show up.
     await tab.wait_for_timeout(500)
 
@@ -127,10 +136,12 @@ async def test_a_form_that_submits_itself_is_stopped(page: tuple[Page, Traffic])
     assert tab.url == "https://careers.acme.example/apply"
 
 
-async def test_the_guard_is_gone_when_the_applicant_submits(page: tuple[Page, Traffic]) -> None:
+async def test_the_guard_is_gone_when_the_applicant_submits(
+    page: tuple[Page, Traffic], tmp_path: Path
+) -> None:
     tab, traffic = page
     await tab.goto("https://jobs.lever.co/acme/1234/apply")
-    await FormFiller(ScriptedAnswerer({})).fill(tab, application())
+    await FormFiller(ScriptedAnswerer({})).fill(tab, application(), tmp_path)
 
     await tab.click("text=Submit")
     await tab.wait_for_load_state()
@@ -140,12 +151,13 @@ async def test_the_guard_is_gone_when_the_applicant_submits(page: tuple[Page, Tr
 
 async def test_fields_the_page_hides_are_neither_asked_nor_filled(
     page: tuple[Page, Traffic],
+    tmp_path: Path,
 ) -> None:
     tab, _ = page
     await tab.goto("https://careers.acme.example/jobs/2")
     answerer = ScriptedAnswerer({"Why Acme?": "Pricing.", "Open to relocation?": "yes"})
 
-    report = await FormFiller(answerer).fill(tab, application())
+    report = await FormFiller(answerer).fill(tab, application(), tmp_path)
 
     [asked] = answerer.asked
     assert [q.label for q in asked.questions] == ["Open to relocation?", "Why Acme?"]
@@ -176,13 +188,13 @@ class TestTimeLimits:
             await asyncio.wait_for(SafeActor(tab.main_frame).fill(name, "Max"), timeout=5)
 
     async def test_fields_left_when_the_budget_runs_out_go_to_the_applicant(
-        self, page: tuple[Page, Traffic], monkeypatch: pytest.MonkeyPatch
+        self, page: tuple[Page, Traffic], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(filler, "FILL_SECONDS", 0.0)
         tab, _ = page
         await tab.goto("https://jobs.lever.co/acme/1234/apply")
 
-        report = await FormFiller(ScriptedAnswerer({})).fill(tab, application())
+        report = await FormFiller(ScriptedAnswerer({})).fill(tab, application(), tmp_path)
 
         assert report.filled == []
         reasons = {f.label: f.reason for f in report.for_user}
@@ -190,14 +202,14 @@ class TestTimeLimits:
         assert await tab.input_value("input[name=name]") == ""
 
     async def test_the_answerer_thinking_does_not_use_up_the_budget(
-        self, page: tuple[Page, Traffic], monkeypatch: pytest.MonkeyPatch
+        self, page: tuple[Page, Traffic], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(filler, "FILL_SECONDS", 1.0)
         tab, _ = page
         await tab.goto("https://jobs.lever.co/acme/1234/apply")
         answerer = SlowAnswerer({"Preferred work mode": "Remote"}, delay=1.5)
 
-        report = await FormFiller(answerer).fill(tab, application())
+        report = await FormFiller(answerer).fill(tab, application(), tmp_path)
 
         assert "Preferred work mode" in {f.label for f in report.filled}
         assert await tab.is_checked("input[value=remote]")

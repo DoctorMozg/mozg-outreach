@@ -4,6 +4,8 @@ import asyncio
 import contextlib
 import logging
 import re
+import shutil
+import tempfile
 from pathlib import Path
 
 from playwright.async_api import BrowserContext, Page, Playwright, async_playwright
@@ -50,6 +52,8 @@ class ApplyBrowser:
         self._context: BrowserContext | None = None
         self._pages: dict[int, Page] = {}
         self._watchers: dict[int, asyncio.Task[None]] = {}
+        # The browser reads an upload from disk when the form is sent, so files live with the tab.
+        self._files: dict[int, Path] = {}
 
     async def prepare(
         self, item_id: int, url: str, application: Application, agents: ApplyAgents, on_sent: OnSent
@@ -58,9 +62,10 @@ class ApplyBrowser:
         context = await self._started()
         page = await context.new_page()
         self._pages[item_id] = page
+        files = self._files[item_id] = Path(tempfile.mkdtemp(prefix=f"mozg-apply-{item_id}-"))
         await _open(page, url)
         found = [] if await has_form(page) else await _find_form(page, application, agents.finder)
-        report = await FormFiller(agents.answerer).fill(page, application)
+        report = await FormFiller(agents.answerer).fill(page, application, files)
         report = report.model_copy(update={"concerns": [*found, *report.concerns]})
         await page.bring_to_front()
         self._watchers[item_id] = asyncio.create_task(self._watch(item_id, page, on_sent))
@@ -73,9 +78,13 @@ class ApplyBrowser:
         page = self._pages.pop(item_id, None)
         if page is not None and not page.is_closed():
             await page.close()
+        files = self._files.pop(item_id, None)
+        if files is not None:
+            shutil.rmtree(files)
 
     async def stop(self) -> None:
-        for item_id in list(self._pages):
+        # A closed window drops its pages, but their files still wait here.
+        for item_id in self._pages.keys() | self._files.keys():
             await self.close(item_id)
         async with self._lock:
             if self._context is not None:

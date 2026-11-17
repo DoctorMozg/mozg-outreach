@@ -1,4 +1,5 @@
 import asyncio
+import tempfile
 import threading
 import time
 from collections.abc import Iterator
@@ -85,6 +86,28 @@ async def test_a_job_page_opens_its_apply_link_before_filling(pages: str, tmp_pa
 
         assert report.url == f"{pages}/spa_form.html"
         assert [f.label for f in report.filled] == ["Full name", "Email"]
+    finally:
+        await browser.stop()
+
+
+async def test_uploads_stay_on_disk_until_the_application_closes(
+    pages: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    temp = tmp_path / "tmp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
+    browser = ApplyBrowser(tmp_path / "profile", headless=True)
+    try:
+        report = await browser.prepare(
+            12, f"{pages}/upload_form.html", application(), agents(), print
+        )
+        assert "Resume/CV" in {f.label for f in report.filled}
+        [files] = temp.iterdir()
+        assert (files / "Max Example CV.pdf").read_bytes() == application().cv_pdf
+
+        await browser.close(12)
+
+        assert not files.exists()
     finally:
         await browser.stop()
 

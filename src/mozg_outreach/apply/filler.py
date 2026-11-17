@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import re
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,7 +45,8 @@ class FormFiller:
     def __init__(self, answerer: Answerer) -> None:
         self._answerer = answerer
 
-    async def fill(self, page: Page, application: Application) -> FillReport:
+    async def fill(self, page: Page, application: Application, files: Path) -> FillReport:
+        """Fills the form; uploads are written to `files`, which must outlive the submit."""
         ats, frame = await locate_form(page)
         if ats.manual:
             return FillReport(
@@ -65,10 +65,9 @@ class FormFiller:
         fields = await scan(frame)
         logger.info("%s form at %s: %d fields", ats.name, page.url, len(fields))
         run = _Fill(SafeActor(frame), application)
-        with tempfile.TemporaryDirectory(prefix="mozg-apply-") as files:
-            async with SubmitGuard(page, frame) as guard:
-                questions = await run.standard(fields, ats, Path(files))
-                await run.answers(questions, self._answerer)
+        async with SubmitGuard(page, frame) as guard:
+            questions = await run.standard(fields, ats, files)
+            await run.answers(questions, self._answerer)
         concerns = run.concerns + [
             f"Blocked a submission while filling: {b}" for b in guard.blocked
         ]
