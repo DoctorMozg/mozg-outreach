@@ -83,6 +83,7 @@ class ApproachRequest(BaseModel):
     blocked: Blocklist = Field(
         default_factory=Blocklist, description="Addresses that bounced or asked to stop."
     )
+    feedback: str | None = Field(default=None, description="The user's notes for this plan.")
 
 
 class SequenceClosedError(ValueError):
@@ -429,6 +430,7 @@ class ApproachPlanner:
             done=done,
             days_since_start=today,
             history=history,
+            feedback=request.feedback,
         )
         raw = await self._steps.run("biz", "outreach-approach-planner", payload, ApproachPlan)
         angles = [a.name for a in strategy.outreach_angles]

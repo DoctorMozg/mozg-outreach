@@ -251,6 +251,15 @@ class IdentifierOut(Row):
     value: str
 
 
+class RejectedOut(Row):
+    """An identifier a search showed to be someone else's, with the page that showed it."""
+
+    kind: IdentifierKind
+    value: str
+    source_url: str
+    quote: str
+
+
 class SightingOut(Row):
     source_kind: str
     source_url: str
@@ -287,6 +296,7 @@ class EntityOut(Row):
 class EntityDetail(EntityOut):
     profile: JsonObject
     identifiers: list[IdentifierOut]
+    rejected: list[RejectedOut]
     sightings: list[SightingOut]
     relations: list[RelationOut]
     leads: list[LeadOut]

@@ -272,3 +272,28 @@ class TestSequenceState:
         current = await steps.state(item_id)
 
         assert (current["state"], current["due"]) == ("active", "2026-11-05")
+
+
+class TestReplanNote:
+    @pytest.mark.parametrize(
+        ("body", "feedback"),
+        [
+            (
+                {"feedback": "  Lead with the COO, skip LinkedIn.  "},
+                "Lead with the COO, skip LinkedIn.",
+            ),
+            ({"feedback": "   "}, None),
+            (None, None),
+        ],
+        ids=["note", "blank-note", "no-body"],
+    )
+    async def test_the_note_goes_to_the_re_plan_run(
+        self, steps: Steps, body: JsonObject | None, feedback: str | None
+    ) -> None:
+        item_id = await steps.company()
+
+        run = await steps.api.ok("POST", f"/api/items/{item_id}/approach", body)
+
+        state = run["state"]
+        assert isinstance(state, dict)
+        assert state.get("feedback") == feedback

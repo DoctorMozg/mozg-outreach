@@ -4,9 +4,11 @@ from datetime import date, datetime, time
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from mozg_outreach.api.routes.runs import run_out
 from mozg_outreach.api.schemas import (
     EntityDetail,
     EntityOut,
@@ -16,19 +18,25 @@ from mozg_outreach.api.schemas import (
     IdentifierOut,
     LeadOut,
     MergeSuggestionOut,
+    RejectedOut,
     RelationOut,
+    RunOut,
     SightingOut,
 )
 from mozg_outreach.api.services import Services, get_or_404, services
 from mozg_outreach.domain import EntityKind
 from mozg_outreach.registry.suggestions import MergeSuggester
+from mozg_outreach.runs.entities import ENTITY_RESEARCH
 from mozg_outreach.storage.models import (
     Entity,
     EntityIdentifier,
     Item,
     ItemLink,
     MergeSuggestion,
+    Project,
+    RejectedIdentifier,
     Relation,
+    Run,
     Sighting,
 )
 from mozg_outreach.storage.repositories import InteractionRepository, ItemRepository, ReportFilter
@@ -107,6 +115,12 @@ async def get_entity(entity_id: int, svc: Svc) -> EntityDetail:
                         select(EntityIdentifier).where(EntityIdentifier.entity_id == entity_id)
                     )
                 ],
+                "rejected": [
+                    RejectedOut.model_validate(r)
+                    for r in session.scalars(
+                        select(RejectedIdentifier).where(RejectedIdentifier.entity_id == entity_id)
+                    )
+                ],
                 "sightings": [
                     SightingOut.model_validate(s)
                     for s in session.scalars(
@@ -128,6 +142,56 @@ async def get_entity(entity_id: int, svc: Svc) -> EntityDetail:
                 ],
             }
         )
+
+
+class ResearchIn(BaseModel):
+    note: str | None = Field(default=None, max_length=2000)
+
+
+@router.post("/entities/{entity_id}/research", status_code=202)
+async def research_entity(entity_id: int, svc: Svc, body: ResearchIn | None = None) -> RunOut:
+    """Search again for this person or company; the note steers the search."""
+    with svc.db.session() as session:
+        get_or_404(session, Entity, entity_id)
+        project_id = _home_project(session, entity_id)
+        open_run = next(
+            (
+                r.id
+                for r in session.scalars(
+                    select(Run).where(Run.pipeline == ENTITY_RESEARCH, Run.finished_at.is_(None))
+                )
+                if r.state.get("entity_id") == entity_id
+            ),
+            None,
+        )
+    if open_run is not None:
+        raise HTTPException(409, f"run {open_run} is still searching for this entity")
+    note = body.note.strip() if body and body.note else None
+    state: dict[str, object] = {"entity_id": entity_id}
+    if note:
+        state["note"] = note
+    return run_out(svc, svc.runs.start(project_id, ENTITY_RESEARCH, state))
+
+
+def _home_project(session: Session, entity_id: int) -> int:
+    """Runs belong to a project; an entity's is where it was last seen, else the newest one."""
+    seen = session.scalar(
+        select(Sighting.project_id)
+        .where(Sighting.entity_id == entity_id, Sighting.project_id.is_not(None))
+        .order_by(Sighting.seen_at.desc())
+        .limit(1)
+    )
+    linked = session.scalar(
+        select(Item.project_id)
+        .join(ItemLink, ItemLink.item_id == Item.id)
+        .where(ItemLink.entity_id == entity_id)
+        .limit(1)
+    )
+    newest = session.scalar(select(Project.id).order_by(Project.id.desc()).limit(1))
+    project_id = seen or linked or newest
+    if project_id is None:
+        raise HTTPException(409, "create a project first; searches run inside one")
+    return project_id
 
 
 class GraphBuilder:

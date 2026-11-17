@@ -111,6 +111,7 @@ export function RunView({ id }: { id: number }): ReactElement {
   const r = run.data;
   if (!r) return <ErrorBox error={run.error} />;
   const itemId = typeof r.state.item_id === "number" ? r.state.item_id : null;
+  const entityId = typeof r.state.entity_id === "number" ? r.state.entity_id : null;
   const stopped = r.status === "failed" || r.status === "cancelled";
 
   return (
@@ -128,6 +129,11 @@ export function RunView({ id }: { id: number }): ReactElement {
         {itemId !== null && (
           <Anchor href={href.item(itemId)} size="sm">
             Lead
+          </Anchor>
+        )}
+        {entityId !== null && (
+          <Anchor href={href.entity(entityId)} size="sm">
+            Profile
           </Anchor>
         )}
       </Group>

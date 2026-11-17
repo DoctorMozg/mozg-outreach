@@ -52,7 +52,7 @@ class TestRepoPrompts:
         counts: dict[str, int] = {}
         for p in prompts:
             counts[p.group] = counts.get(p.group, 0) + 1
-        assert counts == {"biz": 14, "creative": 4, "seeker": 10, "shared": 7}
+        assert counts == {"biz": 14, "creative": 4, "seeker": 10, "shared": 8}
 
     def test_toolkits_are_registered_ones(self, prompts: list[AgentPrompt]) -> None:
         used = {p.name: p.toolkits for p in prompts if p.toolkits}

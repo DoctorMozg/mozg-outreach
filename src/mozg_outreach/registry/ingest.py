@@ -32,7 +32,7 @@ SUBJECT, CONTACT = "subject", "contact"
 class IngestContext(BaseModel):
     project_id: int
     run_id: int | None
-    item_id: int
+    item_id: int | None = Field(description="The lead to link; null for a registry search.")
 
 
 class SeenEmail(BaseModel):
@@ -77,34 +77,15 @@ class LeadIngest:
         entity = self._registry.observe(observation) if reused is None else reused
         for sighting in seen.sightings:
             self._registry.add_sighting(entity, sighting)
-        self._registry.link(context.item_id, entity, SUBJECT)
+        if context.item_id is not None:
+            self._registry.link(context.item_id, entity, SUBJECT)
         self._suggester.suggest_for(entity)
         return entity
 
     def person(self, seen: PersonSeen, company: Entity | None, context: IngestContext) -> Entity:
         """A named person becomes the lead's contact, working at `company` when it is known."""
-        email = seen.email
-        identifiers = _valid(
-            [
-                person_at_company(seen.name, self.employer_key(company)) if company else None,
-                normalize(IdentifierKind.LINKEDIN, seen.linkedin),
-                normalize(IdentifierKind.TELEGRAM, seen.telegram),
-                normalize(IdentifierKind.EMAIL, email.address)
-                if email and email.published and looks_personal(email.address, seen.name)
-                else None,
-            ]
-        )
-        fields: dict[str, FieldValue] = {}
-        if seen.title:
-            fields["title"] = FieldValue(
-                value=seen.title, source_url=seen.source_url, quote=seen.quote or None
-            )
-        if email:
-            fields["email"] = FieldValue(
-                value=email.address,
-                source_url=email.source_url,
-                confidence="unverified" if email.published else "guessed",
-            )
+        identifiers = self.person_identifiers(seen, company)
+        fields = person_fields(seen)
         sighting = sighting_at(seen.source_url, seen.quote, context)
         reused = None if identifiers else self._linked(context, CONTACT, seen.name)
         if reused is None:
@@ -121,19 +102,36 @@ class LeadIngest:
             entity = reused
             self._registry.add_sighting(entity, sighting)
         if company is not None:
-            self._registry.relate(
-                RelationInput(
-                    from_id=entity.id,
-                    to_id=company.id,
-                    type="works_at",
-                    detail=seen.title,
-                    source_url=seen.source_url,
-                    quote=seen.quote,
-                )
-            )
-        self._registry.link(context.item_id, entity, CONTACT)
+            self.works_at(entity, company, seen)
+        if context.item_id is not None:
+            self._registry.link(context.item_id, entity, CONTACT)
         self._suggester.suggest_for(entity)
         return entity
+
+    def person_identifiers(self, seen: PersonSeen, company: Entity | None) -> list[Identifier]:
+        email = seen.email
+        return _valid(
+            [
+                person_at_company(seen.name, self.employer_key(company)) if company else None,
+                normalize(IdentifierKind.LINKEDIN, seen.linkedin),
+                normalize(IdentifierKind.TELEGRAM, seen.telegram),
+                normalize(IdentifierKind.EMAIL, email.address)
+                if email and email.published and looks_personal(email.address, seen.name)
+                else None,
+            ]
+        )
+
+    def works_at(self, person: Entity, company: Entity, seen: PersonSeen) -> None:
+        self._registry.relate(
+            RelationInput(
+                from_id=person.id,
+                to_id=company.id,
+                type="works_at",
+                detail=seen.title,
+                source_url=seen.source_url,
+                quote=seen.quote,
+            )
+        )
 
     def subject(self, context: IngestContext) -> Entity | None:
         return self._session.scalar(
@@ -156,12 +154,29 @@ class LeadIngest:
 
     def _linked(self, context: IngestContext, role: str, name: str) -> Entity | None:
         """An entity this item already links under `role` by the same name, so re-runs reuse it."""
+        if context.item_id is None:
+            return None
         linked = self._session.scalars(
             select(Entity)
             .join(ItemLink, ItemLink.entity_id == Entity.id)
             .where(ItemLink.item_id == context.item_id, ItemLink.role == role)
         )
         return next((e for e in linked if name_key(e.name) == name_key(name)), None)
+
+
+def person_fields(seen: PersonSeen) -> dict[str, FieldValue]:
+    fields: dict[str, FieldValue] = {}
+    if seen.title:
+        fields["title"] = FieldValue(
+            value=seen.title, source_url=seen.source_url, quote=seen.quote or None
+        )
+    if seen.email:
+        fields["email"] = FieldValue(
+            value=seen.email.address,
+            source_url=seen.email.source_url,
+            confidence="unverified" if seen.email.published else "guessed",
+        )
+    return fields
 
 
 def sighting_at(

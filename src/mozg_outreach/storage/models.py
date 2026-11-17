@@ -300,6 +300,23 @@ class EntityIdentifier(Base):
     value: Mapped[str] = mapped_column(String(300))
 
 
+class RejectedIdentifier(Base):
+    """An identifier a search showed belongs to someone else; it never goes back on the entity."""
+
+    __tablename__ = "rejected_identifiers"
+    __table_args__ = (UniqueConstraint("entity_id", "kind", "value"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_id: Mapped[int] = mapped_column(
+        ForeignKey("entities.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[IdentifierKind]
+    value: Mapped[str] = mapped_column(String(300))
+    source_url: Mapped[str] = mapped_column(String(1000))
+    quote: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class Sighting(Base):
     """One place an entity was seen; together they are the profile's source list."""
 

@@ -1,9 +1,10 @@
 import { Alert, Anchor, Badge, Button, Card, Group, List, Stack, Text, Timeline, Title, Tooltip } from "@mantine/core";
-import { IconCheck, IconMail, IconRoute } from "@tabler/icons-react";
+import { IconCheck, IconMail } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
 import { type ReactElement } from "react";
 import { call, type ItemDetail, type PlanContact, type PlannedTouch, type Run, type StoredApproach } from "../../api";
 import { ErrorBox } from "../../components/common";
+import { NoteButton, REPLAN_NOTE } from "../../components/NoteButton";
 import { href } from "../../router";
 import { draftKey } from "./Drafts";
 
@@ -25,19 +26,17 @@ export function Approach({ item, onChange, onOpenDraft }: ApproachProps): ReactE
     onSuccess: onChange,
   });
   const replan = useMutation({
-    mutationFn: () => call<Run>("POST", `/api/items/${item.id}/approach`),
+    mutationFn: (feedback: string | null) => call<Run>("POST", `/api/items/${item.id}/approach`, { feedback }),
     onSuccess: (run) => (window.location.hash = href.run(run.id)),
   });
   const button = (
-    <Button
-      size="xs"
+    <NoteButton
+      label={approach ? "Re-plan" : "Plan the approach"}
+      text={REPLAN_NOTE}
       variant="default"
-      leftSection={<IconRoute size={14} />}
       loading={replan.isPending}
-      onClick={() => replan.mutate()}
-    >
-      {approach ? "Re-plan" : "Plan the approach"}
-    </Button>
+      onStart={(feedback) => replan.mutate(feedback)}
+    />
   );
   if (!approach) {
     return (

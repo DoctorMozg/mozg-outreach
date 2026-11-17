@@ -237,6 +237,19 @@ async def test_rewriting_a_step_the_plan_dropped_is_skipped(
     assert "expert-copywriter" not in runner.payloads
 
 
+async def test_the_users_note_reaches_the_planner(
+    item: Item, strategy: Strategy, outreach: tuple[BizOutreach, RecordedRunner]
+) -> None:
+    service, runner = outreach
+    await service.enrich(item, strategy)
+
+    await service.plan_approach(item, strategy, "Lead with the COO.")
+
+    [sent] = runner.payloads["outreach-approach-planner"]
+    assert isinstance(sent, ApproachInput)
+    assert sent.feedback == "Lead with the COO."
+
+
 async def test_replanning_rewrites_only_the_steps_not_done(
     session: Session, item: Item, strategy: Strategy, tmp_path: Path
 ) -> None:

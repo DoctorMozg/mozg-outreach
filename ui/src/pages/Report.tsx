@@ -23,10 +23,11 @@ import {
   Transition,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArchive, IconArchiveOff, IconColumns3, IconExternalLink, IconMail, IconRoute, IconSearch, IconSparkles, IconTable } from "@tabler/icons-react";
+import { IconArchive, IconArchiveOff, IconColumns3, IconExternalLink, IconMail, IconSearch, IconSparkles, IconTable } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, enrichHint, get, type Graph, type Item, type Project, type Run } from "../api";
+import { NoteButton, REPLAN_NOTE } from "../components/NoteButton";
 import { ActivityBadge, Empty, EnrichedBadge, EnrichIcon, ErrorBox, replanDue, Score, StepBadge, Value } from "../components/common";
 import { Duplicates } from "../components/Duplicates";
 import { GraphView } from "../components/GraphView";
@@ -355,9 +356,9 @@ function BulkBar({ project, chosen, archivedView, onStarted, onArchived }: BulkB
   const writable = chosen.filter((i) => i.kind !== "company");
   const replannable = chosen.filter((i) => i.kind === "company" && i.enriched);
   const bulk = useMutation({
-    mutationFn: async ({ action, items }: { action: "enrich" | "letters" | "approach"; items: Item[] }) => {
+    mutationFn: async ({ action, items, body }: { action: "enrich" | "letters" | "approach"; items: Item[]; body?: object }) => {
       // One run per item; the server queues them behind its run limit.
-      const results = await Promise.allSettled(items.map((i) => call("POST", `/api/items/${i.id}/${action}`)));
+      const results = await Promise.allSettled(items.map((i) => call("POST", `/api/items/${i.id}/${action}`, body)));
       const failed = results.filter((r) => r.status === "rejected").map((r) => String((r as PromiseRejectedResult).reason));
       if (failed.length) throw new Error(failed.join("\n"));
       return items.length;
@@ -397,9 +398,12 @@ function BulkBar({ project, chosen, archivedView, onStarted, onArchived }: BulkB
                 )}
                 {!archivedView && replannable.length > 0 && (
                   <Tooltip label="Plans the approach again and writes a letter for each step not done yet">
-                    <Button size="xs" leftSection={<IconRoute size={14} />} loading={bulk.isPending} onClick={() => bulk.mutate({ action: "approach", items: replannable })}>
-                      Re-plan {replannable.length}
-                    </Button>
+                    <NoteButton
+                      label={`Re-plan ${replannable.length}`}
+                      text={REPLAN_NOTE}
+                      loading={bulk.isPending}
+                      onStart={(feedback) => bulk.mutate({ action: "approach", items: replannable, body: { feedback } })}
+                    />
                   </Tooltip>
                 )}
                 {!archivedView && writable.length > 0 && (

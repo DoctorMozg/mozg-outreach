@@ -4,7 +4,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from mozg_outreach.domain import FieldValue, IdentifierKind, SourceKind
-from mozg_outreach.pipelines.leads.models import IdentifiedCompany, LeadIdentity, SourcedFact
+from mozg_outreach.pipelines.leads.models import (
+    IdentifiedCompany,
+    LeadIdentity,
+    NamedPerson,
+    SourcedFact,
+)
 from mozg_outreach.pipelines.seeker.models import JobContacts, Listing
 from mozg_outreach.registry.identifiers import normalize
 from mozg_outreach.registry.ingest import (
@@ -16,6 +21,7 @@ from mozg_outreach.registry.ingest import (
     sighting_at,
     url_kind,
 )
+from mozg_outreach.registry.registry import SightingInput
 from mozg_outreach.sources.factory import source_kinds
 from mozg_outreach.storage.models import Entity
 
@@ -37,20 +43,7 @@ class LeadRegistryIngest:
         if identity.company is not None:
             company = self._leads.company(_company(listing, identity.company, context), context)
         for person in identity.people:
-            email = (
-                SeenEmail(address=person.email, source_url=person.source_url, published=True)
-                if person.email
-                else None
-            )
-            seen = PersonSeen(
-                name=person.name,
-                title=person.title,
-                source_url=person.source_url,
-                quote=person.quote,
-                linkedin=person.linkedin,
-                email=email,
-            )
-            self._leads.person(seen, company, context)
+            self._leads.person(person_seen(person), company, context)
         return IngestCounts(companies=int(company is not None), people=len(identity.people))
 
     def telegram_contact(self, listing: Listing, context: IngestContext) -> Entity | None:
@@ -93,7 +86,25 @@ class LeadRegistryIngest:
         return self._leads.person(seen, company, context)
 
 
-def _company(listing: Listing, company: IdentifiedCompany, context: IngestContext) -> CompanySeen:
+def person_seen(person: NamedPerson) -> PersonSeen:
+    """A checked person as the registry takes them: an email here is one a page shows."""
+    email = (
+        SeenEmail(address=person.email, source_url=person.source_url, published=True)
+        if person.email
+        else None
+    )
+    return PersonSeen(
+        name=person.name,
+        title=person.title,
+        source_url=person.source_url,
+        quote=person.quote,
+        linkedin=person.linkedin,
+        email=email,
+    )
+
+
+def company_seen(company: IdentifiedCompany, sightings: list[SightingInput]) -> CompanySeen:
+    """A checked company as the registry takes it: domain and LinkedIn identify it."""
     facts: dict[str, SourcedFact | None] = {
         "domain": company.domain,
         "sector": company.sector,
@@ -109,6 +120,15 @@ def _company(listing: Listing, company: IdentifiedCompany, context: IngestContex
         normalize(IdentifierKind.DOMAIN, company.domain.value if company.domain else None),
         normalize(IdentifierKind.LINKEDIN, company.linkedin.value if company.linkedin else None),
     ]
+    return CompanySeen(
+        name=company.name,
+        identifiers=[i for i in identifiers if i is not None],
+        fields=fields,
+        sightings=sightings,
+    )
+
+
+def _company(listing: Listing, company: IdentifiedCompany, context: IngestContext) -> CompanySeen:
     # One sighting per page: listing pages keep the listing's source kind, and the page that
     # confirms the company carries its quote.
     listing_urls = [listing.url, *listing.merged_urls]
@@ -119,12 +139,7 @@ def _company(listing: Listing, company: IdentifiedCompany, context: IngestContex
         sighting_at(url, quote, context, kind if url in listing_urls else None)
         for url, quote in pages.items()
     ]
-    return CompanySeen(
-        name=company.name,
-        identifiers=[i for i in identifiers if i is not None],
-        fields=fields,
-        sightings=sightings,
-    )
+    return company_seen(company, sightings)
 
 
 def listing_kind(listing: Listing) -> SourceKind:

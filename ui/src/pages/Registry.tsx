@@ -1,10 +1,11 @@
 import { Anchor, Badge, Button, Card, Group, SegmentedControl, Stack, Table, Text, TextInput, Title } from "@mantine/core";
-import { IconBuilding, IconSearch, IconUser } from "@tabler/icons-react";
+import { IconBuilding, IconSearch, IconUser, IconWorldSearch } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
-import { call, type Entity, type EntityDetail, get, type Graph, type MergeSuggestion } from "../api";
+import { call, type Entity, type EntityDetail, get, type Graph, type MergeSuggestion, type Run } from "../api";
 import { ActivityBadge, Empty, ErrorBox, Value } from "../components/common";
 import { GraphView } from "../components/GraphView";
+import { NoteButton, type NoteText } from "../components/NoteButton";
 import { href } from "../router";
 
 function KindBadge({ kind }: { kind: Entity["kind"] }): ReactElement {
@@ -173,25 +174,54 @@ function Merges(): ReactElement | null {
   );
 }
 
+const RESEARCH_NOTE: NoteText = {
+  prompt: "Anything to look out for?",
+  description: "Optional, e.g. the LinkedIn is someone else's, they moved to Acme, look for the CTO.",
+  footer: "A LinkedIn or website shown to be someone else's is removed for good.",
+};
+
 export function EntityView({ id }: { id: number }): ReactElement {
   const entity = useQuery({ queryKey: ["entity", id], queryFn: () => get<EntityDetail>(`/api/entities/${id}`) });
   const [depth, setDepth] = useState("1");
   const graph = useQuery({ queryKey: ["graph", "entity", id, depth], queryFn: () => get<Graph>(`/api/graph?entity_id=${id}&depth=${depth}`) });
+  const research = useMutation({
+    mutationFn: (note: string | null) => call<Run>("POST", `/api/entities/${id}/research`, { note }),
+    onSuccess: (run) => (window.location.hash = href.run(run.id)),
+  });
   const e = entity.data;
   if (!e) return <ErrorBox error={entity.error} />;
   const profileRows = [
     ...e.identifiers.map((i) => ({ key: `id-${i.kind}-${i.value}`, name: i.kind, value: <Text size="sm">{i.value}</Text> })),
     ...Object.entries(e.profile).map(([name, field]) => ({ key: name, name, value: <Value field={field} /> })),
+    ...e.rejected.map((r) => ({
+      key: `rejected-${r.kind}-${r.value}`,
+      name: `not ${r.kind}`,
+      value: (
+        <Text size="sm" c="dimmed">
+          <Text span td="line-through">
+            {r.value}
+          </Text>{" "}
+          "{r.quote}"
+          <Anchor href={r.source_url} target="_blank" rel="noreferrer noopener" size="xs" ml={6}>
+            source
+          </Anchor>
+        </Text>
+      ),
+    })),
   ];
   return (
     <Stack maw={1200} mx="auto">
       <Anchor href={href.registry()} size="sm">
         People and companies
       </Anchor>
-      <Group gap="sm">
-        <Title order={2}>{e.name}</Title>
-        <KindBadge kind={e.kind} />
+      <Group justify="space-between">
+        <Group gap="sm">
+          <Title order={2}>{e.name}</Title>
+          <KindBadge kind={e.kind} />
+        </Group>
+        <NoteButton label="Search again" text={RESEARCH_NOTE} icon={<IconWorldSearch size={14} />} loading={research.isPending} onStart={(note) => research.mutate(note)} />
       </Group>
+      {research.error && <ErrorBox error={research.error} />}
       {profileRows.length > 0 && (
         <Card>
           <Title order={4} mb="sm">

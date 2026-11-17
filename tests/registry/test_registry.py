@@ -195,3 +195,63 @@ def test_relation_to_self_is_rejected(registry: EntityRegistry) -> None:
     anna = registry.observe(person("Anna Kask"))
     with pytest.raises(ValueError, match="itself"):
         registry.relate(RelationInput(from_id=anna.id, to_id=anna.id, type="knows"))
+
+
+class TestReject:
+    WRONG = "https://linkedin.com/in/anna-kask-nurse"
+    PROOF = ("https://linkedin.com/in/anna-kask-nurse", "Anna Kask - Nurse at Tartu Clinic")
+
+    def identifiers(self, session: Session, entity: Entity) -> set[str]:
+        rows = session.scalars(
+            select(EntityIdentifier.value).where(EntityIdentifier.entity_id == entity.id)
+        )
+        return set(rows)
+
+    def test_a_rejected_identifier_leaves_and_never_comes_back(
+        self, registry: EntityRegistry, session: Session
+    ) -> None:
+        wrong = ident(IdentifierKind.LINKEDIN, self.WRONG)
+        anna = registry.observe(person("Anna Kask", wrong))
+
+        assert registry.reject(anna, wrong, *self.PROOF)
+        registry.attach(anna, [wrong])
+        again = registry.observe(person("Anna Kask", wrong))
+
+        assert self.identifiers(session, anna) == set()
+        assert registry.rejected(anna.id) == [wrong]
+        # A later sighting with the wrong profile becomes its own entity, not Anna again.
+        assert again.id != anna.id
+
+    def test_rejecting_what_the_entity_lacks_changes_nothing(
+        self, registry: EntityRegistry, session: Session
+    ) -> None:
+        anna = registry.observe(person("Anna Kask"))
+
+        assert not registry.reject(anna, ident(IdentifierKind.LINKEDIN, self.WRONG), *self.PROOF)
+        assert registry.rejected(anna.id) == []
+
+    def test_a_merge_keeps_the_dropped_entitys_rejections(
+        self, registry: EntityRegistry, session: Session
+    ) -> None:
+        wrong = ident(IdentifierKind.LINKEDIN, self.WRONG)
+        keep = registry.observe(person("Anna Kask", ident(IdentifierKind.EMAIL, "anna@acme.io")))
+        drop = registry.observe(person("A. Kask", wrong))
+        registry.reject(drop, wrong, *self.PROOF)
+
+        registry.merge(keep, drop)
+        registry.attach(keep, [wrong])
+
+        assert registry.rejected(keep.id) == [wrong]
+        assert self.identifiers(session, keep) == {"anna@acme.io"}
+
+
+def test_refresh_replaces_values_and_keeps_the_rest(registry: EntityRegistry) -> None:
+    anna = registry.observe(person("Anna Kask", title="Engineer", location="Tallinn"))
+
+    registry.refresh(anna, {"title": FieldValue(value="CTO", source_url="https://acme.io/about")})
+
+    values = {k: FieldValue.model_validate(v).value for k, v in anna.profile.items()}
+    assert values == {
+        "title": "CTO",
+        "location": "Tallinn",
+    }

@@ -303,6 +303,7 @@ const PIPELINE_LABELS: Record<string, string> = {
   fields: "Field proposal",
   enrich: "Enrich lead",
   letters: "Write letters",
+  research: "Search again",
 };
 
 export function pipelineLabel(pipeline: string): string {

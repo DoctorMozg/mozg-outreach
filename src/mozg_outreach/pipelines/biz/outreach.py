@@ -101,8 +101,10 @@ class BizOutreach:
         logger.info("enriched %s: %d concerns", item.title, len(dossier.concerns))
         return dossier
 
-    async def plan_approach(self, item: Item, strategy: Strategy) -> StoredApproach:
-        """Plan who to contact, how and when, from the stored dossier."""
+    async def plan_approach(
+        self, item: Item, strategy: Strategy, feedback: str | None = None
+    ) -> StoredApproach:
+        """Plan who to contact, how and when, from the stored dossier and the user's notes."""
         if DOSSIER not in item.details:
             raise ValueError(f"item {item.id} is not enriched yet; enrich it before planning")
         project = self._session.get(Project, item.project_id)
@@ -121,6 +123,7 @@ class BizOutreach:
                 if APPROACH in item.details
                 else None,
                 logged=logged(InteractionRepository(self._session).history(item.id)),
+                feedback=feedback,
             )
         )
         if _in(item, GERMANY_PLACES):

@@ -127,7 +127,9 @@ async def biz_approach(ctx: Ctx) -> PhaseResult:
     strategy = Strategy.model_validate(state["strategy"])
     with ctx.db.session() as session:
         item = _row(session, ctx.state.item_id)
-        approach = await BizOutreach(session, ctx.steps).plan_approach(item, strategy)
+        approach = await BizOutreach(session, ctx.steps).plan_approach(
+            item, strategy, ctx.state.feedback
+        )
     ctx.state.concerns += approach.plan.concerns
     ctx.emit("approach", {"touches": len(approach.plan.touches)})
     return None

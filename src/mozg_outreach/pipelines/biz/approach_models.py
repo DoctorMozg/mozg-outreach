@@ -112,6 +112,9 @@ class ApproachInput(BaseModel):
         default_factory=list,
         description="Earlier sequences that ended without a reply; a new one must differ.",
     )
+    feedback: str | None = Field(
+        default=None, description="The sender's notes on how to plan this time; null when none."
+    )
 
 
 class ApproachPlan(BaseModel):

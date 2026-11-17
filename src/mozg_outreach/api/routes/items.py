@@ -5,7 +5,7 @@ from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -125,7 +125,12 @@ def _mail(session: Session, item_id: int) -> list[MailThreadOut]:
 
 
 async def _start_item_run(
-    svc: Services, item_id: int, action: ItemActionName, *, replace: bool = False
+    svc: Services,
+    item_id: int,
+    action: ItemActionName,
+    *,
+    replace: bool = False,
+    feedback: str | None = None,
 ) -> RunOut:
     """Starts the item's run; with `replace`, an open one of the same kind is cancelled first."""
     with svc.db.session() as session:
@@ -140,7 +145,10 @@ async def _start_item_run(
             svc.runs.cancel(run_id)
             await svc.runs.wait(run_id)
     ensure_idle(svc, project.id, pipeline, item_id)
-    return run_out(svc, svc.runs.start(project.id, pipeline, {"item_id": item_id}))
+    state: dict[str, object] = {"item_id": item_id}
+    if feedback:
+        state["feedback"] = feedback
+    return run_out(svc, svc.runs.start(project.id, pipeline, state))
 
 
 @router.post("/items/{item_id}/enrich", status_code=202)
@@ -153,9 +161,14 @@ async def write_letters(item_id: int, svc: Svc) -> RunOut:
     return await _start_item_run(svc, item_id, "letters")
 
 
+class ReplanIn(BaseModel):
+    feedback: str | None = Field(default=None, max_length=2000)
+
+
 @router.post("/items/{item_id}/approach", status_code=202)
-async def plan_approach(item_id: int, svc: Svc) -> RunOut:
-    return await _start_item_run(svc, item_id, "approach")
+async def plan_approach(item_id: int, svc: Svc, body: ReplanIn | None = None) -> RunOut:
+    feedback = body.feedback.strip() if body and body.feedback else None
+    return await _start_item_run(svc, item_id, "approach", feedback=feedback or None)
 
 
 @router.post("/items/{item_id}/approach/steps/{step}/done", status_code=201)

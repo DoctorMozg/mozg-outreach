@@ -6,13 +6,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, or_, select, tuple_
 from sqlalchemy.orm import Session
 
-from mozg_outreach.domain import EntityKind, FieldValue, SourceKind
+from mozg_outreach.domain import EntityKind, FieldValue, IdentifierKind, SourceKind
 from mozg_outreach.registry.identifiers import Identifier
 from mozg_outreach.storage.models import (
     Entity,
     EntityIdentifier,
     ItemLink,
     MergeSuggestion,
+    RejectedIdentifier,
     Relation,
     Sighting,
 )
@@ -68,8 +69,18 @@ class EntityRegistry:
         self._session.flush()
         return entity
 
+    def refresh(self, entity: Entity, fields: dict[str, FieldValue]) -> None:
+        """A search the user asked for: its sourced values replace what the profile had."""
+        fresh = {k: v.model_dump(mode="json") for k, v in fields.items() if v.value is not None}
+        entity.profile = {**entity.profile, **fresh}
+        self._session.flush()
+
     def attach(self, entity: Entity, identifiers: list[Identifier]) -> Entity:
-        """Give `entity` these identifiers, merging in any other entity that already has one."""
+        """Give `entity` these identifiers, merging in any other entity that already has one.
+
+        An identifier once shown to be someone else's is skipped, so no source adds it back."""
+        rejected = self._rejected(entity.id)
+        identifiers = [i for i in identifiers if (i.kind, i.value) not in rejected]
         for owner in self._owners(identifiers):
             if owner.id == entity.id:
                 continue
@@ -98,6 +109,41 @@ class EntityRegistry:
                 )
         self._session.flush()
         return entity
+
+    def reject(self, entity: Entity, identifier: Identifier, source_url: str, quote: str) -> bool:
+        """Take an identifier off `entity` for good; False when the entity didn't have it."""
+        row = self._session.scalar(
+            select(EntityIdentifier).where(
+                EntityIdentifier.entity_id == entity.id,
+                EntityIdentifier.kind == identifier.kind,
+                EntityIdentifier.value == identifier.value,
+            )
+        )
+        if row is None:
+            return False
+        self._session.delete(row)
+        if (identifier.kind, identifier.value) not in self._rejected(entity.id):
+            self._session.add(
+                RejectedIdentifier(
+                    entity_id=entity.id,
+                    kind=identifier.kind,
+                    value=identifier.value,
+                    source_url=source_url,
+                    quote=quote,
+                )
+            )
+        self._session.flush()
+        logger.info(
+            "registry: %s %s is not %s %d",
+            identifier.kind,
+            identifier.value,
+            entity.kind,
+            entity.id,
+        )
+        return True
+
+    def rejected(self, entity_id: int) -> list[Identifier]:
+        return [Identifier(kind=k, value=v) for k, v in sorted(self._rejected(entity_id))]
 
     def add_sighting(self, entity: Entity, sighting: SightingInput) -> None:
         if not self._has_sighting(entity.id, sighting.source_url, sighting.quote):
@@ -156,6 +202,16 @@ class EntityRegistry:
             else:
                 sighting.entity_id = keep.id
         self._move_relations(keep.id, drop.id)
+        known = self._rejected(keep.id)
+        for row in list(
+            self._session.scalars(
+                select(RejectedIdentifier).where(RejectedIdentifier.entity_id == drop.id)
+            )
+        ):
+            if (row.kind, row.value) in known:
+                self._session.delete(row)
+            else:
+                row.entity_id = keep.id
         for link in list(
             self._session.scalars(select(ItemLink).where(ItemLink.entity_id == drop.id))
         ):
@@ -191,6 +247,14 @@ class EntityRegistry:
                 .distinct()
             )
         )
+
+    def _rejected(self, entity_id: int) -> set[tuple[IdentifierKind, str]]:
+        rows = self._session.execute(
+            select(RejectedIdentifier.kind, RejectedIdentifier.value).where(
+                RejectedIdentifier.entity_id == entity_id
+            )
+        )
+        return {(kind, value) for kind, value in rows}
 
     def _has_sighting(self, entity_id: int, source_url: str, quote: str) -> bool:
         found = self._session.scalar(

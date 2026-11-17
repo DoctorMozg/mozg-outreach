@@ -46,7 +46,7 @@ def entities(session: Session, kind: EntityKind) -> list[Entity]:
     return list(session.scalars(select(Entity).where(Entity.kind == kind)))
 
 
-def links(session: Session, item_id: int) -> set[tuple[str, str]]:
+def links(session: Session, item_id: int | None) -> set[tuple[str, str]]:
     rows = session.execute(
         select(ItemLink.role, Entity.name)
         .join(Entity, Entity.id == ItemLink.entity_id)

@@ -67,14 +67,14 @@ def lead_input(listing: Listing, summary: str, hidden: frozenset[str] = frozense
 def accept_identity(identity: LeadIdentity) -> LeadIdentity:
     """Keep only facts the cited page shows: a domain on its own page, names and emails quoted."""
     concerns = list(identity.concerns)
-    company = _accept_company(identity.company, concerns) if identity.company else None
-    people = [p for p in (_accept_person(p, concerns) for p in identity.people) if p is not None]
+    company = accept_company(identity.company, concerns) if identity.company else None
+    people = [p for p in (accept_person(p, concerns) for p in identity.people) if p is not None]
     if len(concerns) > len(identity.concerns):
         logger.info("lead identity: %d facts dropped", len(concerns) - len(identity.concerns))
     return LeadIdentity(company=company, people=people, concerns=concerns)
 
 
-def _accept_company(company: IdentifiedCompany, concerns: list[str]) -> IdentifiedCompany:
+def accept_company(company: IdentifiedCompany, concerns: list[str]) -> IdentifiedCompany:
     domain, linkedin = company.domain, company.linkedin
     if domain is not None:
         host = normalize_domain(domain.value)
@@ -92,7 +92,7 @@ def _accept_company(company: IdentifiedCompany, concerns: list[str]) -> Identifi
     return company.model_copy(update={"domain": domain, "linkedin": linkedin})
 
 
-def _accept_person(person: NamedPerson, concerns: list[str]) -> NamedPerson | None:
+def accept_person[TPerson: NamedPerson](person: TPerson, concerns: list[str]) -> TPerson | None:
     quote = _plain(person.quote)
     if _plain(person.name) not in quote:
         concerns.append(f"Dropped {person.name}: the quote doesn't name them.")

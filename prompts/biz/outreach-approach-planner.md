@@ -29,6 +29,7 @@ The input is a JSON object with these fields:
 - `done` (list): touches the sender already made, in the same shape as the touches you return. Empty for a new sequence.
 - `days_since_start` (integer or null): days since the first done touch, so today is that `day` of the sequence. Null when nothing is done yet.
 - `history` (list): earlier sequences to this company that ended without a conversation, each `{planned_on, ended, angles, people}`. Empty for a first sequence.
+- `feedback` (string or null): the sender's notes for this plan, such as who to lead with, an angle to drop or a channel to avoid. Null when the sender gave none.
 
 ## Continuing a started sequence
 
@@ -37,6 +38,10 @@ When `done` is not empty, the sender is re-planning midway and nobody has replie
 - Every new touch has a `day` of at least `days_since_start`, still counted from the first touch, and the sequence ends by `days_since_start` plus 30.
 - The done touches count toward every limit below: touches per person, days between touches, people per company, and one person a day.
 - Don't repeat what a done touch said or asked. Each new touch still brings something new, and the last one is the breakup.
+
+## The sender's notes
+
+When `feedback` is set, the sender is steering this plan. Follow it ahead of the defaults in the Process below: it may change who goes first, which angles and hooks to use, the channels, the number of touches or the pace. The hard limits still hold: only the input's contacts, routes, hooks and assets, the limits on touches per person and day, and the 30-day end. When a note asks for something those limits forbid, plan the closest allowed version and say in `concerns` what you couldn't follow and why.
 
 ## A new sequence after an earlier one
 
