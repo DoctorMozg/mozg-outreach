@@ -3,8 +3,9 @@
 import asyncio
 import json
 import logging
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import TypedDict
 
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Frame, Locator, Page, Route
@@ -12,7 +13,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from pydantic import TypeAdapter
 
 from mozg_outreach.apply.ats import GENERIC, Ats, ats_for
-from mozg_outreach.apply.models import FormField, PageControl
+from mozg_outreach.apply.models import FieldOption, FormField, PageControl
 
 logger = logging.getLogger(__name__)
 
@@ -23,18 +24,41 @@ APPLY_LINK_SCRIPT = (Path(__file__).parent / "apply_link.js").read_text(encoding
 CONTROLS_SCRIPT = (Path(__file__).parent / "controls.js").read_text(encoding="utf-8")
 CONTROL_MARK = "data-mozg-control"
 TICK_SCRIPT = "(el, on) => { if (el.checked !== on) el.click(); return el.checked; }"
-_FIELDS = TypeAdapter(list[FormField])
-_CONTROLS = TypeAdapter(list[PageControl])
+# The open list of a custom dropdown, which it names in aria-controls (React Select does).
+LIST_SCRIPT = """(el) => {
+  const id = el.getAttribute("aria-controls") || el.getAttribute("aria-owns");
+  const list = id && document.getElementById(id);
+  if (!list) return null;
+  const options = [...list.querySelectorAll("[role=option]")]
+    .map((o) => (o.innerText || o.textContent).replace(/\\s+/g, " ").trim());
+  return { id, multiple: list.getAttribute("aria-multiselectable") === "true", options };
+}"""
 # A field that isn't editable within this is left to the applicant instead of stalling the fill.
 ACTION_MS = 5_000
 SCRIPT_SECONDS = 10.0
 # A tab renders its form, or a button starts its navigation, within this.
 PRESS_SETTLE_MS = 1_500
 FORM_POLL_SECONDS = 0.5
+# A dropdown opens at once; one that searches as you type answers within a few seconds.
+LIST_SECONDS = 1.0
+SUGGEST_SECONDS = 5.0
+LIST_POLL_SECONDS = 0.1
+TYPED_KINDS = frozenset({"text", "email", "tel", "url", "number", "date", "textarea"})
 
 
 class FormError(RuntimeError):
     """The form could not be read or a field could not be filled."""
+
+
+class _Listing(TypedDict):
+    id: str
+    multiple: bool
+    options: list[str]
+
+
+_FIELDS = TypeAdapter(list[FormField])
+_LISTING = TypeAdapter(_Listing)
+_CONTROLS = TypeAdapter(list[PageControl])
 
 
 async def locate_form(page: Page) -> tuple[Ats, Frame]:
@@ -61,9 +85,9 @@ async def scan(frame: Frame) -> list[FormField]:
 
 
 async def has_form(page: Page) -> bool:
-    """Whether the page shows a field to type into; a lone upload button is not a form."""
+    """Whether the page shows a field to type into; an upload or a lone menu is not a form."""
     _, frame = await locate_form(page)
-    return any(f.kind != "file" for f in await scan(frame))
+    return any(f.kind in TYPED_KINDS for f in await scan(frame))
 
 
 async def wait_for_form(page: Page, seconds: float) -> bool:
@@ -132,8 +156,8 @@ async def press(page: Page, control: PageControl) -> None:
 
 
 class SafeActor:
-    """Types, picks, ticks and attaches; it never clicks a button or presses a key, so it can't
-    send the form."""
+    """Types, picks, ticks and attaches; it never clicks a button or presses Enter, so it can't
+    send the form. Arrow Down and Escape only open and close dropdowns."""
 
     def __init__(self, frame: Frame) -> None:
         self._frame = frame
@@ -156,7 +180,8 @@ class SafeActor:
             case "file":
                 raise FormError(f"{field.label!r} takes a file; use attach")
             case "combobox":
-                raise FormError(f"{field.label!r} is a custom dropdown the applicant picks")
+                for text in value.split("\n") if field.multiple else [value]:
+                    await self._choose(field, text)
             case _:
                 text = value[: field.max_length] if field.max_length else value
                 await self._do(target.fill(text, timeout=ACTION_MS), field)
@@ -165,6 +190,63 @@ class SafeActor:
         if field.kind != "file":
             raise FormError(f"{field.label!r} is not a file field")
         await self._do(self._locate(field).set_input_files(path, timeout=ACTION_MS), field)
+
+    async def listed(self, field: FormField) -> FormField:
+        """The dropdown with its options; one that only suggests as you type comes back as is."""
+        box = self._locate(field)
+        listing = await self._open(box, field, LIST_SECONDS, lambda found: bool(found["options"]))
+        await self._do(box.press("Escape", timeout=ACTION_MS), field)
+        if listing is None:
+            return field
+        options = [FieldOption(value=o, label=o) for o in listing["options"]]
+        return field.model_copy(update={"options": options, "multiple": listing["multiple"]})
+
+    async def _choose(self, field: FormField, text: str) -> None:
+        box = self._locate(field)
+        wanted = text.casefold()
+        # A listed option must match whole; a suggestion only has to contain what was typed,
+        # as "Dubai, Dubai, United Arab Emirates" does for "Dubai".
+        exact = bool(field.options)
+
+        def match(found: _Listing) -> bool:
+            return _matching(found["options"], wanted, exact) is not None
+
+        listing = await self._open(box, field, SUGGEST_SECONDS, match, typed=text)
+        index = None if listing is None else _matching(listing["options"], wanted, exact)
+        if listing is None or index is None:
+            await self._do(box.fill("", timeout=ACTION_MS), field)
+            await self._do(box.press("Escape", timeout=ACTION_MS), field)
+            raise FormError(f"{field.label!r} offered nothing matching {text!r}")
+        option = self._frame.locator(f'[id="{_css(listing["id"])}"] [role=option]').nth(index)
+        await self._do(option.click(timeout=ACTION_MS), field)
+
+    async def _open(
+        self,
+        box: Locator,
+        field: FormField,
+        seconds: float,
+        ready: Callable[[_Listing], bool],
+        typed: str | None = None,
+    ) -> _Listing | None:
+        """Opens the dropdown, types to filter it, and waits until its list is `ready`."""
+        await self._do(box.click(timeout=ACTION_MS), field)
+        if typed is not None:
+            await self._do(box.fill(typed, timeout=ACTION_MS), field)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + seconds
+        nudged = False
+        while True:
+            raw = await self._do(box.evaluate(LIST_SCRIPT, timeout=ACTION_MS), field)
+            found = None if raw is None else _LISTING.validate_python(raw)
+            if found is not None and ready(found):
+                return found
+            if loop.time() >= deadline:
+                return None
+            if found is None and not nudged:
+                # Some dropdowns open on Arrow Down rather than a click.
+                await self._do(box.press("ArrowDown", timeout=ACTION_MS), field)
+                nudged = True
+            await asyncio.sleep(LIST_POLL_SECONDS)
 
     def _locate(self, field: FormField) -> Locator:
         return self._frame.locator(f'[{MARK}="{field.id}"]').first
@@ -247,6 +329,14 @@ def _graphql_query(body: str | None) -> bool:
     return bool(texts) and all(
         isinstance(t, str) and t.lstrip().startswith(("query", "{")) for t in texts
     )
+
+
+def _matching(options: list[str], wanted: str, exact: bool) -> int | None:
+    for index, option in enumerate(options):
+        text = option.casefold()
+        if text == wanted or (not exact and wanted in text):
+            return index
+    return None
 
 
 def _css(value: str) -> str:

@@ -3,9 +3,16 @@
 import logging
 import re
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
-from mozg_outreach.apply.models import Answer, AnswerInput, AnswerSet, FormField, Question
+from mozg_outreach.apply.models import (
+    Answer,
+    AnswerInput,
+    AnswerSet,
+    FieldKind,
+    FormField,
+    Question,
+)
 from mozg_outreach.pipelines.steps import PipelineSteps
 
 logger = logging.getLogger(__name__)
@@ -27,10 +34,33 @@ class AgentAnswerer:
         return await self._steps.run("seeker", "application-answerer", request, AnswerSet)
 
 
+def choices(form_field: FormField) -> Literal["one", "many"] | None:
+    """Whether the field takes one listed option, several, or free input."""
+    listed = form_field.kind == "combobox" and bool(form_field.options)
+    if form_field.kind == "checkboxes" or (listed and form_field.multiple):
+        return "many"
+    if form_field.kind in CHOICE_KINDS or listed:
+        return "one"
+    return None
+
+
+def _asked_kind(form_field: FormField) -> FieldKind:
+    # The answerer sees a dropdown as the plain field it stands for: a pick list or typed text.
+    if form_field.kind != "combobox":
+        return form_field.kind
+    match choices(form_field):
+        case "one":
+            return "select"
+        case "many":
+            return "checkboxes"
+        case None:
+            return "text"
+
+
 def question(form_field: FormField) -> Question:
     return Question(
         id=form_field.id,
-        kind=form_field.kind,
+        kind=_asked_kind(form_field),
         label=form_field.label,
         required=form_field.required,
         options=[o.label for o in form_field.options],
@@ -49,12 +79,13 @@ def check(form_field: FormField, answer: Answer) -> Checked:
     value = answer.value.strip()
     if not value:
         return Checked(None, "empty answer")
-    if form_field.kind in CHOICE_KINDS:
+    picks = choices(form_field)
+    if picks == "one":
         for option in form_field.options:
             if value in (option.label, option.value):
                 return Checked(option.value)
         return Checked(None, f"{value!r} is not one of the options")
-    if form_field.kind == "checkboxes":
+    if picks == "many":
         picked = [line.strip() for line in value.split("\n") if line.strip()]
         by_text = {o.label: o.value for o in form_field.options} | {
             o.value: o.value for o in form_field.options

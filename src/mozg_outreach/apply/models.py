@@ -105,6 +105,7 @@ class FormField(BaseModel):
     options: list[FieldOption] = Field(default_factory=list)
     max_length: int | None = None
     filled: bool = Field(default=False, description="Has a value, from the page or its autofill.")
+    multiple: bool = Field(default=False, description="A dropdown that takes several options.")
 
 
 class ApplicantProfile(BaseModel):

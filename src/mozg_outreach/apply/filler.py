@@ -9,7 +9,7 @@ from pathlib import Path
 
 from playwright.async_api import Frame, Page
 
-from mozg_outreach.apply.answers import CHOICE_KINDS, ISO_DATE, Answerer, check, question
+from mozg_outreach.apply.answers import ISO_DATE, Answerer, check, choices, question
 from mozg_outreach.apply.ats import Ats, standard_key
 from mozg_outreach.apply.form import FormError, SafeActor, SubmitGuard, locate_form, scan
 from mozg_outreach.apply.models import (
@@ -73,6 +73,7 @@ class FormFiller:
         run = _Fill(SafeActor(frame), application)
         async with SubmitGuard(page, frame) as guard:
             fields = await run.autofill(frame, fields, files)
+            fields = [await run.listed(f) for f in fields]
             questions = await run.standard(fields, ats, files)
             await run.answers(questions, self._answerer)
         concerns = run.concerns + [
@@ -109,9 +110,6 @@ class _Fill:
                 if all(f.label != form_field.label for f in self.filled):
                     self.filled.append(FilledField(label=form_field.label, source="page"))
                 continue
-            if form_field.kind == "combobox":
-                self._leave(form_field, "a custom dropdown the service can't pick safely")
-                continue
             key = standard_key(ats, form_field)
             if key is None and form_field.kind == "file":
                 self._leave(form_field, "an upload only you can choose")
@@ -141,13 +139,26 @@ class _Fill:
         self._deadline += loop.time() - started
         return settled
 
+    async def listed(self, form_field: FormField) -> FormField:
+        """A custom dropdown with its options read, so it is answered like a select."""
+        if form_field.kind != "combobox" or form_field.filled:
+            return form_field
+        try:
+            return await self._actor.listed(form_field)
+        except FormError as exc:
+            logger.info("could not read the options of %r: %s", form_field.label, exc)
+            return form_field
+
     async def _profile_value(self, form_field: FormField, key: ProfileKey) -> bool:
         """Fills a detail the profile has in a shape the field takes; False hands it on."""
         value = self._app.profile.value(key)
         if not value:
             return False
         shown = value
-        if form_field.kind in CHOICE_KINDS:
+        picks = choices(form_field)
+        if picks == "many":
+            return False
+        if picks == "one":
             option = _option(form_field, value)
             if option is None:
                 return False
@@ -283,11 +294,19 @@ async def _settled(frame: Frame) -> list[FormField]:
 
 
 def _option(form_field: FormField, value: str) -> str | None:
+    """The option the value names, whole or as its first words ("United Arab Emirates +971")."""
     wanted = value.casefold()
-    return next(
-        (o.value for o in form_field.options if wanted in (o.label.casefold(), o.value.casefold())),
-        None,
-    )
+    exact = [
+        o.value for o in form_field.options if wanted in (o.label.casefold(), o.value.casefold())
+    ]
+    if exact:
+        return exact[0]
+    leading = [
+        o.value
+        for o in form_field.options
+        if re.match(rf"{re.escape(wanted)}\b", o.label.casefold())
+    ]
+    return leading[0] if len(leading) == 1 else None
 
 
 def _file_stem(profile: ApplicantProfile) -> str:

@@ -3,6 +3,7 @@ import base64
 import pytest
 from pydantic import ValidationError
 
+from mozg_outreach.apply import filler
 from mozg_outreach.apply.answers import check
 from mozg_outreach.apply.ats import GENERIC, GREENHOUSE, LEVER, ats_for, form_url, standard_key
 from mozg_outreach.apply.form import _graphql_query
@@ -198,3 +199,32 @@ def test_pressing_lets_graphql_reads_through_and_nothing_else(
     body: str | None, reads: bool
 ) -> None:
     assert _graphql_query(body) is reads
+
+
+COUNTRIES = [FieldOption(value=v, label=v) for v in ("United Kingdom +44", "United States +1")]
+
+
+class TestProfileOption:
+    def test_a_value_picks_the_option_it_starts(self) -> None:
+        field = FormField(
+            id="f1",
+            kind="combobox",
+            label="Country",
+            name=None,
+            required=False,
+            options=COUNTRIES,
+        )
+
+        assert filler._option(field, "united kingdom") == "United Kingdom +44"
+
+    def test_a_value_that_starts_several_options_picks_none(self) -> None:
+        field = FormField(
+            id="f1",
+            kind="combobox",
+            label="Country",
+            name=None,
+            required=False,
+            options=COUNTRIES,
+        )
+
+        assert filler._option(field, "United") is None

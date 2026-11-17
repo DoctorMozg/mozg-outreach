@@ -23,6 +23,13 @@ def form_of(page: Page) -> Frame:
     return next(f for f in page.frames if f.url == EMBED)
 
 
+@pytest.fixture(autouse=True)
+def quick_lists(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Test dropdowns open at once; the real waits would only slow every form with one.
+    monkeypatch.setattr(form, "LIST_SECONDS", 0.3)
+    monkeypatch.setattr(form, "SUGGEST_SECONDS", 1.5)
+
+
 class TestGreenhouseEmbed:
     async def test_fills_standard_fields_files_and_answers_in_the_iframe(
         self, page: tuple[Page, Traffic], tmp_path: Path
@@ -119,7 +126,8 @@ async def test_lever_fills_by_name_and_asks_about_pay(
     tab, _ = page
     await tab.goto("https://jobs.lever.co/acme/1234/apply")
     answerer = ScriptedAnswerer(
-        {"Preferred work mode": "Remote", "Expected salary": "95000"}, reasoned={"Expected salary"}
+        {"Preferred work mode": "Remote", "Expected salary": "95000", "Office location": "Leeds"},
+        reasoned={"Expected salary"},
     )
 
     report = await FormFiller(answerer).fill(tab, application(), tmp_path)
@@ -129,7 +137,7 @@ async def test_lever_fills_by_name_and_asks_about_pay(
     assert await tab.input_value("input[name='urls[LinkedIn]']") == PROFILE.linkedin
     assert await tab.is_checked("input[value=remote]")
     reasons = {f.label: f.reason for f in report.for_user}
-    assert "custom dropdown" in reasons["Office location"]
+    assert reasons["Office location"] == "'Office location' offered nothing matching 'Leeds'"
     assert reasons["Current company"] == "the AI gave no answer"
     salary = next(f for f in report.filled if f.label == "Expected salary")
     assert (salary.value, salary.reasoning) == ("95000", "a guess")
@@ -260,6 +268,67 @@ async def test_the_resume_autofill_goes_first_and_only_empty_fields_are_filled_a
     sources = {f.label: f.source for f in report.filled}
     assert sources["Name"] == sources["Email"] == "page"
     assert sources["Phone"] == "profile"
+
+
+class TestDropdowns:
+    async def test_listed_options_are_answered_like_a_select_and_picked(
+        self, page: tuple[Page, Traffic], tmp_path: Path
+    ) -> None:
+        tab, _ = page
+        await tab.goto("https://careers.acme.example/dropdowns")
+        answerer = ScriptedAnswerer(
+            {
+                "Will you need visa sponsorship?": "No",
+                "Where did you hear about us? Select all that apply": "LinkedIn\nPodcast",
+                "Location (City)": "Dubai",
+            }
+        )
+
+        report = await FormFiller(answerer).fill(tab, application(), tmp_path)
+
+        asked = {q.label: (q.kind, q.options) for q in answerer.asked[0].questions}
+        assert asked == {
+            "Will you need visa sponsorship?": ("select", ["Yes", "No"]),
+            "Where did you hear about us? Select all that apply": (
+                "checkboxes",
+                ["LinkedIn", "Podcast", "A friend"],
+            ),
+            "Location (City)": ("text", []),
+        }
+        chosen = "el => el.closest('.select').dataset.chosen"
+        assert await tab.eval_on_selector("#sponsor", chosen) == "No"
+        assert await tab.eval_on_selector("#heard", chosen) == "LinkedIn|Podcast"
+        assert await tab.eval_on_selector("#city", chosen) == "Dubai, United Arab Emirates"
+        assert report.for_user == []
+
+    async def test_a_search_with_no_match_is_left_with_the_reason(
+        self, page: tuple[Page, Traffic], tmp_path: Path
+    ) -> None:
+        tab, _ = page
+        await tab.goto("https://careers.acme.example/dropdowns")
+        answerer = ScriptedAnswerer({"Location (City)": "Atlantis"})
+
+        report = await FormFiller(answerer).fill(tab, application(), tmp_path)
+
+        reasons = {f.label: f.reason for f in report.for_user}
+        assert reasons["Location (City)"] == "'Location (City)' offered nothing matching 'Atlantis'"
+        assert await tab.eval_on_selector("#city", "el => el.value") == ""
+
+    async def test_site_menus_and_hidden_mirrors_are_not_questions(
+        self, page: tuple[Page, Traffic]
+    ) -> None:
+        tab, _ = page
+        await tab.goto("https://careers.acme.example/dropdowns")
+
+        labels = [f.label for f in await scan(tab.main_frame)]
+
+        assert labels == [
+            "Email",
+            "Will you need visa sponsorship?",
+            "Where did you hear about us? Select all that apply",
+            "Location (City)",
+            "Resume/CV",
+        ]
 
 
 class TestTimeLimits:

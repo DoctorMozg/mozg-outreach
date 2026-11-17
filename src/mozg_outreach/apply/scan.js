@@ -26,8 +26,13 @@
     if (by) return by.split(/\s+/).map((id) => text(document.getElementById(id))).join(" ").trim();
     return "";
   };
+  // An upload's own label is often just "Attach"; the question is the group around it.
+  const uploadGroup = (el) => {
+    const group = el.getAttribute("type") === "file" && el.closest("[role=group]");
+    return group ? labelOf(group) : "";
+  };
   const nameOf = (el) =>
-    labelOf(el) || blockText(el.parentElement, (c) => c === el) || (el.getAttribute("placeholder") || el.getAttribute("name") || "").trim();
+    uploadGroup(el) || labelOf(el) || blockText(el.parentElement, (c) => c === el) || (el.getAttribute("placeholder") || el.getAttribute("name") || "").trim();
   // Job pages carry closed menus, filters and modals; their fields can't be filled and aren't the form.
   // A file input hidden behind a styled button still takes files, so it stays while its label or form shows.
   const rendered = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
@@ -69,6 +74,9 @@
     const type = (el.getAttribute("type") || (tag === "input" ? "text" : tag)).toLowerCase();
     if (["hidden", "submit", "button", "image", "reset", "search", "password"].includes(type)) continue;
     if (el.disabled || el.readOnly) continue;
+    // Site menus (a region picker in the footer) and the hidden mirrors custom dropdowns keep.
+    if (!el.closest("form") && el.closest("header, nav, footer, [role=banner], [role=navigation], [role=contentinfo]")) continue;
+    if (type !== "file" && el.closest("[aria-hidden=true]")) continue;
     const host = el.closest("label, form");
     if (!rendered(el) && !(type === "file" && host && rendered(host))) continue;
     const required = el.required || el.getAttribute("aria-required") === "true";

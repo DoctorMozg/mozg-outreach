@@ -1,0 +1,62 @@
+<title>Apply</title>
+<form method="post" action="/apply">
+  <label>Email<input name="email" type="email"></label>
+  <label id="sponsor-label">Will you need visa sponsorship?</label>
+  <div class="select" data-options="Yes|No"><input role="combobox" id="sponsor" aria-labelledby="sponsor-label" aria-expanded="false"></div>
+  <label id="heard-label">Where did you hear about us? Select all that apply</label>
+  <div class="select" data-options="LinkedIn|Podcast|A friend" data-multi><input role="combobox" id="heard" aria-labelledby="heard-label" aria-expanded="false"></div>
+  <label id="city-label">Location (City)</label>
+  <div class="select" data-search><input role="combobox" id="city" aria-labelledby="city-label" aria-expanded="false"></div>
+  <input required tabindex="-1" aria-hidden="true" value="">
+  <div role="group" aria-labelledby="resume-label">
+    <div id="resume-label">Resume/CV</div>
+    <label for="resume">Attach</label><input id="resume" type="file">
+  </div>
+  <button>Submit</button>
+</form>
+<footer><label>Select region<select><option value="">Choose</option><option>Europe</option></select></label></footer>
+<script>
+  // A small stand-in for React Select: the list opens on click, filters as you type, and the
+  // city list only fills from a search after typing. Picks go into data-chosen.
+  const CITIES = ["Dubai, United Arab Emirates", "Dublin, Ireland"];
+  for (const wrap of document.querySelectorAll(".select")) {
+    const input = wrap.querySelector("input");
+    const fixed = wrap.dataset.options ? wrap.dataset.options.split("|") : null;
+    const close = () => {
+      document.getElementById(`${input.id}-listbox`)?.remove();
+      input.removeAttribute("aria-controls");
+      input.setAttribute("aria-expanded", "false");
+    };
+    const render = (options) => {
+      close();
+      const list = document.createElement("div");
+      list.id = `${input.id}-listbox`;
+      list.setAttribute("role", "listbox");
+      if ("multi" in wrap.dataset) list.setAttribute("aria-multiselectable", "true");
+      for (const text of options) {
+        const option = document.createElement("div");
+        option.setAttribute("role", "option");
+        option.textContent = text;
+        option.addEventListener("click", () => {
+          const chosen = wrap.dataset.chosen ? wrap.dataset.chosen.split("|") : [];
+          wrap.dataset.chosen = ("multi" in wrap.dataset ? [...chosen, text] : [text]).join("|");
+          input.value = "";
+          close();
+        });
+        list.append(option);
+      }
+      wrap.append(list);
+      input.setAttribute("aria-controls", list.id);
+      input.setAttribute("aria-expanded", "true");
+    };
+    const typed = () => input.value.toLowerCase();
+    const show = () => {
+      if (fixed) render(fixed.filter((o) => o.toLowerCase().includes(typed())));
+      else if (typed()) setTimeout(() => render(CITIES.filter((c) => c.toLowerCase().includes(typed()))), 300);
+      else render([]);
+    };
+    input.addEventListener("click", show);
+    input.addEventListener("input", show);
+    input.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  }
+</script>

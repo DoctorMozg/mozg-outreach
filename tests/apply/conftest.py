@@ -26,6 +26,7 @@ PAGES = {
     "https://careers.acme.example/jobs/2": "listing_page.html",
     "https://careers.acme.example/styled": "styled_form.html",
     "https://careers.acme.example/autofill": "autofill_form.html",
+    "https://careers.acme.example/dropdowns": "combobox_form.html",
 }
 PAGE_DIR = Path(__file__).parent / "pages"
 
