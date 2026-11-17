@@ -27,7 +27,7 @@ import { IconArchive, IconArchiveOff, IconColumns3, IconExternalLink, IconMail, 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, enrichHint, get, type Graph, type Item, type Project, type Run } from "../api";
-import { ActivityBadge, Empty, EnrichedBadge, ErrorBox, replanDue, Score, StepBadge, Value } from "../components/common";
+import { ActivityBadge, Empty, EnrichedBadge, EnrichIcon, ErrorBox, replanDue, Score, StepBadge, Value } from "../components/common";
 import { Duplicates } from "../components/Duplicates";
 import { GraphView } from "../components/GraphView";
 import { href } from "../router";
@@ -255,7 +255,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
                   {item.kind !== "gig" && (
                     <Tooltip label={enrichHint(item).note ?? "Enrich: find people, contacts and signals"}>
                       <ActionIcon variant="subtle" loading={enriching(item)} onClick={() => enrich.mutate(item)} aria-label={`${enrichHint(item).label} ${item.title}`}>
-                        <IconSparkles size={16} />
+                        <EnrichIcon item={item} size={16} />
                       </ActionIcon>
                     </Tooltip>
                   )}
@@ -445,7 +445,7 @@ function LeadPreview({ item, onEnrich, enriching }: PreviewProps): ReactElement 
         </Group>
         <Group gap="xs">
           {item.kind !== "gig" && (
-            <Button size="xs" variant="default" leftSection={<IconSparkles size={14} />} loading={enriching} onClick={onEnrich}>
+            <Button size="xs" variant="default" leftSection={<EnrichIcon item={item} size={14} />} loading={enriching} onClick={onEnrich}>
               {enrichHint(item).label}
             </Button>
           )}

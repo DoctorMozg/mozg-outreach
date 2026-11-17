@@ -1,5 +1,5 @@
 import { Accordion, Alert, Anchor, Badge, type BadgeProps, Card, Group, List, Text, Tooltip } from "@mantine/core";
-import { IconAlertTriangle, IconExternalLink, IconInfoCircle } from "@tabler/icons-react";
+import { IconAlertTriangle, IconExternalLink, IconInfoCircle, IconRefresh, IconSparkles } from "@tabler/icons-react";
 import type { ReactElement, ReactNode } from "react";
 import type { Activity, ApproachStep, FieldValue, Item, Mode, RunStatus } from "../api";
 
@@ -158,6 +158,11 @@ export function StepBadge({ step, size = "xs" }: { step: ApproachStep | null; si
 }
 
 /** Marks a lead whose people, contacts and signals were researched; hover shows when. */
+/** Sparkles for a first enrichment, a refresh arrow for running it again, so the two read apart. */
+export function EnrichIcon({ item, size }: { item: Pick<Item, "enriched">; size: number }): ReactElement {
+  return item.enriched ? <IconRefresh size={size} /> : <IconSparkles size={size} />;
+}
+
 export function EnrichedBadge({ item, size = "xs" }: { item: Pick<Item, "enriched" | "enriched_at">; size?: BadgeProps["size"] }): ReactElement | null {
   if (!item.enriched) return null;
   const when = item.enriched_at ? `Enriched on ${new Date(item.enriched_at).toLocaleDateString()}` : "Enriched";

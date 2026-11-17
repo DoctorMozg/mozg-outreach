@@ -1,9 +1,9 @@
 import { Accordion, Anchor, Badge, Button, Card, Code, Grid, Group, Select, Stack, Text, TextInput, Timeline, Title, Tooltip } from "@mantine/core";
-import { IconArchive, IconArchiveOff, IconArrowLeft, IconDownload, IconForms, IconMail, IconSparkles } from "@tabler/icons-react";
+import { IconArchive, IconArchiveOff, IconArrowLeft, IconDownload, IconForms, IconMail } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, type Cv, type CvChoice, enrichHint, get, type ItemDetail, type Run } from "../api";
-import { ActivityBadge, DATED_KINDS, EnrichedBadge, ErrorBox, INTERACTION_LABELS, type InteractionKind, interactionLabel, Score, StepBadge } from "../components/common";
+import { ActivityBadge, DATED_KINDS, EnrichedBadge, EnrichIcon, ErrorBox, INTERACTION_LABELS, type InteractionKind, interactionLabel, Score, StepBadge } from "../components/common";
 import { href } from "../router";
 import { Axes, FieldList } from "./Report";
 import { Approach } from "./item/Approach";
@@ -223,7 +223,7 @@ function Actions({ item, onArchived }: { item: ItemDetail; onArchived: () => voi
           {item.kind !== "gig" && (
             <Button
               variant="default"
-              leftSection={<IconSparkles size={16} />}
+              leftSection={<EnrichIcon item={item} size={16} />}
               loading={start.isPending && start.variables === "enrich"}
               onClick={() => start.mutate("enrich")}
             >
