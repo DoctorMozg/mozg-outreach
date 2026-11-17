@@ -8,6 +8,7 @@ from playwright.async_api import Page, Route, async_playwright
 from mozg_outreach.apply.desk import ApplyAgents
 from mozg_outreach.apply.filler import Application
 from mozg_outreach.apply.models import (
+    Answer,
     AnswerInput,
     AnswerSet,
     ApplicantProfile,
@@ -23,6 +24,8 @@ PAGES = {
     "https://acme.wd3.myworkdayjobs.com/en-US/careers/job/1": "workday.html",
     "https://careers.acme.example/apply": "autosubmit_form.html",
     "https://careers.acme.example/jobs/2": "listing_page.html",
+    "https://careers.acme.example/styled": "styled_form.html",
+    "https://careers.acme.example/autofill": "autofill_form.html",
 }
 PAGE_DIR = Path(__file__).parent / "pages"
 
@@ -48,6 +51,7 @@ def application(letter: str | None = "Dear Acme team, ...") -> Application:
         job_title="Data Engineer",
         company="Acme",
         job_summary="Real-time pricing pipelines in Python.",
+        preferences="Remote roles in data engineering, from EUR 90k a year.",
         cv_text="Max Example. Senior Data Engineer, 2019-2026. Python, Kafka.",
         cv_pdf=b"%PDF-1.4 fake",
         letter=letter,
@@ -86,20 +90,25 @@ async def page() -> AsyncIterator[tuple[Page, Traffic]]:
 
 @dataclass
 class ScriptedAnswerer:
-    """Answers by question label; records what it was asked."""
+    """Answers by question label, as a stated fact unless the label is in `reasoned`."""
 
     by_label: dict[str, str]
+    reasoned: set[str] = field(default_factory=set)
     asked: list[AnswerInput] = field(default_factory=list)
 
     async def answer(self, request: AnswerInput) -> AnswerSet:
         self.asked.append(request)
         answers = [
-            {"question_id": q.id, "value": self.by_label[q.label], "basis": "CV"}
+            Answer(
+                question_id=q.id,
+                value=self.by_label[q.label],
+                reasoned=q.label in self.reasoned,
+                basis="a guess" if q.label in self.reasoned else "CV",
+            )
             for q in request.questions
             if q.label in self.by_label
         ]
-        skipped = [q.id for q in request.questions if q.label not in self.by_label]
-        return AnswerSet.model_validate({"answers": answers, "skipped": skipped, "concerns": []})
+        return AnswerSet(answers=answers, concerns=[])
 
 
 @dataclass

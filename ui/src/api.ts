@@ -415,11 +415,19 @@ export interface CvChoice {
 
 export type TouchChannel = "email" | "linkedin" | "phone" | "form";
 
+export interface FilledField {
+  label: string;
+  source: "profile" | "cv" | "letter" | "answerer" | "page";
+  value: string | null;
+  /** Set when the AI chose the answer without a stated fact behind it. */
+  reasoning: string | null;
+}
+
 /** What `seeker.apply` filled on a job's form (apply/models.py FillReport). */
 export interface FillReport {
   ats: string;
   url: string;
-  filled: { label: string; source: "profile" | "cv" | "letter" | "answerer" }[];
+  filled: FilledField[];
   for_user: { label: string; required: boolean; reason: string }[];
   concerns: string[];
 }

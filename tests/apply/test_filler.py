@@ -15,6 +15,8 @@ from tests.browser.conftest import requires_chrome
 pytestmark = requires_chrome
 
 WHY = "Why do you want to work at Acme? *"
+AUTHORIZED = "Are you legally authorized to work in the UK? *"
+CONSENT = "I consent to Acme storing my data"
 
 
 def form_of(page: Page) -> Frame:
@@ -53,27 +55,48 @@ class TestGreenhouseEmbed:
         assert {f.source for f in report.filled} == {"profile", "cv", "letter", "answerer"}
         assert not [r for r in traffic.requests if r.startswith("POST")]
 
-    async def test_protected_questions_stay_empty_and_never_reach_the_agent(
+    async def test_personal_pay_and_consent_questions_are_answered_and_guesses_flagged(
         self, page: tuple[Page, Traffic], tmp_path: Path
     ) -> None:
         tab, _ = page
         await tab.goto("https://careers.acme.example/jobs/1")
-        answerer = ScriptedAnswerer({})
+        answerer = ScriptedAnswerer(
+            {
+                WHY: "Real-time pricing is what I build.",
+                "Years of Python": "6+",
+                "Notice period": "1 month",
+                "Gender": "Male",
+                AUTHORIZED: "No",
+                CONSENT: "yes",
+            },
+            reasoned={"Notice period", AUTHORIZED, CONSENT},
+        )
 
         report = await FormFiller(answerer).fill(tab, application(), tmp_path)
 
-        asked = {q.label for q in answerer.asked[0].questions}
-        assert asked == {WHY, "Years of Python"}
-        open_labels = {f.label: f.reason for f in report.for_user}
-        assert open_labels["Notice period"] == "your profile has no notice period"
-        assert "demographic" in open_labels["Gender"]
-        assert (
-            "work authorization" in open_labels["Are you legally authorized to work in the UK? *"]
-        )
-        assert "consents" in open_labels["I consent to Acme storing my data"]
+        [asked] = answerer.asked
+        assert {q.label for q in asked.questions} == {
+            WHY,
+            "Years of Python",
+            "Notice period",
+            "Gender",
+            AUTHORIZED,
+            CONSENT,
+        }, "a detail the profile lacks goes to the answerer too"
+        assert asked.applicant["country"] == "United Kingdom"
+        assert "photo" not in asked.applicant
+        assert asked.preferences == application().preferences
         form = form_of(tab)
-        assert await form.input_value("#gender") == ""
-        assert not await form.is_checked("input[name=gdpr]")
+        assert await form.input_value("#q3") == "1 month"
+        assert await form.input_value("#gender") == "1"
+        assert await form.is_checked("input[name=gdpr]")
+        assert report.for_user == []
+        flagged = {f.label: (f.value, f.reasoning) for f in report.filled if f.reasoning}
+        assert flagged == {
+            "Notice period": ("1 month", "a guess"),
+            AUTHORIZED: ("No", "a guess"),
+            CONSENT: ("yes", "a guess"),
+        }
 
     async def test_a_rejected_answer_is_left_with_the_reason(
         self, page: tuple[Page, Traffic], tmp_path: Path
@@ -87,15 +110,17 @@ class TestGreenhouseEmbed:
         reasons = {f.label: f.reason for f in report.for_user}
         assert "'about 7' is not one of the options" in reasons["Years of Python"]
         assert reasons["Cover Letter"] == "no cover letter draft yet"
-        assert reasons[WHY] == "the CV doesn't answer it"
+        assert reasons[WHY] == "the AI gave no answer"
 
 
-async def test_lever_fills_by_name_and_leaves_dropdowns_and_pay(
+async def test_lever_fills_by_name_and_asks_about_pay(
     page: tuple[Page, Traffic], tmp_path: Path
 ) -> None:
     tab, _ = page
     await tab.goto("https://jobs.lever.co/acme/1234/apply")
-    answerer = ScriptedAnswerer({"Preferred work mode": "Remote"})
+    answerer = ScriptedAnswerer(
+        {"Preferred work mode": "Remote", "Expected salary": "95000"}, reasoned={"Expected salary"}
+    )
 
     report = await FormFiller(answerer).fill(tab, application(), tmp_path)
 
@@ -105,8 +130,9 @@ async def test_lever_fills_by_name_and_leaves_dropdowns_and_pay(
     assert await tab.is_checked("input[value=remote]")
     reasons = {f.label: f.reason for f in report.for_user}
     assert "custom dropdown" in reasons["Office location"]
-    assert "pay" in reasons["Expected salary"]
-    assert reasons["Current company"] == "your profile has no current company"
+    assert reasons["Current company"] == "the AI gave no answer"
+    salary = next(f for f in report.filled if f.label == "Expected salary")
+    assert (salary.value, salary.reasoning) == ("95000", "a guess")
 
 
 async def test_workday_is_left_to_the_applicant(page: tuple[Page, Traffic], tmp_path: Path) -> None:
@@ -171,6 +197,69 @@ async def test_fields_the_page_hides_are_neither_asked_nor_filled(
     )
     assert set(reasons).isdisjoint({"Your email", "Weekly digest", "Keyword", "Coupon"})
     assert "Portfolio PDF" not in reasons, "an upload in a hidden tab isn't part of the form"
+
+
+class TestStyledChoices:
+    EDUCATION = "What is your highest level of education? *"
+    ENGLISH = "Are your English language skills at level C1 or higher?"
+
+    async def test_options_sharing_a_name_are_one_question_under_its_legend(
+        self, page: tuple[Page, Traffic]
+    ) -> None:
+        tab, _ = page
+        await tab.goto("https://careers.acme.example/styled")
+
+        fields = {f.label: f for f in await scan(tab.main_frame)}
+
+        education = fields[self.EDUCATION]
+        assert education.kind == "checkboxes"
+        assert education.required
+        assert [o.label for o in education.options] == [
+            "Doctorate",
+            "Master's level",
+            "Bachelor's level",
+        ]
+        assert fields[self.ENGLISH].kind == "radio"
+        assert fields["Keep me posted about new roles"].kind == "checkbox"
+
+    async def test_inputs_hidden_under_their_labels_are_ticked(
+        self, page: tuple[Page, Traffic], tmp_path: Path
+    ) -> None:
+        tab, traffic = page
+        await tab.goto("https://careers.acme.example/styled")
+        answerer = ScriptedAnswerer(
+            {self.EDUCATION: "Master's level\nBachelor's level", self.ENGLISH: "Yes"}
+        )
+
+        report = await FormFiller(answerer).fill(tab, application(), tmp_path)
+
+        ticked = await tab.eval_on_selector_all(
+            "input:checked", "els => els.map(e => `${e.name}=${e.value}`)"
+        )
+        assert ticked == ["education=MSc", "education=BSc", "english=true"]
+        assert {self.EDUCATION, self.ENGLISH} <= {f.label for f in report.filled}
+        assert not [r for r in traffic.requests if r.startswith("POST")]
+
+
+async def test_the_resume_autofill_goes_first_and_only_empty_fields_are_filled_after(
+    page: tuple[Page, Traffic], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(filler, "AUTOFILL_POLL_SECONDS", 0.3)
+    tab, _ = page
+    await tab.goto("https://careers.acme.example/autofill")
+    answerer = ScriptedAnswerer({"Why Acme?": "Pricing."})
+
+    report = await FormFiller(answerer).fill(tab, application(), tmp_path)
+
+    assert await tab.eval_on_selector("#autofill", "el => el.files[0].name") == "Max Example CV.pdf"
+    assert await tab.input_value("input[name=name]") == "Max From Resume", "autofill is kept"
+    assert await tab.input_value("input[name=email]") == "max@resume.example"
+    assert await tab.input_value("input[name=phone]") == PROFILE.phone
+    [asked] = answerer.asked
+    assert [q.label for q in asked.questions] == ["Why Acme?"]
+    sources = {f.label: f.source for f in report.filled}
+    assert sources["Name"] == sources["Email"] == "page"
+    assert sources["Phone"] == "profile"
 
 
 class TestTimeLimits:

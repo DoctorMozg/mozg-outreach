@@ -1,6 +1,7 @@
 import base64
 import re
 from dataclasses import dataclass
+from datetime import date
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, WithJsonSchema
@@ -16,6 +17,7 @@ FieldKind = Literal[
     "select",
     "radio",
     "checkbox",
+    "checkboxes",
     "file",
     "combobox",
 ]
@@ -26,6 +28,8 @@ ProfileKey = Literal[
     "preferred_name",
     "email",
     "phone",
+    "date_of_birth",
+    "nationality",
     "location",
     "address",
     "city",
@@ -100,16 +104,23 @@ class FormField(BaseModel):
     required: bool
     options: list[FieldOption] = Field(default_factory=list)
     max_length: int | None = None
+    filled: bool = Field(default=False, description="Has a value, from the page or its autofill.")
 
 
 class ApplicantProfile(BaseModel):
-    """What the user fills on every form; it never goes to an agent."""
+    """What the user fills on every form; the answerer reads all of it but the photo."""
 
     first_name: str
     last_name: str
     preferred_name: str | None = Field(default=None, description="Only if you go by another name.")
     email: str
     phone: str | None = None
+    date_of_birth: date | None = None
+    nationality: str | None = Field(default=None, description="Every citizenship you hold.")
+    work_authorization: str | None = Field(
+        default=None,
+        description="Where you may work without sponsorship, and permits you hold.",
+    )
     location: str | None = Field(default=None, description="City and country, e.g. Dubai, UAE.")
     address: str | None = Field(default=None, title="Street address")
     city: str | None = None
@@ -140,6 +151,11 @@ class ApplicantProfile(BaseModel):
         value = getattr(self, key)
         return None if value is None else str(value)
 
+    def facts(self) -> dict[str, str]:
+        """Every filled detail as text, for the answerer; the photo stays out."""
+        filled = self.model_dump(mode="json", exclude={"photo"}, exclude_none=True)
+        return {key: str(value) for key, value in filled.items()}
+
 
 class Question(BaseModel):
     id: str
@@ -154,28 +170,42 @@ class AnswerInput(BaseModel):
     job_title: str
     company: str
     job_summary: str
-    cv_text: str
+    today: date
+    applicant: dict[str, str] = Field(description="The applicant's own details by field name.")
+    preferences: str = Field(description="What the applicant wants: pay floor, remote, work kinds.")
+    cv_text: str = Field(description="The CV plus extra facts the applicant gave.")
     questions: list[Question]
 
 
 class Answer(BaseModel):
     question_id: str
-    value: str = Field(description="Text, or one option verbatim; checkboxes take yes or no.")
-    basis: str = Field(description="The CV or posting fact the answer rests on.")
+    value: str = Field(
+        description=(
+            "Text; one option verbatim; checkboxes yes or no; several options one per line; "
+            "dates YYYY-MM-DD."
+        )
+    )
+    reasoned: bool = Field(
+        description="True unless a stated detail gives the answer outright or by plain arithmetic."
+    )
+    basis: str = Field(description="The fact the answer rests on, or the reasoning behind it.")
 
 
 class AnswerSet(BaseModel):
     answers: list[Answer]
-    skipped: list[str] = Field(description="Question ids left for the applicant.")
     concerns: list[str]
 
 
-FillSource = Literal["profile", "cv", "letter", "answerer"]
+FillSource = Literal["profile", "cv", "letter", "answerer", "page"]
 
 
 class FilledField(BaseModel):
     label: str
     source: FillSource
+    value: str | None = Field(default=None, description="What went in; null for files.")
+    reasoning: str | None = Field(
+        default=None, description="Why the AI chose it when no stated fact did; null otherwise."
+    )
 
 
 class OpenField(BaseModel):

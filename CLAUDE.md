@@ -45,7 +45,7 @@ The pipelines come from the `mz-biz-outreach` and `mz-job-outreach` plugins in h
 
 - `runs/`: flows as phase lists (`FlowSpec`), `RunManager` (one task per run, state saved after every phase, gates, resume), and the run event log behind SSE.
 - `api/`: FastAPI app and routes; `ui/` mirrors its response types in `ui/src/api.ts`, so change both together.
-- `browser/`: guarded headless Chrome and the agents' read-only `browser` toolkit. `apply/`: application form filling (field scan, protected-question policy, ATS profiles, safe actor) and the visible Chrome where the user submits (`seeker.apply` in `runs/apply.py`).
+- `browser/`: guarded headless Chrome and the agents' read-only `browser` toolkit. `apply/`: application form filling (field scan, ATS profiles, safe actor; the answerer fills every question but CAPTCHAs and flags the ones it reasoned) and the visible Chrome where the user submits (`seeker.apply` in `runs/apply.py`).
 - `mail/`: Gmail over IMAP with a Workspace app password from `MOZG_OUTREACH_GMAIL_ADDRESS` and `MOZG_OUTREACH_GMAIL_APP_PASSWORD`. It pushes email drafts into Gmail Drafts and polls their threads to log sent, replied and bounced.
 - `pipelines/{biz,seeker}/`: agent steps and their pydantic contracts; `scoring/`, `letters/`, `naturalize/`, `registry/`, `sources/` and `storage/` hold the shared parts.
 

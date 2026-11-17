@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from mozg_outreach.apply.answers import check
 from mozg_outreach.apply.ats import GENERIC, GREENHOUSE, LEVER, ats_for, form_url, standard_key
+from mozg_outreach.apply.form import _graphql_query
 from mozg_outreach.apply.models import (
     PHOTO_BYTES,
     Answer,
@@ -31,40 +32,23 @@ def form_field(label: str, kind: FieldKind = "text", name: str | None = None) ->
 
 
 class TestProtected:
+    @pytest.mark.parametrize("label", ["Please complete the CAPTCHA", "I'm not a robot"])
+    def test_only_captchas_are_left_to_the_applicant(self, label: str) -> None:
+        assert protected_reason(form_field(label)) == "CAPTCHAs are for the applicant"
+
     @pytest.mark.parametrize(
         "label",
         [
             "Gender",
-            "Are you a protected veteran?",
-            "Pronouns",
             "What are your salary expectations?",
-            "Desired pay",
             "Will you now or in the future require sponsorship?",
-            "Do you have the right to work in Germany?",
+            "Please enter your date of birth",
             "I agree to the privacy policy",
-            "I certify that the information is accurate and complete",
-            "Signature",
-            "Send me job alerts: receive emails about new roles",
-        ],
-    )
-    def test_personal_and_legal_questions_are_protected(self, label: str) -> None:
-        assert protected_reason(form_field(label))
-
-    @pytest.mark.parametrize(
-        "label",
-        [
             "Why do you want to join us?",
-            "Rate your experience with Kafka",
-            "Which languages do you speak?",
-            "List your AWS certifications",
-            "Link to a page you built",
         ],
     )
-    def test_ordinary_questions_are_not(self, label: str) -> None:
+    def test_personal_pay_and_legal_questions_are_answered(self, label: str) -> None:
         assert protected_reason(form_field(label)) is None
-
-    def test_the_field_name_counts_too(self) -> None:
-        assert protected_reason(form_field("Question 7", name="eeo_race"))
 
 
 LEVER_JOB = "https://jobs.lever.co/acme/5f6c0a2e-1b2c-4d3e-9f00-123456789abc"
@@ -121,6 +105,8 @@ class TestStandardFields:
             ("Current job title", "text", "current_title"),
             ("Years of experience *", "text", "years_experience"),
             ("Years of Python", "select", None),
+            ("Please enter your date of birth *", "date", "date_of_birth"),
+            ("Nationality", "select", "nationality"),
             ("Which languages do you speak?", "text", "languages"),
             ("University", "text", "university"),
             ("Highest degree", "select", "degree"),
@@ -167,12 +153,16 @@ class TestApplicantPhoto:
         assert profile.value("photo") is None
 
 
+def answer(value: str) -> Answer:
+    return Answer(question_id="f1", value=value, reasoned=False, basis="")
+
+
 class TestAnswerCheck:
+    def test_several_options_map_to_their_values_one_per_line(self) -> None:
+        assert check(form_field("Q", "checkboxes"), answer("Yes\nNo")).value == "1\n2"
+
     def test_a_choice_maps_the_label_to_its_value(self) -> None:
-        assert (
-            check(form_field("Q", "select"), Answer(question_id="f1", value="No", basis="")).value
-            == "2"
-        )
+        assert check(form_field("Q", "select"), answer("No")).value == "2"
 
     @pytest.mark.parametrize(
         ("kind", "value", "problem"),
@@ -181,9 +171,30 @@ class TestAnswerCheck:
             ("checkbox", "true", "takes yes or no"),
             ("text", "x" * 21, "longer than"),
             ("text", "  ", "empty"),
+            ("checkboxes", "Yes\nPerhaps", "'Perhaps' is not one of the options"),
+            ("date", "next month", "takes YYYY-MM-DD"),
+            ("number", "120k", "takes digits"),
         ],
     )
     def test_bad_answers_are_refused(self, kind: FieldKind, value: str, problem: str) -> None:
-        checked = check(form_field("Q", kind), Answer(question_id="f1", value=value, basis=""))
+        checked = check(form_field("Q", kind), answer(value))
         assert checked.value is None
         assert problem in (checked.problem or "")
+
+
+@pytest.mark.parametrize(
+    ("body", "reads"),
+    [
+        ('{"operationName": "ApiJobPosting", "query": "query ApiJobPosting { title }"}', True),
+        ('[{"query": "{ a }"}, {"query": "  query B { b }"}]', True),
+        ('{"query": "mutation ApiSubmitApplication { ok }"}', False),
+        ('[{"query": "query A { a }"}, {"query": "mutation B { b }"}]', False),
+        ("name=Max&email=max%40example.com", False),
+        (None, False),
+    ],
+    ids=["query", "batch", "mutation", "mixed-batch", "form-post", "no-body"],
+)
+def test_pressing_lets_graphql_reads_through_and_nothing_else(
+    body: str | None, reads: bool
+) -> None:
+    assert _graphql_query(body) is reads

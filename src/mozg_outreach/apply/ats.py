@@ -86,6 +86,8 @@ LABELS: tuple[tuple[ProfileKey, re.Pattern[str]], ...] = (
     ("full_name", re.compile(r"^(full name|name|your name|legal name)$")),
     ("email", re.compile(r"\be-?mail\b")),
     ("phone", re.compile(r"\b(phone|mobile|telephone)\b")),
+    ("date_of_birth", re.compile(r"\b(date of birth|birth ?date)\b|^dob$")),
+    ("nationality", re.compile(r"^(your )?(nationality|citizenship)$")),
     ("linkedin", re.compile(r"\blinkedin\b")),
     ("github", re.compile(r"\bgithub\b")),
     ("website", re.compile(r"\b(website|portfolio|personal site)\b")),

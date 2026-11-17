@@ -36,6 +36,12 @@ class QuietHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
 
+@pytest.fixture(autouse=True)
+def quick_form_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Pages without a form wait this long before the finder runs; late_form.html needs 1.2 s.
+    monkeypatch.setattr(apply_browser, "FORM_SECONDS", 3.0)
+
+
 @pytest.fixture(scope="module")
 def pages() -> Iterator[str]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=str(PAGE_DIR)))
@@ -108,6 +114,22 @@ async def test_uploads_stay_on_disk_until_the_application_closes(
         await browser.close(12)
 
         assert not files.exists()
+    finally:
+        await browser.stop()
+
+
+async def test_a_form_the_page_fetches_after_loading_is_waited_for(
+    pages: str, tmp_path: Path
+) -> None:
+    finder = ScriptedFinder(None)
+    browser = ApplyBrowser(tmp_path / "profile", headless=True)
+    try:
+        report = await browser.prepare(
+            13, f"{pages}/late_form.html", application(), agents(finder=finder), print
+        )
+
+        assert [f.label for f in report.filled] == ["Full name", "Email"]
+        assert finder.asked == [], "a form still loading is not a page without one"
     finally:
         await browser.stop()
 

@@ -1,0 +1,23 @@
+<title>Apply</title>
+<style>
+  /* Like Recruitee: the real input is clipped to a pixel and its label sits on top of it. */
+  .opt { position: relative; }
+  .opt input { position: absolute; left: 0; top: 0; width: 1px; height: 1px; clip: rect(0, 0, 0, 0); margin: 0; }
+  .opt label { position: relative; display: block; padding-left: 24px; }
+</style>
+<form method="post" action="/apply">
+  <label>Full name<input name="name"></label>
+  <fieldset>
+    <legend>What is your highest level of education? <span aria-hidden="true">*</span></legend>
+    <div class="opt"><input type="checkbox" id="e1" name="education" value="PhD" required><label for="e1">Doctorate</label></div>
+    <div class="opt"><input type="checkbox" id="e2" name="education" value="MSc" required><label for="e2">Master's level</label></div>
+    <div class="opt"><input type="checkbox" id="e3" name="education" value="BSc" required><label for="e3">Bachelor's level</label></div>
+  </fieldset>
+  <fieldset>
+    <legend>Are your English language skills at level C1 or higher?</legend>
+    <div class="opt"><input type="radio" id="l1" name="english" value="true"><label for="l1">Yes</label></div>
+    <div class="opt"><input type="radio" id="l2" name="english" value="false"><label for="l2">No</label></div>
+  </fieldset>
+  <div class="opt"><input type="checkbox" id="news" name="news"><label for="news">Keep me posted about new roles</label></div>
+  <button>Submit</button>
+</form>

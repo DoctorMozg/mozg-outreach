@@ -362,7 +362,7 @@ const GATE_TITLES: Record<string, string> = {
   channels: "Approve the Telegram channels",
   application: "Review and submit the application",
 };
-const FILL_SOURCE = { profile: "Your details", cv: "CV file", letter: "Cover letter", answerer: "Drafted from your CV" } as const;
+const FILL_SOURCE = { profile: "Your details", cv: "CV file", letter: "Cover letter", answerer: "Answered by AI", page: "Already on the form" } as const;
 
 function Gate({ run, gate, onDone }: GateProps): ReactElement {
   return (
@@ -391,6 +391,7 @@ function ApplicationGate({ run, gate, onDone }: GateProps): ReactElement {
     onSuccess: onDone,
   });
   const missing = report?.for_user.filter((f) => f.required) ?? [];
+  const reasoned = report?.filled.filter((f) => f.reasoning) ?? [];
   return (
     <Stack>
       <Text size="sm">
@@ -405,6 +406,26 @@ function ApplicationGate({ run, gate, onDone }: GateProps): ReactElement {
               {report.url}
             </Anchor>
           </Text>
+          {reasoned.length > 0 && (
+            <Alert color="indigo" title={`Check these (${reasoned.length}): the AI reasoned them, no stated fact did`}>
+              <List size="sm">
+                {reasoned.map((f, n) => (
+                  <List.Item key={n}>
+                    <Text span fw={600} size="sm">
+                      {f.label}
+                    </Text>
+                    <Text span size="sm">
+                      {" "}
+                      : {f.value?.replaceAll("\n", ", ")}
+                    </Text>
+                    <Text c="dimmed" size="xs">
+                      {f.reasoning}
+                    </Text>
+                  </List.Item>
+                ))}
+              </List>
+            </Alert>
+          )}
           {report.for_user.length > 0 && (
             <Alert color={missing.length ? "yellow" : "gray"} title={`Left for you (${report.for_user.length}, ${missing.length} required)`}>
               <List size="sm">
@@ -434,6 +455,12 @@ function ApplicationGate({ run, gate, onDone }: GateProps): ReactElement {
                         <Badge size="xs" variant="light">
                           {FILL_SOURCE[f.source]}
                         </Badge>
+                        {f.value && (
+                          <Text span c="dimmed" size="sm">
+                            {" "}
+                            {f.value.replaceAll("\n", ", ")}
+                          </Text>
+                        )}
                       </List.Item>
                     ))}
                   </List>

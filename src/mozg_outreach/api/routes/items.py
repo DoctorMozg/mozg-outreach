@@ -1,5 +1,6 @@
 """The report, selection, enrichment and letter runs, drafts and interaction history."""
 
+import logging
 from datetime import date
 from typing import Annotated
 
@@ -8,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from mozg_outreach.api.routes.runs import ensure_idle, run_out
+from mozg_outreach.api.routes.runs import ensure_idle, open_runs, run_out
 from mozg_outreach.api.schemas import (
     ArchiveIn,
     DraftEdit,
@@ -50,6 +51,7 @@ from mozg_outreach.storage.repositories import (
     ReportFilter,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 Svc = Annotated[Services, Depends(services)]
 
@@ -122,30 +124,38 @@ def _mail(session: Session, item_id: int) -> list[MailThreadOut]:
     return found
 
 
-def _start_item_run(svc: Services, item_id: int, action: ItemActionName) -> RunOut:
+async def _start_item_run(
+    svc: Services, item_id: int, action: ItemActionName, *, replace: bool = False
+) -> RunOut:
+    """Starts the item's run; with `replace`, an open one of the same kind is cancelled first."""
     with svc.db.session() as session:
         item = get_or_404(session, Item, item_id)
         project = get_or_404(session, Project, item.project_id)
     pipeline = ITEM_ACTIONS[item.kind].pipeline(action)
     if pipeline is None:
         raise HTTPException(409, f"{item.kind} items have no {action} step")
+    if replace:
+        for run_id in open_runs(svc, project.id, pipeline, item_id):
+            logger.info("item %d: run %d of %s replaced by a new one", item_id, run_id, pipeline)
+            svc.runs.cancel(run_id)
+            await svc.runs.wait(run_id)
     ensure_idle(svc, project.id, pipeline, item_id)
     return run_out(svc, svc.runs.start(project.id, pipeline, {"item_id": item_id}))
 
 
 @router.post("/items/{item_id}/enrich", status_code=202)
 async def enrich_item(item_id: int, svc: Svc) -> RunOut:
-    return _start_item_run(svc, item_id, "enrich")
+    return await _start_item_run(svc, item_id, "enrich")
 
 
 @router.post("/items/{item_id}/letters", status_code=202)
 async def write_letters(item_id: int, svc: Svc) -> RunOut:
-    return _start_item_run(svc, item_id, "letters")
+    return await _start_item_run(svc, item_id, "letters")
 
 
 @router.post("/items/{item_id}/approach", status_code=202)
 async def plan_approach(item_id: int, svc: Svc) -> RunOut:
-    return _start_item_run(svc, item_id, "approach")
+    return await _start_item_run(svc, item_id, "approach")
 
 
 @router.post("/items/{item_id}/approach/steps/{step}/done", status_code=201)
@@ -175,8 +185,12 @@ def _idle_company(svc: Services, session: Session, item_id: int) -> Item:
 
 @router.post("/items/{item_id}/apply", status_code=202)
 async def apply_to_job(item_id: int, svc: Svc) -> RunOut:
-    """Fills the job's application form in a visible browser; the user reviews and submits."""
-    return _start_item_run(svc, item_id, "apply")
+    """Fills the job's application form in a visible browser; the user reviews and submits.
+
+    Filling again starts over: an application still open for the job is cancelled and its tab
+    replaced, since the user asks for a fresh fill, not a second one beside it.
+    """
+    return await _start_item_run(svc, item_id, "apply", replace=True)
 
 
 @router.post("/items/archive")

@@ -135,7 +135,7 @@ class SeekerBrief(BaseModel):
     applicant: ApplicantProfile | None = Field(
         default=None,
         title="Applicant details",
-        description="Typed into job application forms. Never sent to the AI.",
+        description="Typed into application forms; the AI reads them (not the photo) for the rest.",
     )
 
     @model_validator(mode="after")

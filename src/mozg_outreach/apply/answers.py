@@ -1,6 +1,7 @@
-"""Custom questions: an agent drafts answers from the CV, Python checks them before filling."""
+"""Every question the profile can't fill: an agent answers it, Python checks it before filling."""
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -10,6 +11,8 @@ from mozg_outreach.pipelines.steps import PipelineSteps
 logger = logging.getLogger(__name__)
 
 CHOICE_KINDS = frozenset({"select", "radio"})
+ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+NUMBER = re.compile(r"-?\d+(\.\d+)?")
 
 
 class Answerer(Protocol):
@@ -51,10 +54,23 @@ def check(form_field: FormField, answer: Answer) -> Checked:
             if value in (option.label, option.value):
                 return Checked(option.value)
         return Checked(None, f"{value!r} is not one of the options")
+    if form_field.kind == "checkboxes":
+        picked = [line.strip() for line in value.split("\n") if line.strip()]
+        by_text = {o.label: o.value for o in form_field.options} | {
+            o.value: o.value for o in form_field.options
+        }
+        unknown = [p for p in picked if p not in by_text]
+        if unknown:
+            return Checked(None, f"{unknown[0]!r} is not one of the options")
+        return Checked("\n".join(by_text[p] for p in picked))
     if form_field.kind == "checkbox":
         if value not in ("yes", "no"):
             return Checked(None, f"a checkbox takes yes or no, not {value!r}")
         return Checked(value)
+    if form_field.kind == "date" and not ISO_DATE.fullmatch(value):
+        return Checked(None, f"a date field takes YYYY-MM-DD, not {value!r}")
+    if form_field.kind == "number" and not NUMBER.fullmatch(value):
+        return Checked(None, f"a number field takes digits, not {value!r}")
     if form_field.max_length and len(value) > form_field.max_length:
         return Checked(None, f"longer than the field's {form_field.max_length} characters")
     return Checked(value)

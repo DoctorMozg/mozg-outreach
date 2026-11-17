@@ -1,6 +1,7 @@
 """Reads an application form and fills it without ever submitting it."""
 
 import asyncio
+import json
 import logging
 from collections.abc import Awaitable
 from pathlib import Path
@@ -21,6 +22,7 @@ GUARD_SCRIPT = (Path(__file__).parent / "guard.js").read_text(encoding="utf-8")
 APPLY_LINK_SCRIPT = (Path(__file__).parent / "apply_link.js").read_text(encoding="utf-8")
 CONTROLS_SCRIPT = (Path(__file__).parent / "controls.js").read_text(encoding="utf-8")
 CONTROL_MARK = "data-mozg-control"
+TICK_SCRIPT = "(el, on) => { if (el.checked !== on) el.click(); return el.checked; }"
 _FIELDS = TypeAdapter(list[FormField])
 _CONTROLS = TypeAdapter(list[PageControl])
 # A field that isn't editable within this is left to the applicant instead of stalling the fill.
@@ -28,6 +30,7 @@ ACTION_MS = 5_000
 SCRIPT_SECONDS = 10.0
 # A tab renders its form, or a button starts its navigation, within this.
 PRESS_SETTLE_MS = 1_500
+FORM_POLL_SECONDS = 0.5
 
 
 class FormError(RuntimeError):
@@ -63,6 +66,18 @@ async def has_form(page: Page) -> bool:
     return any(f.kind != "file" for f in await scan(frame))
 
 
+async def wait_for_form(page: Page, seconds: float) -> bool:
+    """Whether a form shows within `seconds`; single-page apps fetch theirs after the load event."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
+    while not await has_form(page):
+        if loop.time() >= deadline:
+            logger.info("no form at %s after %g s", page.url, seconds)
+            return False
+        await asyncio.sleep(FORM_POLL_SECONDS)
+    return True
+
+
 async def apply_link(page: Page) -> str | None:
     try:
         found = await asyncio.wait_for(page.evaluate(APPLY_LINK_SCRIPT), SCRIPT_SECONDS)
@@ -89,8 +104,9 @@ async def press(page: Page, control: PageControl) -> None:
     target = page.locator(f'[{CONTROL_MARK}="{control.id}"]').first
 
     async def reads_only(route: Route) -> None:
-        # A button outside a form can still post in the background, as one-click applies do.
-        if route.request.method != "GET":
+        # A button outside a form can still post in the background, as one-click applies do;
+        # GraphQL queries only read, and single-page apps fetch their form with one.
+        if route.request.method != "GET" and not _graphql_query(route.request.post_data):
             logger.warning(
                 "blocked %s %s after pressing %r",
                 route.request.method,
@@ -116,7 +132,8 @@ async def press(page: Page, control: PageControl) -> None:
 
 
 class SafeActor:
-    """Types, picks and attaches; it has no click or key verbs, so it can't send the form."""
+    """Types, picks, ticks and attaches; it never clicks a button or presses a key, so it can't
+    send the form."""
 
     def __init__(self, frame: Frame) -> None:
         self._frame = frame
@@ -127,10 +144,15 @@ class SafeActor:
             case "select":
                 await self._do(target.select_option(value=value, timeout=ACTION_MS), field)
             case "radio":
-                choice = self._frame.locator(f'[{MARK}="{field.id}"][value="{_css(value)}"]')
-                await self._do(choice.check(timeout=ACTION_MS), field)
+                await self._tick(self._option(field, value), True, field)
             case "checkbox":
-                await self._do(target.set_checked(value == "yes", timeout=ACTION_MS), field)
+                await self._tick(target, value == "yes", field)
+            case "checkboxes":
+                chosen = set(value.split("\n"))
+                for option in field.options:
+                    await self._tick(
+                        self._option(field, option.value), option.value in chosen, field
+                    )
             case "file":
                 raise FormError(f"{field.label!r} takes a file; use attach")
             case "combobox":
@@ -147,9 +169,19 @@ class SafeActor:
     def _locate(self, field: FormField) -> Locator:
         return self._frame.locator(f'[{MARK}="{field.id}"]').first
 
-    async def _do(self, action: Awaitable[object], field: FormField) -> None:
+    def _option(self, field: FormField, value: str) -> Locator:
+        return self._frame.locator(f'[{MARK}="{field.id}"][value="{_css(value)}"]').first
+
+    async def _tick(self, box: Locator, on: bool, field: FormField) -> None:
+        # Styled forms hide the input under its label, where a pointer click never lands; a DOM
+        # click toggles it and runs the page's handlers, and a checkbox or radio can't send a form.
+        state = await self._do(box.evaluate(TICK_SCRIPT, on, timeout=ACTION_MS), field)
+        if state is not on:
+            raise FormError(f"{field.label!r} did not stay {'ticked' if on else 'clear'}")
+
+    async def _do[T](self, action: Awaitable[T], field: FormField) -> T:
         try:
-            await action
+            return await action
         except PlaywrightTimeoutError as exc:
             raise FormError(
                 f"{field.label!r} could not be filled within {ACTION_MS / 1000:g} s"
@@ -202,6 +234,19 @@ class SubmitGuard:
             await route.abort("blockedbyclient")
             return
         await route.fallback()
+
+
+def _graphql_query(body: str | None) -> bool:
+    """Whether a request body is GraphQL that only reads: queries, no mutations."""
+    try:
+        payload = json.loads(body or "")
+    except json.JSONDecodeError:
+        return False
+    operations = payload if isinstance(payload, list) else [payload]
+    texts = [op.get("query") if isinstance(op, dict) else None for op in operations]
+    return bool(texts) and all(
+        isinstance(t, str) and t.lstrip().startswith(("query", "{")) for t in texts
+    )
 
 
 def _css(value: str) -> str:

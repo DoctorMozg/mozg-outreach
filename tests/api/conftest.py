@@ -10,6 +10,7 @@ from pydantic import TypeAdapter
 from mozg_outreach.api.app import create_app
 from mozg_outreach.api.services import Services
 from mozg_outreach.api.settings import Settings
+from mozg_outreach.apply.desk import ApplyDesk
 from mozg_outreach.mail import Mailbox
 from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.fields import FieldProposal
@@ -85,7 +86,10 @@ def biz_brief() -> JsonObject:
 
 
 async def open_api(
-    tmp_path: Path, runner: RecordedRunner, mailbox: Mailbox | None = None
+    tmp_path: Path,
+    runner: RecordedRunner,
+    mailbox: Mailbox | None = None,
+    applications: ApplyDesk | None = None,
 ) -> AsyncIterator[Api]:
     settings = Settings(home=tmp_path / "home", prompts=REPO_PROMPTS, ui_dist=tmp_path / "no-ui")
     feed = FakeFeed()
@@ -95,6 +99,7 @@ async def open_api(
         adapters=lambda _kind, _config: feed,
         mailbox=mailbox,
         sites=FakeSites(),
+        applications=applications,
     )
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)

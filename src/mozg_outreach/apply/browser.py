@@ -20,9 +20,9 @@ from mozg_outreach.apply.form import (
     ACTION_MS,
     FormError,
     apply_link,
-    has_form,
     page_controls,
     press,
+    wait_for_form,
 )
 from mozg_outreach.apply.models import FillReport, FormFinderInput
 
@@ -38,6 +38,8 @@ WATCH_SECONDS = 2.0
 OPEN_MS = 30_000
 # Ads, trackers and lazy images can keep a page from ever finishing; the form is there long before.
 SETTLE_MS = 10_000
+# Single-page apps fetch the form after the page loads; Ashby's takes about two seconds.
+FORM_SECONDS = 15.0
 
 
 class ApplyBrowser:
@@ -64,7 +66,11 @@ class ApplyBrowser:
         self._pages[item_id] = page
         files = self._files[item_id] = Path(tempfile.mkdtemp(prefix=f"mozg-apply-{item_id}-"))
         await _open(page, url)
-        found = [] if await has_form(page) else await _find_form(page, application, agents.finder)
+        found = (
+            []
+            if await wait_for_form(page, FORM_SECONDS)
+            else await _find_form(page, application, agents.finder)
+        )
         report = await FormFiller(agents.answerer).fill(page, application, files)
         report = report.model_copy(update={"concerns": [*found, *report.concerns]})
         await page.bring_to_front()
@@ -138,7 +144,7 @@ async def _find_form(page: Page, application: Application, finder: FormFinder) -
     if link is not None and link != page.url:
         logger.info("no form at %s; opening its apply link %s", page.url, link)
         await _open(page, link)
-        if await has_form(page):
+        if await wait_for_form(page, FORM_SECONDS):
             return []
     controls = await page_controls(page)
     if not controls:
@@ -162,6 +168,7 @@ async def _find_form(page: Page, application: Application, finder: FormFinder) -
         await _open(page, control.href)
     else:
         await press(page, control)
+    await wait_for_form(page, FORM_SECONDS)
     note = f"Opened the form through {control.text!r} on the job page."
     return [note, *finding.concerns]
 

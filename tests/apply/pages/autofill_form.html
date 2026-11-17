@@ -1,0 +1,21 @@
+<title>Apply</title>
+<form method="post" action="/apply">
+  <div class="card">
+    <h3>Autofill from resume</h3>
+    <p>Upload your resume here to autofill key application fields.</p>
+    <input type="file" id="autofill" style="display: none">
+    <button type="button">Upload file</button>
+  </div>
+  <label>Name<input name="name"></label>
+  <label>Email<input name="email" type="email"></label>
+  <label>Phone<input name="phone" type="tel"></label>
+  <label>Why Acme?<textarea name="why"></textarea></label>
+  <button>Submit</button>
+</form>
+<script>
+  // Stands in for a resume parser that answers a moment after the upload.
+  document.getElementById("autofill").addEventListener("change", () => setTimeout(() => {
+    document.querySelector("[name=name]").value = "Max From Resume";
+    document.querySelector("[name=email]").value = "max@resume.example";
+  }, 1500));
+</script>
