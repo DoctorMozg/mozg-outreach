@@ -52,6 +52,30 @@ class EmailContact(BaseModel):
     source_url: str = Field(description="Page the address, or the pattern behind it, was seen on.")
 
 
+class ProfileLink(BaseModel):
+    url: str = Field(description="A LinkedIn profile the company's own site links to.")
+    text: str = Field(description="The link's text, often the person's name.")
+    source_url: str
+
+
+class SiteContacts(BaseModel):
+    """What the company's own pages publish, read by Python, not by a model."""
+
+    emails: list[EmailContact] = Field(default_factory=list)
+    profiles: list[ProfileLink] = Field(default_factory=list)
+    pages: list[str] = Field(default_factory=list, description="Pages read.")
+    contact_form: str | None = Field(default=None, description="Page with a contact form.")
+    concerns: list[str] = Field(default_factory=list)
+
+
+class ContactBrief(CompanyBrief):
+    """The contact finder's input: the company plus what its own pages already publish."""
+
+    site: SiteContacts | None = Field(
+        default=None, description="Emails and profile links Python read on the company's site."
+    )
+
+
 class PhoneContact(BaseModel):
     number: str = Field(min_length=3)
     source_url: str
@@ -86,6 +110,9 @@ class ContactsResult(BaseModel):
     phones: list[PhoneContact]
     whatsapp: str | None
     booking_link: str | None
+    contact_form: str | None = Field(
+        default=None, description="Page of the company's website contact form."
+    )
     address: str | None
     social: SocialLinks
     key_people: list[KeyPerson]

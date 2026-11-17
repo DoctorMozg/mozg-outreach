@@ -18,13 +18,18 @@ from mozg_outreach.api.schemas import (
     ItemDetail,
     ItemOut,
     LinkedEntity,
+    MailThreadOut,
+    ProfileLinkIn,
     RunOut,
     StepDoneIn,
 )
 from mozg_outreach.api.services import Services, get_or_404, services
-from mozg_outreach.pipelines.biz.approach_models import ApproachStep, StoredApproach
-from mozg_outreach.pipelines.biz.outreach import APPROACH
-from mozg_outreach.pipelines.biz.progress import ApproachProgress
+from mozg_outreach.mail.edits import edited_share
+from mozg_outreach.mail.suppression import Suppressions
+from mozg_outreach.pipelines.biz.approach import FINAL_STOPS
+from mozg_outreach.pipelines.biz.approach_models import ApproachStep
+from mozg_outreach.pipelines.biz.outreach import APPROACH, link_profile
+from mozg_outreach.pipelines.biz.progress import ApproachProgress, sequence_step
 from mozg_outreach.runs.items import ITEM_ACTIONS, ItemActionName
 from mozg_outreach.storage.models import (
     Draft,
@@ -57,18 +62,18 @@ class UserEdit(BaseModel):
 
 def item_outs(session: Session, items: list[Item]) -> list[ItemOut]:
     """Rows for a list of leads: what the user last did with each, and its approach step."""
-    activity = InteractionRepository(session).activity(items)
+    interactions = InteractionRepository(session)
+    activity = interactions.activity(items)
+    planned = interactions.for_items([i.id for i in items if APPROACH in i.details])
     return [
         ItemOut.model_validate(i).model_copy(
-            update={"activity": activity.get(i.id), "approach_step": _step(i)}
+            update={
+                "activity": activity.get(i.id),
+                "approach_step": sequence_step(i, planned.get(i.id, [])),
+            }
         )
         for i in items
     ]
-
-
-def _step(item: Item) -> ApproachStep | None:
-    stored = item.details.get(APPROACH)
-    return StoredApproach.model_validate(stored).current() if stored else None
 
 
 @router.get("/projects/{project_id}/items")
@@ -95,9 +100,7 @@ async def get_item(item_id: int, svc: Svc) -> ItemDetail:
                 "raw": item.raw,
                 "details": item.details,
                 "drafts": DraftRepository(session).for_item(item_id),
-                "mail": list(
-                    session.scalars(select(MailThread).where(MailThread.item_id == item_id))
-                ),
+                "mail": _mail(session, item_id),
                 "interactions": InteractionRepository(session).history(item_id),
                 "entities": [
                     LinkedEntity(entity_id=e.id, kind=e.kind, name=e.name, role=role)
@@ -105,6 +108,17 @@ async def get_item(item_id: int, svc: Svc) -> ItemDetail:
                 ],
             }
         )
+
+
+def _mail(session: Session, item_id: int) -> list[MailThreadOut]:
+    found = []
+    for row in session.scalars(select(MailThread).where(MailThread.item_id == item_id)):
+        out = MailThreadOut.model_validate(row)
+        draft = session.get(Draft, row.draft_id)
+        if draft is not None and row.sent_body is not None:
+            out = out.model_copy(update={"edited": edited_share(draft.body, row.sent_body)})
+        found.append(out)
+    return found
 
 
 def _start_item_run(svc: Services, item_id: int, action: ItemActionName) -> RunOut:
@@ -164,6 +178,12 @@ async def apply_to_job(item_id: int, svc: Svc) -> RunOut:
     return _start_item_run(svc, item_id, "apply")
 
 
+@router.put("/items/{item_id}/people/linkedin", status_code=204)
+async def set_linkedin(item_id: int, body: ProfileLinkIn, svc: Svc) -> None:
+    with svc.db.session() as session:
+        link_profile(session, get_or_404(session, Item, item_id), body.name, body.url)
+
+
 @router.put("/drafts/{draft_id}", status_code=201)
 async def edit_draft(draft_id: int, body: DraftEdit, svc: Svc) -> DraftOut:
     """A hand edit becomes the next version, so the generated text stays for comparison."""
@@ -204,10 +224,16 @@ async def log_interaction(item_id: int, body: InteractionIn, svc: Svc) -> Intera
         row = InteractionRepository(session).log(item_id, body.kind, body.note)
         if body.happened_at is not None:
             row.happened_at = body.happened_at
+        row.until = body.until
+        if body.kind in FINAL_STOPS:
+            Suppressions(session).add_lead(item_id, body.kind)
         return InteractionOut.model_validate(row)
 
 
 @router.delete("/interactions/{interaction_id}", status_code=204)
 async def delete_interaction(interaction_id: int, svc: Svc) -> None:
     with svc.db.session() as session:
-        session.delete(get_or_404(session, Interaction, interaction_id))
+        row = get_or_404(session, Interaction, interaction_id)
+        if row.kind in FINAL_STOPS:
+            Suppressions(session).lift(row.item_id, row.kind)
+        session.delete(row)

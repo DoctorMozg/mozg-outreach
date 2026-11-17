@@ -17,6 +17,7 @@ class Wording(BaseModel):
     inbox: str = Field(description="To a company's shared inbox, with no person to greet.")
     closings: dict[Tone, str]
     opt_out: str = Field(description="One line offering to stop writing, where rules ask for it.")
+    privacy: str = Field(description="Points to the sender's privacy notice at `{url}`.")
 
 
 WORDINGS: dict[str, Wording] = {
@@ -29,6 +30,7 @@ WORDINGS: dict[str, Wording] = {
         inbox="Hello,",
         closings={"warm": "Thanks,", "neutral": "Best regards,", "formal": "Sincerely,"},
         opt_out="If this isn't relevant to you, just let me know and I won't write again.",
+        privacy="How I handle your data: {url}",
     ),
     "ru": Wording(
         dear="Здравствуйте, {first}!",
@@ -39,6 +41,7 @@ WORDINGS: dict[str, Wording] = {
         inbox="Здравствуйте!",
         closings={"warm": "Спасибо,", "neutral": "С уважением,", "formal": "С уважением,"},
         opt_out="Если это вам неактуально, просто дайте знать, и я больше не буду писать.",
+        privacy="Как я обращаюсь с вашими данными: {url}",
     ),
     "uk": Wording(
         dear="Добрий день, {first}!",
@@ -49,6 +52,7 @@ WORDINGS: dict[str, Wording] = {
         inbox="Добрий день!",
         closings={"warm": "Дякую,", "neutral": "З повагою,", "formal": "З повагою,"},
         opt_out="Якщо це для вас неактуально, просто дайте знати, і я більше не писатиму.",
+        privacy="Як я обробляю ваші дані: {url}",
     ),
     # German, French and Spanish avoid Herr/Frau, Monsieur/Madame and Estimado/a: no gender guess.
     "de": Wording(
@@ -67,6 +71,7 @@ WORDINGS: dict[str, Wording] = {
             "Falls das für Sie nicht relevant ist, sagen Sie einfach Bescheid, "
             "dann schreibe ich nicht wieder."
         ),
+        privacy="Wie ich mit Ihren Daten umgehe: {url}",
     ),
     "fr": Wording(
         dear="Bonjour {full},",
@@ -80,6 +85,7 @@ WORDINGS: dict[str, Wording] = {
             "Si ce n'est pas pertinent pour vous, dites-le-moi simplement "
             "et je ne vous écrirai plus."
         ),
+        privacy="Comment je traite vos données : {url}",
     ),
     "es": Wording(
         dear="Buenos días, {full}:",
@@ -90,6 +96,7 @@ WORDINGS: dict[str, Wording] = {
         inbox="Buenos días:",
         closings={"warm": "Gracias,", "neutral": "Un saludo,", "formal": "Atentamente,"},
         opt_out="Si no le resulta relevante, dígamelo y no volveré a escribirle.",
+        privacy="Cómo trato sus datos: {url}",
     ),
 }
 
@@ -113,12 +120,25 @@ class LetterFrame(BaseModel):
     opt_out: str | None = Field(
         default=None, description="Added above the closing, after naturalizing."
     )
+    card: str | None = Field(
+        default=None, description="The sender's signature card, added under the sign-off."
+    )
 
     @classmethod
     def build(
-        cls, channel: Channel, tone: Tone, party: LetterParty, language: str
+        cls,
+        channel: Channel,
+        tone: Tone,
+        party: LetterParty,
+        language: str,
+        *,
+        casual_hi: bool = True,
     ) -> "LetterFrame":
+        """`casual_hi` False keeps "Hi" out: Gulf readers take it as too casual."""
         words = WORDINGS[letter_language(language)]
+        if not casual_hi:
+            words = words.model_copy(update={"hi": words.hello, "there": words.inbox})
+            tone = "neutral" if tone == "warm" else tone
         closing = words.closings[tone]
         signature = first_name(party.sender)
         if channel == "dm":
@@ -140,23 +160,29 @@ class LetterFrame(BaseModel):
             salutation = template.format(first=first_name(party.recipient))
         return cls(salutation=salutation, closing=closing, signature=signature)
 
-    def with_opt_out(self, language: str) -> "LetterFrame":
-        return self.model_copy(update={"opt_out": WORDINGS[letter_language(language)].opt_out})
+    def with_opt_out(self, language: str, privacy_url: str | None = None) -> "LetterFrame":
+        """Adds the stop-writing line, and a line to the privacy notice when one is given."""
+        words = WORDINGS[letter_language(language)]
+        lines = [words.opt_out]
+        if privacy_url:
+            lines.append(words.privacy.format(url=privacy_url))
+        return self.model_copy(update={"opt_out": "\n".join(lines)})
 
     def assemble(self, body: str) -> str:
         paragraphs = [p.strip() for p in body.strip().split("\n\n") if p.strip()]
         return "\n\n".join([self.salutation, *paragraphs, self._ending()])
 
     def finish(self, letter: str) -> str:
-        """Adds the opt-out line; it stays out of the word budget and the naturalizer's reach."""
-        if self.opt_out is None:
+        """Adds the opt-out line and the card, outside the word budget and the naturalizer."""
+        if self.opt_out is None and self.card is None:
             return letter
         ending = self._ending()
         # Naturalize validation keeps the sign-off lines verbatim; spacing around them may vary.
         head, found, tail = letter.rstrip().rpartition(f"\n{ending}")
         if not found or tail:
             raise ValueError(f"letter does not end with {ending!r}")
-        return f"{head.rstrip()}\n\n{self.opt_out}\n\n{ending}"
+        blocks = [head.rstrip(), self.opt_out, ending, self.card]
+        return "\n\n".join(b for b in blocks if b)
 
     def _ending(self) -> str:
         return f"{self.closing}\n{self.signature}"

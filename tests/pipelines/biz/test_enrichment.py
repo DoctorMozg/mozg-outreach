@@ -14,16 +14,23 @@ from mozg_outreach.pipelines.biz.enrichment_models import (
     CompanyBrief,
     CompanyDossier,
     CompanyWebsite,
+    ContactBrief,
     ContactsResult,
+    EmailContact,
     GrowthResult,
     NewsResult,
+    ProfileLink,
     ReputationResult,
+    SiteContacts,
     TechResult,
 )
 from mozg_outreach.pipelines.biz.models import Strategy
+from mozg_outreach.pipelines.biz.profile_search import ProfileHit, ProfileSearchError
 from mozg_outreach.pipelines.steps import PipelineSteps
-from tests.pipelines.biz.conftest import load_fixture
+from tests.pipelines.biz.conftest import FakeProfiles, FakeSites, load_fixture
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner, Scripted
+
+PRIVACY = "https://katanamrp.com/privacy"
 
 
 def load[TModel: BaseModel](name: str, model: type[TModel]) -> TModel:
@@ -76,7 +83,103 @@ async def test_full_dossier(
     assert dossier.tech is not None
     assert dossier.tech.maturity == "mid"
     assert steps.cost_usd == pytest.approx(0.5)
-    assert all(payloads == [company] for payloads in runner.payloads.values())
+    others = {k: v for k, v in runner.payloads.items() if k != "outreach-contact-finder"}
+    assert all(payloads == [company] for payloads in others.values())
+    [contact_input] = runner.payloads["outreach-contact-finder"]
+    assert contact_input == ContactBrief(**company.model_dump(), site=None)
+
+
+class TestSite:
+    async def test_the_agent_starts_from_the_site_and_its_addresses_are_kept(
+        self, tmp_path: Path, company: CompanyBrief, script: dict[str, list[Scripted]]
+    ) -> None:
+        site = SiteContacts(
+            emails=[
+                EmailContact(address="HELLO@katanamrp.com", kind="published", source_url="u"),
+                EmailContact(address="dpo@katanamrp.com", kind="published", source_url=PRIVACY),
+            ],
+            contact_form="https://katanamrp.com/contact",
+            concerns=["one page was slow"],
+        )
+        sites = FakeSites({"katanamrp.com": site})
+        runner = RecordedRunner(script)
+        steps = PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path)
+
+        dossier = await BizEnrichment(steps, sites).enrich(company)
+
+        [contact_input] = runner.payloads["outreach-contact-finder"]
+        assert isinstance(contact_input, ContactBrief)
+        assert contact_input.site == site
+        assert dossier.contacts is not None
+        # The agent already had hello@ (any case); the privacy page's DPO address is added.
+        assert [(e.address, e.source_url) for e in dossier.contacts.emails][-1] == (
+            "dpo@katanamrp.com",
+            PRIVACY,
+        )
+        assert sum(e.address.lower() == "hello@katanamrp.com" for e in dossier.contacts.emails) == 1
+        assert "one page was slow" in dossier.contacts.concerns
+        assert dossier.contacts.contact_form == "https://katanamrp.com/contact"
+
+    async def test_without_a_domain_the_site_the_agent_found_is_read_after(
+        self, tmp_path: Path, company: CompanyBrief, script: dict[str, list[Scripted]]
+    ) -> None:
+        sites = FakeSites()
+        steps = PipelineSteps(RecordedRunner(script), PromptLibrary(REPO_PROMPTS), tmp_path)
+
+        await BizEnrichment(steps, sites).enrich(company.model_copy(update={"domain": None}))
+
+        contacts = load("contacts", ContactsResult)
+        assert contacts.website is not None
+        assert sites.read_domains == [CompanyDomain.usable(contacts.website.url)]
+
+
+class TestProfiles:
+    @pytest.fixture
+    def steps(self, tmp_path: Path, script: dict[str, list[Scripted]]) -> PipelineSteps:
+        return PipelineSteps(RecordedRunner(script), PromptLibrary(REPO_PROMPTS), tmp_path)
+
+    async def test_the_sites_own_link_is_used_before_any_search(
+        self, steps: PipelineSteps, company: CompanyBrief
+    ) -> None:
+        link = ProfileLink(
+            url="https://www.linkedin.com/in/jane-x", text="Jane  Example", source_url="u"
+        )
+        sites = FakeSites({"katanamrp.com": SiteContacts(profiles=[link])})
+        profiles = FakeProfiles()
+
+        dossier = await BizEnrichment(steps, sites, profiles).enrich(company)
+
+        assert dossier.contacts is not None
+        assert dossier.contacts.key_people[0].linkedin == "https://www.linkedin.com/in/jane-x"
+        assert profiles.looked_up == []
+
+    async def test_a_search_hit_is_linked_and_flagged_for_checking(
+        self, steps: PipelineSteps, company: CompanyBrief
+    ) -> None:
+        hit = ProfileHit(
+            url="https://www.linkedin.com/in/jane-e",
+            title="Jane Example - CTO - Katana | LinkedIn",
+            snippet="",
+        )
+        profiles = FakeProfiles({"Jane Example": hit})
+
+        dossier = await BizEnrichment(steps, FakeSites(), profiles).enrich(company)
+
+        assert dossier.contacts is not None
+        assert dossier.contacts.key_people[0].linkedin == hit.url
+        assert profiles.looked_up == [("Jane Example", company.name)]
+        assert any("check it: Jane Example - CTO" in c for c in dossier.contacts.concerns)
+
+    async def test_a_failed_search_is_a_concern(
+        self, steps: PipelineSteps, company: CompanyBrief
+    ) -> None:
+        profiles = FakeProfiles(error=ProfileSearchError("Brave Search answered 429"))
+
+        dossier = await BizEnrichment(steps, FakeSites(), profiles).enrich(company)
+
+        assert dossier.contacts is not None
+        assert dossier.contacts.key_people[0].linkedin is None
+        assert "LinkedIn search stopped: Brave Search answered 429" in dossier.contacts.concerns
 
 
 async def test_failed_agent_becomes_a_concern(

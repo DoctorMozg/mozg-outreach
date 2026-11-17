@@ -5,16 +5,19 @@ import pytest
 
 from mozg_outreach.agents import PromptLibrary
 from mozg_outreach.letters.models import Hook
+from mozg_outreach.mail.suppression import Blocklist
 from mozg_outreach.pipelines.biz.approach import (
     ApproachOptions,
     ApproachPlanner,
     ApproachRequest,
     ApproachValidator,
+    SequenceClosedError,
     planned_sequences,
 )
 from mozg_outreach.pipelines.biz.approach_models import (
     ApproachPlan,
     DoneTouch,
+    Logged,
     PlanContact,
     PlanHook,
     PlannedTouch,
@@ -120,10 +123,87 @@ class TestValidator:
         assert [t.contact_ref for t in kept.touches] == ["c1", "c3", "c2"]
         assert "more than 3 people" in kept.concerns[0]
 
+    def test_a_third_person_by_email_is_dropped_but_linkedin_may_reach_them(self) -> None:
+        third = [*CONTACTS[:2], contact("c3", route("c3.email", "email"), CONTACTS[2].routes[0])]
+        kept = validate(
+            touch(1, 0, "c1", "c1.email"),
+            touch(2, 2, "c2", "c2.email"),
+            touch(3, 4, "c3", "c3.email"),
+            touch(4, 6, "c3", "c3.linkedin"),
+            contacts=third,
+        )
+        assert [t.route_ref for t in kept.touches] == ["c1.email", "c2.email", "c3.linkedin"]
+        assert "more than 2 people at one company by email" in kept.concerns[0]
+
+    def test_a_fifth_email_to_one_person_is_dropped(self) -> None:
+        kept = validate(*(touch(n, 2 * (n - 1), "c1", "c1.email") for n in range(1, 6)))
+        assert len(kept.touches) == 4
+        assert "more than 4 emails to one contact" in kept.concerns[0]
+
+    def test_calls_back_up_letters_and_never_end_the_sequence(self) -> None:
+        phone = PlanRoute(ref="c1.phone", channel="phone", address="+44 1", confidence="published")
+        contacts = [contact("c1", route("c1.email", "email"), phone)]
+        kept = validate(
+            touch(1, 0, "c1", "c1.email"),
+            touch(2, 1, "c1", "c1.phone"),
+            touch(3, 4, "c1", "c1.email"),
+            touch(4, 5, "c1", "c1.phone"),
+            touch(5, 8, "c1", "c1.email"),
+            touch(6, 9, "c1", "c1.phone"),
+            touch(7, 12, "c1", "c1.phone"),
+            contacts=contacts,
+        )
+        assert [t.day for t in kept.touches] == [0, 1, 4, 5, 8]
+        assert [c.split(": ")[1] for c in kept.concerns] == [
+            "more than 2 calls to one contact.",
+            "more than 2 calls to one contact.",
+        ]
+
+    def test_a_call_with_no_letter_beside_it_is_dropped(self) -> None:
+        phone = PlanRoute(ref="c1.phone", channel="phone", address="+44 1", confidence="published")
+        contacts = [contact("c1", route("c1.email", "email"), phone)]
+        kept = validate(
+            touch(1, 0, "c1", "c1.email"),
+            touch(2, 3, "c1", "c1.phone"),
+            touch(3, 6, "c1", "c1.email"),
+            contacts=contacts,
+        )
+        assert [t.day for t in kept.touches] == [0, 6]
+        assert "a call needs a letter" in kept.concerns[0]
+
+    def test_the_sequence_does_not_end_on_a_call(self) -> None:
+        phone = PlanRoute(ref="c1.phone", channel="phone", address="+44 1", confidence="published")
+        contacts = [contact("c1", route("c1.email", "email"), phone)]
+        kept = validate(
+            touch(1, 0, "c1", "c1.email"), touch(2, 1, "c1", "c1.phone"), contacts=contacts
+        )
+        assert [t.day for t in kept.touches] == [0]
+        assert "a call can't end the sequence" in kept.concerns[0]
+
+    def test_a_contact_form_note_may_open_but_only_once(self) -> None:
+        form = PlanRoute(
+            ref="inbox.form",
+            channel="form",
+            address="https://x.example/contact",
+            confidence="published",
+        )
+        contacts = [contact("c1"), contact("inbox", form)]
+        kept = validate(
+            touch(1, 0, "inbox", "inbox.form", addressed_to="c1"),
+            touch(2, 4, "inbox", "inbox.form", addressed_to="c1"),
+            contacts=contacts,
+            first="inbox",
+        )
+        assert [t.day for t in kept.touches] == [0]
+        assert "more than one contact-form note" in kept.concerns[0]
+
     def test_a_call_cannot_open_the_sequence(self) -> None:
         kept = validate(touch(1, 0, "inbox", "inbox.phone1"), touch(2, 2, "c1", "c1.email"))
         assert [t.route_ref for t in kept.touches] == ["c1.email"]
-        assert "first touch must be an email or a LinkedIn message" in kept.concerns[0]
+        assert (
+            "first touch must be an email, a LinkedIn message or a contact-form note"
+            in (kept.concerns[0])
+        )
 
     @pytest.mark.parametrize(
         ("number", "flagged"), [("+971 4 123 4567", True), ("+44 20 7946 0000", False)]
@@ -132,9 +212,12 @@ class TestValidator:
         phone = PlanRoute(ref="c1.phone", channel="phone", address=number, confidence="published")
         contacts = [contact("c1", route("c1.email", "email"), phone)]
         kept = validate(
-            touch(1, 0, "c1", "c1.email"), touch(2, 3, "c1", "c1.phone"), contacts=contacts
+            touch(1, 0, "c1", "c1.email"),
+            touch(2, 1, "c1", "c1.phone"),
+            touch(3, 4, "c1", "c1.email"),
+            contacts=contacts,
         )
-        assert len(kept.touches) == 2
+        assert len(kept.touches) == 3
         assert any("TDRA" in c for c in kept.concerns) is flagged
 
     def test_a_guessed_address_cannot_open_while_a_published_route_exists(self) -> None:
@@ -150,12 +233,12 @@ class TestValidator:
 
     def test_only_one_guessed_address_per_company(self) -> None:
         guesses = [
-            contact("c1", route("c1.email", "email")),
+            contact("c1", route("c1.linkedin", "linkedin", "linkedin")),
             contact("c2", route("c2.email", "email", "guessed")),
             contact("c3", route("c3.email", "email", "guessed")),
         ]
         kept = validate(
-            touch(1, 0, "c1", "c1.email"),
+            touch(1, 0, "c1", "c1.linkedin"),
             touch(2, 2, "c2", "c2.email"),
             touch(3, 4, "c3", "c3.email"),
             contacts=guesses,
@@ -309,6 +392,36 @@ class TestOptions:
             ("hello@katanamrp.com", "shared_inbox")
         ], "a pattern-guessed shared address is not offered"
 
+    def test_without_a_published_inbox_a_role_guess_is_offered_as_guessed(
+        self, dossier: CompanyDossier
+    ) -> None:
+        assert dossier.contacts is not None
+        contacts = dossier.contacts.model_copy(
+            update={"emails": [e for e in dossier.contacts.emails if e.kind == "pattern_guess"]}
+        )
+        inbox = ApproachOptions("Katana", dossier.model_copy(update={"contacts": contacts}))
+        assert [(r.address, r.confidence) for r in inbox.contacts()[-1].routes] == [
+            ("partnerships@katanamrp.com", "guessed")
+        ]
+
+    def test_the_website_form_is_offered_on_the_inbox(self, dossier: CompanyDossier) -> None:
+        assert dossier.contacts is not None
+        contacts = dossier.contacts.model_copy(
+            update={"contact_form": "https://katanamrp.com/contact"}
+        )
+        options = ApproachOptions("Katana", dossier.model_copy(update={"contacts": contacts}))
+        [form] = [r for r in options.contacts()[-1].routes if r.channel == "form"]
+        assert (form.ref, form.address) == ("inbox.form", "https://katanamrp.com/contact")
+
+    def test_suppressed_addresses_are_left_out(self, dossier: CompanyDossier) -> None:
+        blocked = Blocklist(addresses={"hello@katanamrp.com": "opted_out"})
+        options = ApproachOptions("Katana", dossier, blocked)
+
+        contacts = options.contacts()
+
+        assert all(r.address != "hello@katanamrp.com" for c in contacts for r in c.routes)
+        assert options.dropped == ["Left out hello@katanamrp.com: opted_out."]
+
     def test_hooks_get_refs(self, dossier: CompanyDossier) -> None:
         hooks = ApproachOptions("Katana", dossier).hooks({})
         assert [h.ref for h in hooks[:2]] == ["h1", "h2"]
@@ -383,3 +496,121 @@ async def test_replanning_keeps_done_touches_and_their_options(
     ]
     assert stored.done == previous.done
     assert stored.contacts == CONTACTS
+
+
+class TestRecycling:
+    @pytest.fixture
+    def finished(self, strategy: Strategy) -> StoredApproach:
+        angle = strategy.outreach_angles[0].name
+        return StoredApproach(
+            plan=plan(touch(1, 0, "c1", "c1.email", angle=angle)),
+            contacts=CONTACTS,
+            hooks=HOOKS,
+            planned_on="2026-08-01",
+            done=[DoneTouch(step=1, on=date(2026, 8, 3), interaction_id=7)],
+        )
+
+    async def replan(
+        self,
+        tmp_path: Path,
+        dossier: CompanyDossier,
+        strategy: Strategy,
+        previous: StoredApproach | None,
+        logged: list[Logged],
+        touches: list[PlannedTouch],
+    ) -> tuple[StoredApproach, RecordedRunner]:
+        runner = RecordedRunner({"outreach-approach-planner": [plan(*touches)]})
+        planner = ApproachPlanner(PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path))
+        stored = await planner.plan(
+            ApproachRequest(
+                company="Katana",
+                fields={},
+                dossier=dossier,
+                strategy=strategy,
+                today=date(2026, 11, 16),
+                previous=previous,
+                logged=logged,
+            )
+        )
+        return stored, runner
+
+    async def test_a_finished_sequence_starts_over_with_its_history_and_three_touches(
+        self, tmp_path: Path, dossier: CompanyDossier, strategy: Strategy, finished: StoredApproach
+    ) -> None:
+        angle = strategy.outreach_angles[0].name
+        touches = [
+            touch(n, 3 * (n - 1), "inbox", "inbox.email1", angle=angle) for n in (1, 2, 3, 4)
+        ]
+
+        stored, runner = await self.replan(
+            tmp_path,
+            dossier,
+            strategy,
+            finished,
+            [Logged(kind="sent", on=date(2026, 8, 3))],
+            touches,
+        )
+
+        sent = runner.payloads["outreach-approach-planner"][0].model_dump()
+        assert (sent["done"], sent["days_since_start"]) == ([], None)
+        assert sent["history"] == [
+            {
+                "planned_on": "2026-08-01",
+                "ended": "finished without a reply",
+                "angles": [angle],
+                "people": ["C1"],
+            }
+        ]
+        assert [t.step for t in stored.plan.touches] == [1, 2, 3]
+        assert "more than 3 touches" in stored.plan.concerns[0]
+        assert (stored.done, len(stored.history)) == ([], 1)
+
+    async def test_a_stop_ends_it_as_said_not_now(
+        self, tmp_path: Path, dossier: CompanyDossier, strategy: Strategy, finished: StoredApproach
+    ) -> None:
+        angle = strategy.outreach_angles[0].name
+        later = finished.model_copy(
+            update={"plan": plan(touch(1, 0, "c1", "c1.email"), touch(2, 4, "c1", "c1.email"))}
+        )
+        logged = [Logged(kind="not_now", on=date(2026, 8, 5), until=date(2026, 12, 1))]
+
+        stored, _ = await self.replan(
+            tmp_path,
+            dossier,
+            strategy,
+            later,
+            logged,
+            [touch(1, 0, "inbox", "inbox.email1", angle=angle)],
+        )
+
+        assert stored.history[0].ended == "said not now on 2026-08-05"
+        assert "Re-planned before the rest ended on 2026-12-01." in stored.plan.concerns
+
+    async def test_a_company_that_asked_to_stop_gets_no_new_sequence(
+        self, tmp_path: Path, dossier: CompanyDossier, strategy: Strategy, finished: StoredApproach
+    ) -> None:
+        logged = [Logged(kind="opted_out", on=date(2026, 8, 4))]
+        with pytest.raises(SequenceClosedError, match="opted out on 2026-08-04; nothing more"):
+            await self.replan(tmp_path, dossier, strategy, finished, logged, [])
+
+    async def test_opening_on_an_old_fact_is_flagged(
+        self, tmp_path: Path, dossier: CompanyDossier, strategy: Strategy
+    ) -> None:
+        angle = strategy.outreach_angles[0].name
+        dated = ApproachOptions("Katana", dossier).hooks({})
+        old = next(h for h in dated if h.hook.date)
+
+        stored, _ = await self.replan(
+            tmp_path,
+            dossier,
+            strategy,
+            None,
+            [],
+            [touch(1, 0, "inbox", "inbox.email1", angle=angle, hook_ref=old.ref)],
+        )
+
+        assert old.hook.date is not None
+        assert (
+            f"opens on a fact from {old.hook.date[:7]}, over 90 days old"
+            in stored.plan.concerns[-1]
+        )

@@ -125,7 +125,12 @@ class LetterBriefBuilder:
             key=lambda n: ({"high": 0, "medium": 1, "low": 2}[n.timing_relevance], n.date),
         )
         return [
-            Hook(signal=f"{n.title} ({n.date}): {n.summary}", source="news", source_url=n.url)
+            Hook(
+                signal=f"{n.title} ({n.date}): {n.summary}",
+                source="news",
+                source_url=n.url,
+                date=n.date,
+            )
             for n in ranked
         ]
 
@@ -141,7 +146,13 @@ class LetterBriefBuilder:
         funding = growth.funding
         if funding and funding.last_round:
             when = f" ({funding.date})" if funding.date else ""
-            hooks.append(Hook(signal=f"Last round: {funding.last_round}{when}", source="growth"))
+            hooks.append(
+                Hook(
+                    signal=f"Last round: {funding.last_round}{when}",
+                    source="growth",
+                    date=funding.date,
+                )
+            )
         return hooks
 
     def _tech_hooks(self) -> list[Hook]:

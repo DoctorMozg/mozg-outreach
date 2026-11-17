@@ -26,11 +26,14 @@ async def mail_status(svc: Svc) -> MailStatusOut:
 
 
 @router.post("/drafts/{draft_id}/gmail", status_code=201)
-async def push_draft(draft_id: int, svc: Svc) -> MailThreadOut:
-    """Puts this version of an email letter into Gmail Drafts; the user sends it from Gmail."""
-    thread_id = await _gmail(svc).push(draft_id)
+async def push_draft(draft_id: int, svc: Svc, confirm: bool = False) -> MailThreadOut:
+    """Puts this version of an email letter into Gmail Drafts; the user sends it from Gmail.
+
+    `confirm` lets a guessed address through."""
+    pushed = await _gmail(svc).push(draft_id, confirm)
     with svc.db.session() as session:
-        return MailThreadOut.model_validate(session.get_one(MailThread, thread_id))
+        row = MailThreadOut.model_validate(session.get_one(MailThread, pushed.thread_id))
+    return row.model_copy(update={"warnings": pushed.warnings})
 
 
 @router.post("/mail/check")

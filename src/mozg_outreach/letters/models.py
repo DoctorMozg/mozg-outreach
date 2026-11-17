@@ -11,6 +11,17 @@ Tone = Literal["warm", "neutral", "formal"]
 SocialStyle = Literal["driver", "analytical", "amiable", "expressive"]
 StyleConfidence = Literal["high", "medium", "low", "none"]
 TouchPurpose = Literal["open", "follow_up", "breakup"]
+LetterVariant = Literal["observation", "problem", "peer"]
+
+# One way in per candidate, so the judge compares real alternatives, not three near-copies.
+VARIANTS: dict[LetterVariant, str] = {
+    "observation": "Open on the hook itself: what you noticed about them, stated plainly.",
+    "problem": "Open on the problem the hook makes likely, in the reader's own terms.",
+    "peer": (
+        "Open on what a comparable company did, from sender_background, then tie it to the "
+        "hook. With no comparable case in the brief, open on the hook instead."
+    ),
+}
 
 CONCERNS = "Anything the caller should know: conflicting or unverified sources, thin evidence."
 
@@ -52,6 +63,9 @@ class Hook(BaseModel):
     signal: str = Field(min_length=1)
     source: str = Field(description="Where it came from, e.g. news, tech, scout, research.")
     source_url: str | None = None
+    date: str | None = Field(
+        default=None, description="When it happened, YYYY-MM or YYYY-MM-DD; null if unknown."
+    )
 
 
 class LetterRecipient(BaseModel):
@@ -98,6 +112,10 @@ class TouchContext(BaseModel):
         description="An email replying in the thread of the earlier email; it has no subject."
     )
     earlier: list[EarlierTouch] = Field(description="Earlier touches to this reader, oldest first.")
+    others_contacted: list[str] = Field(
+        default_factory=list,
+        description="People at the company the sender wrote to before this reader's first letter.",
+    )
 
 
 class LetterBrief(BaseModel):
@@ -125,7 +143,18 @@ class LetterBrief(BaseModel):
     ask: str | None = Field(
         default=None, description="The approach plan's ask; the letter makes exactly this ask."
     )
+    offers: list[str] = Field(
+        default_factory=list,
+        description="Things the sender can send on a yes; an ask offers only these.",
+    )
     touch: TouchContext | None = Field(default=None, description="Null outside an approach plan.")
+    variant: str | None = Field(
+        default=None, description="How this draft opens; other drafts of the letter open otherwise."
+    )
+    avoid_phrasings: list[str] = Field(
+        default_factory=list,
+        description="Openings and asks of the sender's recent letters to other companies.",
+    )
     revision: Revision | None = None
     retry: RetryFeedback | None = None
 
@@ -136,6 +165,15 @@ class LetterDraft(BaseModel):
     hook_used: str = Field(description="The hook signal the opening sentence rests on.")
     angle_used: str
     concerns: list[str] = Field(description=CONCERNS)
+
+
+class CandidateReview(BaseModel):
+    variant: str
+    subject: str | None
+    text: str = Field(description="The checked draft, before naturalizing.")
+    problems: list[str]
+    score: int | None = Field(description="Judge points over both orders; null if not judged.")
+    chosen: bool
 
 
 class DraftReview(BaseModel):
@@ -151,6 +189,51 @@ class DraftReview(BaseModel):
     changes: list[str]
     problems: list[str] = Field(description="Format or evidence rules the final text still breaks.")
     review_notes: list[str] = Field(description="Facts to check: unverified names, vague claims.")
+    candidates: list[CandidateReview] = Field(
+        default_factory=list, description="Every draft the judge compared; empty for one draft."
+    )
+
+
+class JudgedLetter(BaseModel):
+    label: str
+    subject: str | None
+    body: str
+
+
+class JudgeInput(BaseModel):
+    channel: Channel
+    language: str
+    recipient: LetterRecipient
+    purpose: TouchPurpose = Field(description="open for a reader's first letter.")
+    hooks: list[Hook]
+    ask: str | None
+    sender_voice: str
+    candidates: list[JudgedLetter]
+
+
+class AxisScores(BaseModel):
+    """Each axis 1 (poor) to 5 (strong)."""
+
+    hook_relevance: int = Field(ge=1, le=5)
+    specificity: int = Field(ge=1, le=5)
+    one_clear_ask: int = Field(ge=1, le=5)
+    reader_effort: int = Field(ge=1, le=5, description="5 when it takes seconds to read and act.")
+    sounds_like_sender: int = Field(ge=1, le=5)
+    no_ai_tells: int = Field(ge=1, le=5)
+
+    def total(self) -> int:
+        return sum(self.model_dump().values())
+
+
+class CandidateScore(BaseModel):
+    label: str
+    scores: AxisScores
+    reason: str = Field(description="One sentence: what decided these scores.")
+
+
+class JudgeResult(BaseModel):
+    candidates: list[CandidateScore]
+    concerns: list[str] = Field(description=CONCERNS)
 
 
 class Skipped(BaseModel):
@@ -162,3 +245,4 @@ class SenderSettings(BaseModel):
     name: str = Field(min_length=1, description="From the project settings; signs every letter.")
     tone: Tone = "neutral"
     voice: str = Field(default="", description="The strategy's sender voice description.")
+    card: str | None = Field(default=None, description="Signature card under every email.")

@@ -9,6 +9,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from mozg_outreach.apply.desk import ApplyDesk
+from mozg_outreach.pipelines.biz.profile_search import ProfileFinder
+from mozg_outreach.pipelines.biz.site_contacts import SiteReader
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.runs.events import RunLog
 from mozg_outreach.sources.base import SourceAdapter
@@ -50,6 +52,8 @@ class FlowContext[TState: RunState]:
     workspace: Path
     adapters: AdapterFactory
     applications: ApplyDesk | None = None
+    sites: SiteReader | None = None
+    profiles: ProfileFinder | None = None
     # Answers this run's own gate from outside the run task, such as a detected confirmation page.
     answer_gate: Callable[[GateAnswer], None] | None = None
 

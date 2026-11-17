@@ -20,7 +20,9 @@ from mozg_outreach.api.schemas import (
 )
 from mozg_outreach.api.services import Services, get_or_404, services
 from mozg_outreach.domain import FieldSpec, ProjectMode
+from mozg_outreach.pipelines.biz.duplicates import CompanyDuplicates, DuplicateGroup, MergeError
 from mozg_outreach.pipelines.biz.models import BizBrief
+from mozg_outreach.pipelines.biz.outcomes import Outcomes, project_outcomes
 from mozg_outreach.pipelines.seeker.models import SeekerBrief
 from mozg_outreach.runs.catalog import FIELD_PIPELINES, SEARCH_OPTIONS
 from mozg_outreach.runs.seeker import WEB_SEARCH
@@ -92,6 +94,32 @@ async def create_project(body: ProjectIn, svc: Svc) -> ProjectOut:
 async def get_project(project_id: int, svc: Svc) -> ProjectOut:
     with svc.db.session() as session:
         return ProjectOut.model_validate(get_or_404(session, Project, project_id))
+
+
+@router.get("/projects/{project_id}/duplicates")
+async def get_duplicates(project_id: int, svc: Svc) -> list[DuplicateGroup]:
+    """Company leads that are one company saved twice, with the lead a merge keeps."""
+    with svc.db.session() as session:
+        get_or_404(session, Project, project_id)
+        return CompanyDuplicates(session, project_id).groups()
+
+
+@router.post("/projects/{project_id}/duplicates/merge")
+async def merge_duplicates(project_id: int, svc: Svc) -> list[DuplicateGroup]:
+    with svc.db.session() as session:
+        get_or_404(session, Project, project_id)
+        try:
+            return CompanyDuplicates(session, project_id).merge_all()
+        except MergeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+
+@router.get("/projects/{project_id}/outcomes")
+async def get_outcomes(project_id: int, svc: Svc) -> Outcomes:
+    """Reply rates of the letters sent from Gmail, per angle and per touch purpose."""
+    with svc.db.session() as session:
+        get_or_404(session, Project, project_id)
+        return project_outcomes(session, project_id)
 
 
 @router.patch("/projects/{project_id}")

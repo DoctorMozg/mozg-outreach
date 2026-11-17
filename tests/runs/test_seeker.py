@@ -214,6 +214,48 @@ async def test_leads_scoring_under_the_floor_stay_in_the_report_but_are_not_iden
     assert sent.model_dump()["url"] == FEED_URL
 
 
+async def test_only_the_best_leads_are_identified(
+    harness: Harness, strategy: SeekerStrategy
+) -> None:
+    project_id = harness.seeker_project()
+    harness.feed.extra.append(
+        SourceItem(
+            source="greenhouse",
+            source_item_id="acme/2",
+            url=OTHER_URL,
+            kind="job",
+            title="Platform Engineer, internal tools",
+            raw_text="Python and PostgreSQL services. Remote within the EU.",
+            raw_payload={},
+            published_at=NOW,
+            fetched_at=NOW,
+            org_name="Acme",
+            location="Remote - EU",
+        )
+    )
+    harness.script(
+        {
+            "seeker-strategist": [strategy],
+            "seeker-judge": [
+                JudgeResult(judgments=[judgment(FEED_URL), judgment(OTHER_URL)], concerns=[])
+            ],
+            "lead-identifier": [identity(company())],
+        }
+    )
+    options = {**OPTIONS, "identify_top": 1}
+    search = harness.manager.start(project_id, "seeker.search", {"options": options})
+    await harness.manager.wait(search)
+    harness.manager.answer_gate(search, GateAnswer(approve=True))
+    done = await finish(harness, search)
+
+    assert done.status == RunStatus.COMPLETE, done.error
+    with harness.db.session() as session:
+        assert all(
+            (i.score_total or 0) >= IDENTIFY_MIN_SCORE for i in session.scalars(select(Item))
+        )
+    assert len(harness.runner.payloads["lead-identifier"]) == 1
+
+
 async def test_boards_an_enabled_feed_already_covers_are_not_scouted(
     harness: Harness, strategy: SeekerStrategy
 ) -> None:

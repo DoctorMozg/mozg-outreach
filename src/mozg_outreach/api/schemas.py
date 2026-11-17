@@ -3,13 +3,14 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 from mozg_outreach.cvs.models import CvSummary
 from mozg_outreach.domain import EntityKind, IdentifierKind, ItemKind, ProjectMode, RunStatus
 from mozg_outreach.letters.models import Tone
 from mozg_outreach.naturalize.models import Channel
 from mozg_outreach.pipelines.biz.approach_models import ApproachStep
+from mozg_outreach.pipelines.biz.site_contacts import profile_url
 from mozg_outreach.storage.models import JsonObject
 from mozg_outreach.storage.repositories import LeadActivity
 
@@ -161,6 +162,12 @@ class MailThreadOut(Row):
     sent_at: datetime | None
     replied_at: datetime | None
     bounced_at: datetime | None
+    auto_replied_at: datetime | None
+    sent_body: str | None = Field(description="What the user sent, as Gmail has it.")
+    edited: float | None = Field(
+        default=None, description="Share of the draft's words changed before sending, 0 to 1."
+    )
+    warnings: list[str] = Field(default_factory=list, description="Only on a push answer.")
 
 
 class MailStatusOut(BaseModel):
@@ -171,9 +178,24 @@ class MailStatusOut(BaseModel):
 
 class InteractionIn(BaseModel):
     # "declined" is the user turning the lead down; "refused" is the other side doing so.
-    kind: Literal["sent", "replied", "bounced", "called", "met", "declined", "refused", "note"]
+    kind: Literal[
+        "sent",
+        "replied",
+        "out_of_office",
+        "not_now",
+        "opted_out",
+        "bounced",
+        "called",
+        "met",
+        "declined",
+        "refused",
+        "note",
+    ]
     note: str = ""
     happened_at: datetime | None = None
+    until: date | None = Field(
+        default=None, description="Out of office: the return date. Not now: when to come back."
+    )
 
 
 class InteractionOut(Row):
@@ -181,6 +203,7 @@ class InteractionOut(Row):
     kind: str
     note: str
     happened_at: datetime
+    until: date | None
 
 
 class LinkedEntity(BaseModel):
@@ -325,6 +348,19 @@ class CvUploadOut(BaseModel):
 class CvPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     summary: CvSummary | None = None
+
+
+class ProfileLinkIn(BaseModel):
+    name: str = Field(min_length=1, description="The key person's name as the dossier has it.")
+    url: str
+
+    @field_validator("url")
+    @classmethod
+    def _linkedin(cls, url: str) -> str:
+        canonical = profile_url(url)
+        if canonical is None:
+            raise ValueError(f"not a LinkedIn profile link: {url!r}")
+        return canonical
 
 
 class CvPick(BaseModel):

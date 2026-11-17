@@ -5,12 +5,13 @@ import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
 from mozg_outreach.pipelines.seeker import telegram_posts
-from mozg_outreach.pipelines.seeker.models import ListingKind, TelegramContact
+from mozg_outreach.pipelines.seeker.models import ListingKind, SkillRules, TelegramContact
 from mozg_outreach.pipelines.seeker.telegram_posts import (
     ParsedPost,
     ParserResult,
     TelegramPosts,
     TelegramRequest,
+    on_skills,
     telegram_contact,
     to_scouted,
 )
@@ -178,7 +179,7 @@ class TestCollect:
         assert outcome.cursors == {"telegram": '{"py_jobs": 99}'}
         assert channel.queries[0].keywords == [], "matching is left to the parser"
         assert channel.queries[0].limit == telegram_posts.POSTS_PER_CHANNEL
-        assert channel.queries[0].total_limit == telegram_posts.MAX_POSTS
+        assert channel.queries[0].total_limit == telegram_posts.MAX_READ
         assert channel.queries[0].since is not None
         assert channel.queries[0].since.date() < request().oldest
 
@@ -216,3 +217,25 @@ class TestCollect:
         outcome = await posts.collect(FakeChannel([post(1), post(2)]), wanted)
 
         assert [s.kind for s in outcome.listings] == expected
+
+
+def test_only_posts_on_the_stack_are_parsed_and_an_off_stack_channel_is_flagged() -> None:
+    rules = SkillRules(
+        must_have_skills=[],
+        must_have_or_groups=[["Python", "C++"]],
+        nice_to_have_skills=[],
+        synonym_clusters={},
+    )
+    react = [
+        post(n, text="Frontend-разработчик (React)", raw_payload={"channel": "js_jobs"})
+        for n in range(10)
+    ]
+    concerns: list[str] = []
+
+    kept = on_skills([post(1), *react], rules, concerns)
+
+    assert [i.source_item_id for i in kept] == ["py_jobs/1"]
+    assert concerns == [
+        "Telegram @js_jobs: none of its 10 recent posts names a must-have skill; remove it "
+        "from the project's sources if it stays off-target."
+    ]

@@ -6,8 +6,10 @@ from pathlib import Path
 import pytest
 from sqlalchemy.orm import Session
 
+from mozg_outreach.cvs.models import CV_CHOICE, CvChoice
 from mozg_outreach.domain import ItemKind
-from mozg_outreach.storage.models import Draft, Item, JsonObject, MailThread
+from mozg_outreach.storage.models import Cv, Draft, Item, JsonObject, MailThread
+from mozg_outreach.storage.repositories import ItemRepository
 from tests.api.conftest import Api, open_api
 from tests.mail.conftest import ME, FakeMailbox
 from tests.pipelines.conftest import RecordedRunner
@@ -15,6 +17,8 @@ from tests.pipelines.conftest import RecordedRunner
 ANN = "ann@client.example"
 GENERATED: JsonObject = {"address": ANN, "address_confidence": "published"}
 SENT_AT = datetime(2026, 11, 16, 9, 0, tzinfo=UTC)
+DELAY = "Delivery Status Notification (Delay)"
+FAILURE = "Delivery Status Notification (Failure)"
 
 
 class Mail:
@@ -143,8 +147,13 @@ class TestPush:
     @pytest.mark.parametrize(
         ("channel", "review", "problem"),
         [
-            ("linkedin", GENERATED, "only email drafts"),
+            ("linkedin", GENERATED, "only email and cover letter drafts"),
             ("email", {"edited_by_user": True}, "has no email address"),
+            (
+                "cover_letter",
+                {"address": "https://jobs.acme.example/apply", "address_confidence": "apply_form"},
+                "written for an application form",
+            ),
         ],
     )
     async def test_letters_gmail_cant_take(
@@ -169,6 +178,39 @@ class TestPush:
 
     async def test_unknown_draft(self, mail: Mail) -> None:
         assert (await mail.api.client.post("/api/drafts/999/gmail")).status_code == 404
+
+
+class TestCoverLetters:
+    async def test_goes_in_with_the_cv_picked_for_the_job(self, mail: Mail) -> None:
+        draft_id = await mail.letter(channel="cover_letter")
+        with mail.api.services.db.session() as session:
+            cv = Cv(name="Backend", filename="Stan Petrov CV.pdf", pdf=b"%PDF cv", text="CV")
+            session.add(cv)
+            session.flush()
+            item = session.get_one(Item, session.get_one(Draft, draft_id).item_id)
+            choice = CvChoice(
+                cv_id=cv.id, picked_by="only", listing_language="en", ranked=[], concerns=[]
+            )
+            ItemRepository(session).set_detail(item, CV_CHOICE, choice)
+
+        pushed = await mail.push(draft_id)
+
+        assert pushed["warnings"] == []
+        [outgoing] = mail.box.pushed
+        assert [(a.filename, a.content) for a in outgoing.attachments] == [
+            ("Stan Petrov CV.pdf", b"%PDF cv")
+        ]
+
+    async def test_without_a_picked_cv_it_goes_in_with_a_warning(self, mail: Mail) -> None:
+        draft_id = await mail.letter(channel="cover_letter")
+
+        pushed = await mail.push(draft_id)
+
+        assert pushed["warnings"] == [
+            "No CV is picked for this job, so the draft has none attached: attach it in Gmail."
+        ]
+        [outgoing] = mail.box.pushed
+        assert outgoing.attachments == []
 
 
 class TestFollowUps:
@@ -253,6 +295,39 @@ class TestCheck:
         assert str(thread["sent_at"]).startswith("2026-11-16T09:00:00")
         assert str(thread["replied_at"]).startswith("2026-11-16T12:00:00")
 
+    async def test_keeps_what_was_sent_and_how_much_was_edited(self, mail: Mail) -> None:
+        draft_id = await mail.letter()
+        await mail.push(draft_id)
+        mail.box.send(1000, SENT_AT, body="Hi Ann,\n\nv1, now with a line I added.")
+
+        await mail.check()
+
+        mail_threads = (await mail.item(draft_id))["mail"]
+        assert isinstance(mail_threads, list)
+        [thread] = mail_threads
+        assert thread["sent_body"] == "Hi Ann,\n\nv1, now with a line I added."
+        assert 0.5 < thread["edited"] < 1
+
+    async def test_outcomes_count_what_was_sent_and_answered(self, mail: Mail) -> None:
+        draft_id = await mail.letter(review={**GENERATED, "angle_used": "cost"})
+        await mail.push(draft_id)
+        mail.box.send(1000, SENT_AT)
+        mail.box.receive(1000, ANN, SENT_AT + timedelta(hours=3))
+        await mail.check()
+        project_id = (await mail.item(draft_id))["project_id"]
+
+        outcomes = await mail.api.ok("GET", f"/api/projects/{project_id}/outcomes")
+
+        assert outcomes["sent"] == 1
+        rows = outcomes["rows"]
+        assert isinstance(rows, list)
+        assert [(r["group"], r["name"], r["rate"]["replied"]) for r in rows] == [
+            ("angle", "cost", 1),
+            ("purpose", "open", 1),
+        ]
+        missing = await mail.api.client.get("/api/projects/999/outcomes")
+        assert missing.status_code == 404
+
     async def test_a_bounce_is_not_a_reply(self, mail: Mail) -> None:
         draft_id = await mail.letter()
         await mail.push(draft_id)
@@ -262,6 +337,37 @@ class TestCheck:
         await mail.check()
 
         assert kinds(await mail.item(draft_id)) == ["sent", "bounced"]
+
+    async def test_a_delay_notice_is_not_a_bounce(self, mail: Mail) -> None:
+        # Gmail's own wording; a delay is retried for days and often delivers.
+        draft_id = await mail.letter()
+        await mail.push(draft_id)
+        mail.box.send(1000, SENT_AT)
+        daemon = "mailer-daemon@googlemail.com"
+        mail.box.receive(1000, daemon, SENT_AT + timedelta(hours=4), subject=DELAY)
+        await mail.check()
+        assert kinds(await mail.item(draft_id)) == ["sent"]
+
+        mail.box.receive(1000, daemon, SENT_AT + timedelta(days=2), subject=FAILURE)
+        await mail.check()
+
+        mail_threads = (await mail.item(draft_id))["mail"]
+        assert isinstance(mail_threads, list)
+        assert kinds(await mail.item(draft_id)) == ["sent", "bounced"]
+        assert mail_threads[0]["bounced_at"].startswith("2026-11-18")
+
+    async def test_an_auto_reply_pauses_and_the_thread_stays_watched(self, mail: Mail) -> None:
+        draft_id = await mail.letter()
+        await mail.push(draft_id)
+        mail.box.send(1000, SENT_AT)
+        mail.box.receive(1000, ANN, SENT_AT + timedelta(minutes=1), auto=True)
+        await mail.check()
+        assert kinds(await mail.item(draft_id)) == ["sent", "out_of_office"]
+
+        mail.box.receive(1000, ANN, SENT_AT + timedelta(days=5))
+        assert (await mail.check())["checked"] == 1
+
+        assert kinds(await mail.item(draft_id)) == ["sent", "out_of_office", "replied"]
 
     async def test_old_threads_are_no_longer_watched(self, mail: Mail) -> None:
         draft_id = await mail.letter()
@@ -291,6 +397,76 @@ class TestCheck:
                     await asyncio.sleep(0.01)
         finally:
             poller.cancel()
+
+
+GUESSED: JsonObject = {"address": "ann.lee@client.example", "address_confidence": "guessed"}
+
+
+class TestGuards:
+    async def refused(self, mail: Mail, draft_id: int, query: str = "") -> str:
+        response = await mail.api.client.post(f"/api/drafts/{draft_id}/gmail{query}")
+        assert response.status_code == 409, response.text
+        return response.text
+
+    async def test_a_guessed_address_needs_a_confirm(self, mail: Mail) -> None:
+        draft_id = await mail.letter(review=GUESSED)
+
+        assert "guessed address" in await self.refused(mail, draft_id)
+        assert mail.box.pushed == []
+        await mail.api.ok("POST", f"/api/drafts/{draft_id}/gmail?confirm=true")
+        assert [d.to for d in mail.box.pushed] == ["ann.lee@client.example"]
+
+    async def test_at_most_three_guesses_a_day(self, mail: Mail) -> None:
+        drafts = [await mail.letter(review=GUESSED) for _ in range(4)]
+        for draft_id in drafts[:3]:
+            await mail.api.ok("POST", f"/api/drafts/{draft_id}/gmail?confirm=true")
+        # Putting the same letter in again replaces its draft, so it is not a new guess.
+        await mail.api.ok("POST", f"/api/drafts/{drafts[0]}/gmail?confirm=true")
+
+        assert "already 3 guessed" in await self.refused(mail, drafts[3], "?confirm=true")
+
+    async def test_a_bounced_address_and_guesses_on_its_domain_get_nothing(
+        self, mail: Mail
+    ) -> None:
+        draft_id = await mail.letter()
+        await mail.push(draft_id)
+        mail.box.send(1000, SENT_AT)
+        mail.box.receive(1000, "mailer-daemon@googlemail.com", SENT_AT + timedelta(minutes=1))
+        await mail.check()
+
+        again = await mail.letter()
+        assert f"{ANN} gets no more letters: bounced" in await self.refused(mail, again)
+        guess = await mail.letter(review=GUESSED)
+        assert "client.example bounced" in await self.refused(mail, guess, "?confirm=true")
+        published: JsonObject = {
+            "address": "info@client.example",
+            "address_confidence": "published",
+        }
+        await mail.push(await mail.letter(review=published))
+
+    async def test_opting_out_suppresses_the_leads_addresses_in_every_project(
+        self, mail: Mail
+    ) -> None:
+        draft_id = await mail.letter()
+        item_id = (await mail.item(draft_id))["id"]
+        logged = await mail.api.ok(
+            "POST", f"/api/items/{item_id}/interactions", {"kind": "opted_out"}
+        )
+
+        other_project = await mail.letter()
+        assert "gets no more letters: opted_out" in await self.refused(mail, other_project)
+
+        await mail.api.client.delete(f"/api/interactions/{logged['id']}")
+        await mail.push(other_project)
+
+    async def test_a_jump_in_volume_is_warned_about(self, mail: Mail) -> None:
+        pushed = [await mail.push(await mail.letter()) for _ in range(5)]
+
+        assert [p["warnings"] for p in pushed[:4]] == [[], [], [], []]
+        warnings = pushed[4]["warnings"]
+        assert isinstance(warnings, list)
+        [warning] = warnings
+        assert str(warning).startswith("5 letters into Gmail today against 0.0 a day last week")
 
 
 async def test_without_gmail_the_endpoints_say_how_to_set_it_up(api: Api) -> None:

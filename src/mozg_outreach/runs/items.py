@@ -15,9 +15,13 @@ from mozg_outreach.domain import ItemKind
 from mozg_outreach.letters.composer import WrittenLetter
 from mozg_outreach.letters.models import Revision, RevisionTarget, Skipped
 from mozg_outreach.naturalize.naturalizer import Naturalizer
+from mozg_outreach.pipelines.biz.approach import SequenceClosedError
 from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.biz.outreach import BizOutreach
+from mozg_outreach.pipelines.leads.enrichment import IDENTITY
 from mozg_outreach.pipelines.leads.ingest import LeadRegistryIngest
+from mozg_outreach.pipelines.leads.models import LeadIdentity
+from mozg_outreach.pipelines.seeker.contacts import JobContactFinder
 from mozg_outreach.pipelines.seeker.letters import CoverLetterRequest, JobLetterWriter
 from mozg_outreach.pipelines.seeker.models import (
     JobContacts,
@@ -27,7 +31,6 @@ from mozg_outreach.pipelines.seeker.models import (
 )
 from mozg_outreach.pipelines.seeker.proposals import ProposalRequest, ProposalWriter
 from mozg_outreach.pipelines.seeker.screening import listing_text
-from mozg_outreach.pipelines.seeker.search import SeekerSearch
 from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.registry.ingest import IngestContext
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
@@ -111,7 +114,9 @@ async def biz_enrich(ctx: Ctx) -> PhaseResult:
     strategy = Strategy.model_validate(state["strategy"])
     with ctx.db.session() as session:
         item = _row(session, ctx.state.item_id)
-        dossier = await BizOutreach(session, ctx.steps).enrich(item, strategy, ctx.run_id)
+        dossier = await BizOutreach(
+            session, ctx.steps, sites=ctx.sites, profiles=ctx.profiles
+        ).enrich(item, strategy, ctx.run_id)
     ctx.state.concerns += dossier.concerns
     return None
 
@@ -135,6 +140,10 @@ async def biz_enrich_approach(ctx: Ctx) -> PhaseResult:
         logger.warning("approach plan for item %d failed: %s", ctx.state.item_id, exc)
         ctx.state.concerns.append(f"No approach plan, so letters use the default routing: {exc}")
         return None
+    except SequenceClosedError as exc:
+        logger.info("item %d gets no new plan: %s", ctx.state.item_id, exc)
+        ctx.state.concerns.append(f"No new approach plan: {exc}")
+        return None
 
 
 async def biz_enrich_letters(ctx: Ctx) -> PhaseResult:
@@ -147,7 +156,11 @@ async def biz_enrich_letters(ctx: Ctx) -> PhaseResult:
             "No letters yet: set the sender name in the project settings, then Re-plan."
         )
         return None
-    return await biz_letters(ctx)
+    try:
+        return await biz_letters(ctx)
+    except SequenceClosedError as exc:
+        ctx.state.concerns.append(f"No letters: {exc}")
+        return None
 
 
 async def biz_letters(ctx: Ctx) -> PhaseResult:
@@ -167,7 +180,10 @@ async def seeker_enrich(ctx: Ctx) -> PhaseResult:
     """Find who to write to about a job; a gig is answered on its own board."""
     item, _ = _item(ctx)
     listing, _ = listing_of(item)
-    contacts = await SeekerSearch(ctx.steps, []).contacts(listing)
+    found = item.details.get(IDENTITY)
+    identity = LeadIdentity.model_validate(found) if found else None
+    finder = JobContactFinder(ctx.steps, ctx.sites, ctx.profiles)
+    contacts = await finder.find(listing, identity)
     with ctx.db.session() as session:
         row = _row(session, ctx.state.item_id)
         ItemRepository(session).set_detail(row, CONTACTS, contacts)

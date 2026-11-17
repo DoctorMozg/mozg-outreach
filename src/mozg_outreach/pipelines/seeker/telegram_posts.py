@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+from collections import Counter
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 
@@ -13,7 +14,13 @@ from mozg_outreach.domain import IdentifierKind
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
 from mozg_outreach.pipelines.seeker.feeds import FeedOutcome
 from mozg_outreach.pipelines.seeker.listings import SourcedListing
-from mozg_outreach.pipelines.seeker.models import ListingKind, ScoutedListing, TelegramContact
+from mozg_outreach.pipelines.seeker.models import (
+    ListingKind,
+    ScoutedListing,
+    SkillRules,
+    TelegramContact,
+)
+from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.registry.identifiers import normalize
 from mozg_outreach.sources.base import SourceAdapter
@@ -21,8 +28,12 @@ from mozg_outreach.sources.models import SourceItem, SourceQuery
 
 logger = logging.getLogger(__name__)
 
-POSTS_PER_CHANNEL = 40
+POSTS_PER_CHANNEL = 60
+# Posts read across channels; only those naming a must-have skill reach the parser.
+MAX_READ = 600
 MAX_POSTS = 120
+# A channel judged on fewer posts may just have had a quiet week.
+MIN_POSTS_TO_JUDGE = 10
 BATCH = 20
 PARALLEL_BATCHES = 3
 POST_CHARS = 3000
@@ -65,6 +76,9 @@ class TelegramRequest(BaseModel):
     kinds: list[ListingKind] = Field(min_length=1, description="Posts of other kinds are dropped.")
     oldest: date
     cursor: str | None
+    skills: SkillRules | None = Field(
+        default=None, description="Posts naming none of the must-have skills are not parsed."
+    )
 
 
 def post_links(item: SourceItem) -> list[str]:
@@ -121,15 +135,34 @@ def telegram_contact(
     return TelegramContact(handle=handle, name=named, quote=quote[:300])
 
 
+def on_skills(
+    items: list[SourceItem], skills: SkillRules | None, concerns: list[str]
+) -> list[SourceItem]:
+    """Posts naming a must-have skill; a channel with none of them is flagged for removal."""
+    if skills is None:
+        return items
+    matcher = SkillMatcher(skills)
+    kept = [i for i in items if matcher.match(i.raw_text).gate_passed]
+    read = Counter(str(i.raw_payload.get("channel", "")) for i in items)
+    hits = Counter(str(i.raw_payload.get("channel", "")) for i in kept)
+    for channel, count in sorted(read.items()):
+        if channel and count >= MIN_POSTS_TO_JUDGE and not hits[channel]:
+            concerns.append(
+                f"Telegram @{channel}: none of its {count} recent posts names a must-have "
+                "skill; remove it from the project's sources if it stays off-target."
+            )
+    logger.info("telegram: %d of %d posts name a must-have skill", len(kept), len(items))
+    return kept
+
+
 class TelegramPosts:
     def __init__(self, steps: PipelineSteps) -> None:
         self._steps = steps
 
     async def collect(self, adapter: SourceAdapter, request: TelegramRequest) -> FeedOutcome:
-        # No keyword filter: skills as substrings ("Go", "C") match everything, the parser decides.
         # since is exclusive, so step back a microsecond to keep the whole first day.
         since = datetime.combine(request.oldest, time.min, UTC) - timedelta(microseconds=1)
-        query = SourceQuery(limit=POSTS_PER_CHANNEL, total_limit=MAX_POSTS, since=since)
+        query = SourceQuery(limit=POSTS_PER_CHANNEL, total_limit=MAX_READ, since=since)
         fetched = await adapter.fetch(query, request.cursor)
         fresh = [
             i
@@ -138,7 +171,8 @@ class TelegramPosts:
         ]
         concerns = [f"{adapter.name}: {e}" for e in fetched.errors]
         failures = len(concerns)
-        parsed = await self.parse(fresh, concerns)
+        on_stack = on_skills(fresh, request.skills, concerns)[:MAX_POSTS]
+        parsed = await self.parse(on_stack, concerns)
         listings = [p for p in parsed if p.kind in request.kinds]
         parsed_all = not any(c.startswith(UNPARSED) for c in concerns[failures:])
         logger.info(

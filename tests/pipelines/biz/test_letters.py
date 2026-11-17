@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from mozg_outreach.agents import AgentRunError, PromptLibrary
+from mozg_outreach.letters.frame import WORDINGS
 from mozg_outreach.letters.models import (
     LetterBrief,
     LetterDraft,
@@ -33,9 +34,7 @@ from tests.pipelines.biz.conftest import BODY, HOOK, STYLE
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner, Scripted
 
 
-def draft(
-    body: str = BODY, subject: str | None = "Katana's platform load after the round"
-) -> LetterDraft:
+def draft(body: str = BODY, subject: str | None = "Katana's platform load") -> LetterDraft:
     return LetterDraft(subject=subject, body=body, hook_used=HOOK, angle_used="cost", concerns=[])
 
 
@@ -43,6 +42,12 @@ def naturalized(text: str) -> NaturalizeResult:
     return NaturalizeResult(
         text=text, changes=["Plainer verbs."], specificity_needed=[], concerns=[]
     )
+
+
+def stop_offered(letter: str) -> str:
+    """A first email: the opt-out line goes above the sign-off."""
+    head, ending = letter.rsplit("\n\n", 1)
+    return f"{head}\n\n{WORDINGS['en'].opt_out}\n\n{ending}"
 
 
 @pytest.fixture
@@ -61,7 +66,7 @@ async def write(
 ) -> tuple[LetterBatch, RecordedRunner]:
     runner = RecordedRunner(script)
     steps = PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path)
-    return await BizLetterWriter(steps, Naturalizer(steps)).write(request), runner
+    return await BizLetterWriter(steps, Naturalizer(steps), candidates=1).write(request), runner
 
 
 def test_fixture_body_fits_the_email_budget() -> None:
@@ -85,8 +90,8 @@ async def test_company_gets_a_framed_naturalized_letter(
     [letter] = batch.letters
     assert batch.skipped == []
     assert (letter.recipient, letter.channel) == ("Jane Example", "email")
-    assert letter.text == final
-    assert letter.subject == "Katana's platform load after the round"
+    assert letter.text == stop_offered(final)
+    assert letter.subject == "Katana's platform load"
     review = letter.review
     assert (review.address, review.address_confidence) == ("hello@katanamrp.com", "shared_inbox")
     assert review.naturalized
@@ -142,7 +147,7 @@ async def test_an_inbox_touch_to_no_one_greets_whoever_reads_it(
     )
 
     [letter] = batch.letters
-    assert (letter.recipient, letter.step, letter.text) == ("Katana team", 1, final)
+    assert (letter.recipient, letter.step, letter.text) == ("Katana team", 1, stop_offered(final))
     assert "outreach-personality-profiler" not in runner.payloads, "no one to profile"
 
 
@@ -171,7 +176,7 @@ async def test_invented_number_gets_one_retry_with_the_problem(
 async def test_problems_left_after_retry_are_shown_not_hidden(
     request_: LetterRequest, tmp_path: Path
 ) -> None:
-    long_subject = draft(subject="x" * 60)
+    long_subject = draft(subject=" ".join(["x" * 14] * 4))
     batch, _ = await write(
         request_,
         {
@@ -187,7 +192,7 @@ async def test_problems_left_after_retry_are_shown_not_hidden(
     )
 
     review = batch.letters[0].review
-    assert review.problems == ["subject has 60 characters, limit 55"]
+    assert review.problems == ["subject has 59 characters, limit 55"]
     assert review.reader_calibration == "neutral: the profiler failed"
     assert not review.naturalized
     assert any("Naturalizer failed" in note for note in review.review_notes)
@@ -257,3 +262,54 @@ class TestRevision:
             ("Gone Person", "no email route to them in the dossier any more")
         ]
         assert runner.payloads == {}
+
+
+async def test_a_second_persons_first_letter_knows_who_heard_first(
+    request_: LetterRequest, tmp_path: Path
+) -> None:
+    people = [
+        PlanContact(
+            ref=ref,
+            name=name,
+            title="Partner",
+            relevance="",
+            routes=[
+                PlanRoute(
+                    ref=f"{ref}.email",
+                    channel="email",
+                    address=f"{ref}@x.example",
+                    confidence="published",
+                )
+            ],
+        )
+        for ref, name in (("c1", "Ann Lee"), ("c2", "Bob Ray"))
+    ]
+    touches = [
+        PlannedTouch(
+            step=step,
+            day=day,
+            contact_ref=ref,
+            route_ref=f"{ref}.email",
+            purpose="open" if step < 3 else "follow_up",
+            angle="cost",
+            hook_ref=None,
+            ask="Worth a look?",
+            talking_points="",
+        )
+        for step, day, ref in ((1, 0, "c1"), (2, 3, "c2"), (3, 6, "c2"))
+    ]
+    plan = ApproachPlan(
+        summary="", first_contact_ref="c1", rationale="", touches=touches, avoid=[], concerns=[]
+    )
+    approach = StoredApproach(plan=plan, contacts=people, hooks=[], planned_on="2026-11-16")
+    script: dict[str, list[Scripted]] = {
+        "outreach-personality-profiler": [STYLE, STYLE],
+        "expert-copywriter": [draft(), draft(), draft(subject=None)],
+        "expert-naturalizer": [naturalized("x")] * 6,
+    }
+
+    _, runner = await write(request_.model_copy(update={"approach": approach}), script, tmp_path)
+
+    briefs = [b for b in runner.payloads["expert-copywriter"] if isinstance(b, LetterBrief)]
+    seen = {(b.recipient.name, b.touch.step): b.touch.others_contacted for b in briefs if b.touch}
+    assert seen == {("Ann Lee", 1): [], ("Bob Ray", 2): ["Ann Lee"], ("Bob Ray", 3): []}

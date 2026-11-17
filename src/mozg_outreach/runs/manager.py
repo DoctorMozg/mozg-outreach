@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from mozg_outreach.agents import AgentEvent, PromptLibrary, StepRunner
 from mozg_outreach.apply.desk import ApplyDesk
 from mozg_outreach.domain import RunStatus
+from mozg_outreach.pipelines.biz.profile_search import ProfileFinder
+from mozg_outreach.pipelines.biz.site_contacts import SiteReader
 from mozg_outreach.pipelines.steps import PipelineSteps
 from mozg_outreach.runs.events import RunLog
 from mozg_outreach.runs.flow import (
@@ -44,6 +46,8 @@ class RunEnvironment:
     adapters: AdapterFactory
     max_parallel_runs: int = 2
     applications: ApplyDesk | None = None
+    sites: SiteReader | None = None
+    profiles: ProfileFinder | None = None
 
 
 class RunManager:
@@ -186,6 +190,8 @@ class RunManager:
             workspace=workspace,
             adapters=self._env.adapters,
             applications=self._env.applications,
+            sites=self._env.sites,
+            profiles=self._env.profiles,
             answer_gate=lambda answer: self.answer_gate(run_id, answer),
         )
 

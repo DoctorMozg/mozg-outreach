@@ -10,6 +10,7 @@ from typing import Literal, Protocol
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
+    ClaudeSDKError,
     Message,
     ResultMessage,
     TextBlock,
@@ -205,19 +206,26 @@ class AgentRunner:
         self, agent: str, user_prompt: str, options: ClaudeAgentOptions, emit: EventSink
     ) -> ResultMessage:
         result: ResultMessage | None = None
-        async for message in self._query(prompt=user_prompt, options=options):
-            if isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if isinstance(block, ToolUseBlock):
-                        # Kept so a caller can check that a cited page was actually read.
-                        url = block.input.get("url") if block.name in PAGE_READS else None
-                        emit(
-                            AgentEvent(agent, "tool_use", block.name, url=str(url) if url else None)
-                        )
-                    elif isinstance(block, TextBlock) and block.text.strip():
-                        emit(AgentEvent(agent, "text", block.text))
-            elif isinstance(message, ResultMessage):
-                result = message
+        try:
+            async for message in self._query(prompt=user_prompt, options=options):
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, ToolUseBlock):
+                            # Kept so a caller can check that a cited page was actually read.
+                            url = block.input.get("url") if block.name in PAGE_READS else None
+                            emit(
+                                AgentEvent(
+                                    agent, "tool_use", block.name, url=str(url) if url else None
+                                )
+                            )
+                        elif isinstance(block, TextBlock) and block.text.strip():
+                            emit(AgentEvent(agent, "text", block.text))
+                elif isinstance(message, ResultMessage):
+                    result = message
+        # The CLI crashing or failing to start is a failed run, which every caller already handles.
+        except ClaudeSDKError as exc:
+            logger.warning("agent %s: SDK failed: %s", agent, exc)
+            raise AgentRunError(agent, type(exc).__name__, str(exc)) from exc
         if result is None:
             raise AgentRunError(agent, "no_result", "stream ended without a ResultMessage")
         return result

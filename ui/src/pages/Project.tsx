@@ -2,6 +2,7 @@ import { ActionIcon, Alert, Badge, Button, Group, Loader, Menu, Modal, Stack, Ta
 import { useDisclosure } from "@mantine/hooks";
 import {
   IconAlertCircle,
+  IconChartBar,
   IconCircleCheck,
   IconCircleDashed,
   IconDots,
@@ -19,6 +20,7 @@ import { ErrorBox, ModeBadge } from "../components/common";
 import { href } from "../router";
 import { Brief } from "./Brief";
 import { Fields } from "./Fields";
+import { Outcomes } from "./Outcomes";
 import { Report } from "./Report";
 import { Runs } from "./Runs";
 import { Sources } from "./Sources";
@@ -97,6 +99,11 @@ export function Project({ id, tab }: { id: number; tab: string }): ReactElement 
           <Tabs.Tab value="report" leftSection={<IconTable size={16} />}>
             Report
           </Tabs.Tab>
+          {biz && (
+            <Tabs.Tab value="outcomes" leftSection={<IconChartBar size={16} />}>
+              Outcomes
+            </Tabs.Tab>
+          )}
         </Tabs.List>
       </Tabs>
 
@@ -105,6 +112,7 @@ export function Project({ id, tab }: { id: number; tab: string }): ReactElement 
       {tab === "sources" && <Sources project={p} />}
       {tab === "runs" && <Runs project={p} blocker={blocker ?? null} />}
       {tab === "report" && <Report project={p} />}
+      {tab === "outcomes" && biz && <Outcomes project={p} />}
     </Stack>
   );
 }

@@ -5,7 +5,7 @@ from mozg_outreach.letters.models import LetterBrief
 BODY = (
     "Congrats on the 2024 Series B for Katana. Growing teams often see AWS bills climb "
     "faster than headcount, and that is where we help.\n\n"
-    "Would a 15-minute call next Tuesday work to compare notes on your setup?"
+    "Worth comparing notes on your setup?"
 )
 
 
@@ -16,15 +16,13 @@ def kinds(checker: LetterChecker, subject: str | None, text: str) -> set[str]:
 class TestCheck:
     def test_clean_letter_passes(self, email_brief: LetterBrief, email_frame: LetterFrame) -> None:
         checker = LetterChecker(email_brief, email_frame)
-        assert (
-            checker.check("Katana's AWS bill after the Series B", email_frame.assemble(BODY)) == []
-        )
+        assert checker.check("Katana's AWS bill", email_frame.assemble(BODY)) == []
 
     def test_subject_rules(self, email_brief: LetterBrief, email_frame: LetterFrame) -> None:
         checker = LetterChecker(email_brief, email_frame)
         text = email_frame.assemble(BODY)
         assert kinds(checker, None, text) == {"subject"}
-        assert kinds(checker, "x" * 56, text) == {"subject"}
+        assert kinds(checker, " ".join(["x" * 14] * 4), text) == {"subject"}
         dm = LetterChecker(email_brief.model_copy(update={"subject_max_chars": None}), email_frame)
         assert kinds(dm, "Hello", text) == {"subject"}
 
@@ -33,14 +31,14 @@ class TestCheck:
     ) -> None:
         checker = LetterChecker(email_brief, email_frame)
         text = f"Hey Jane,\n\n{BODY} — {'word ' * 40}\n\nCheers,\nStan"
-        assert kinds(checker, "Subject", text) == {"frame", "word_budget", "punctuation"}
+        assert kinds(checker, "Katana's AWS bill", text) == {"frame", "word_budget", "punctuation"}
 
     def test_markdown_body_is_flagged(
         self, email_brief: LetterBrief, email_frame: LetterFrame
     ) -> None:
         checker = LetterChecker(email_brief, email_frame)
         text = email_frame.assemble(BODY + "\n\n- one point\n- another point")
-        assert kinds(checker, "Subject", text) == {"markdown"}
+        assert kinds(checker, "Katana's AWS bill", text) == {"markdown"}
 
 
 class TestEvidence:

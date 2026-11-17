@@ -48,6 +48,11 @@ class GmailSettings(BaseModel):
             raise MailConfigError(f"{ADDRESS_VAR}: {exc}") from exc
 
 
+class Attachment(BaseModel):
+    filename: str = Field(min_length=1)
+    content: bytes = Field(min_length=1)
+
+
 class OutgoingDraft(BaseModel):
     to: Address
     subject: str = Field(min_length=1)
@@ -56,6 +61,7 @@ class OutgoingDraft(BaseModel):
     in_reply_to: str | None = Field(
         default=None, description="The Message-ID of the sent letter this one answers."
     )
+    attachments: list[Attachment] = Field(default_factory=list, description="PDF files.")
 
 
 class PushedDraft(BaseModel):
@@ -72,3 +78,4 @@ class ThreadMessage(BaseModel):
     received_at: datetime
     header_id: str | None = Field(default=None, description="The Message-ID header.")
     subject: str = ""
+    auto: bool = Field(default=False, description="An out-of-office or other auto-reply.")

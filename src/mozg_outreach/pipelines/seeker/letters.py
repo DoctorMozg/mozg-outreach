@@ -25,6 +25,24 @@ logger = logging.getLogger(__name__)
 
 HIRING_TEAM = "Hiring Team"
 LETTER_CHARS = 2000
+SHARED_INBOX = "shared_inbox"
+# The word that opens an application email's subject, by the letter's language.
+APPLICATION = {
+    "en": "Application",
+    "de": "Bewerbung",
+    "fr": "Candidature",
+    "es": "Candidatura",
+    "pt": "Candidatura",
+    "it": "Candidatura",
+    "nl": "Sollicitatie",
+    "ru": "Отклик на вакансию",
+}
+
+
+def application_subject(title: str, language: str, sender: str) -> str:
+    """Recruiters file by role and name, so the subject carries both and nothing else."""
+    word = APPLICATION.get(language, APPLICATION["en"])
+    return f"{word}: {title.strip()} - {sender}".strip(" -")
 
 
 class CoverLetterRequest(BaseModel):
@@ -75,19 +93,25 @@ class JobLetterWriter:
             revision=request.revision,
         )
         party = LetterParty(recipient=named.name if named else None, sender=request.sender.name)
+        delivery = _delivery(listing, request.contacts)
+        brief.generic_inbox = delivery.confidence == SHARED_INBOX
         logger.info("cover letter for %s to %s", listing.key, recipient.name)
-        return await self._composer.compose(
+        letter = await self._composer.compose(
             Composition(
                 brief=brief,
                 frame=LetterFrame.build(
                     "cover_letter", request.sender.tone, party, language.letter
                 ),
                 voice=request.voice,
-                delivery=_delivery(listing, request.contacts),
+                delivery=delivery,
                 calibration="cover letter: neutral shape",
                 notes=language.notes(),
             )
         )
+        if isinstance(letter, WrittenLetter) and "@" in delivery.address and not letter.subject:
+            subject = application_subject(listing.title, language.letter, request.sender.name)
+            letter = letter.model_copy(update={"subject": subject})
+        return letter
 
     @staticmethod
     def _angle(listing: Listing, skills: SkillMatch) -> Angle:
@@ -114,12 +138,26 @@ class JobLetterWriter:
 
 
 def _delivery(listing: Listing, contacts: JobContacts | None) -> Delivery:
-    """Published addresses only; a guessed careers@ never becomes the send-to address."""
+    """The person, then HR, then the company inbox, then a guessed careers@, then the form.
+
+    A guessed address only reaches Gmail after the user confirms it, a few a day."""
     named = contacts.named_contact if contacts else None
     if named and named.email:
         return Delivery(address=named.email, confidence="published")
     if contacts and contacts.careers_email:
         return Delivery(address=contacts.careers_email, confidence="published")
+    if contacts and contacts.company_email:
+        return Delivery(
+            address=contacts.company_email,
+            confidence=SHARED_INBOX,
+            note="A general inbox: the letter asks whoever reads it to pass it to hiring.",
+        )
+    if contacts and contacts.pattern_guesses:
+        return Delivery(
+            address=contacts.pattern_guesses[0],
+            confidence="guessed",
+            note="Guessed from the company's domain and may bounce; Gmail asks you to confirm.",
+        )
     apply_url = (contacts.apply_url if contacts else None) or listing.url
     return Delivery(
         address=apply_url,

@@ -199,6 +199,23 @@ class MailThread(Base):
     sent_subject: Mapped[str | None] = mapped_column(String(998))
     replied_at: Mapped[datetime | None]
     bounced_at: Mapped[datetime | None]
+    # An out-of-office or other auto-reply; the thread stays watched for a real one.
+    auto_replied_at: Mapped[datetime | None]
+    # What the user actually sent, to compare with the draft.
+    sent_body: Mapped[str | None] = mapped_column(Text)
+
+
+class Suppression(Base):
+    """An address no letter goes to again, in any project: it bounced or asked to stop."""
+
+    __tablename__ = "suppressions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    address: Mapped[str] = mapped_column(String(320), unique=True)
+    domain: Mapped[str] = mapped_column(String(255), index=True)
+    reason: Mapped[str] = mapped_column(String(40))
+    item_id: Mapped[int | None] = mapped_column(ForeignKey("items.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
 class Interaction(Base):
@@ -211,6 +228,8 @@ class Interaction(Base):
     kind: Mapped[str] = mapped_column(String(40))
     note: Mapped[str] = mapped_column(Text, default="")
     happened_at: Mapped[datetime] = mapped_column(default=utcnow)
+    # An out-of-office's return date, or the date a "not now" said to come back.
+    until: Mapped[date | None]
 
 
 class Cv(Base):

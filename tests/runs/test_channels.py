@@ -32,9 +32,9 @@ from tests.sources.conftest import SearchSession, channel
 
 from .conftest import FEED_URL, Harness
 
-# Designer posts carry job markers but not the strategy's must-have skills, so screening drops
-# them and the run's single scripted judgment still covers every listing that survives.
-DESIGN_JOB = "Hiring a product designer, remote, salary 4k"
+# On the strategy's stack, so discovery offers the channels; the scripted parser then rejects
+# the posts, and the run's single scripted judgment still covers every listing that survives.
+PYTHON_JOB = "Hiring a Python developer, remote, salary 4k"
 
 
 def recent(*texts: str) -> list[ChannelMessage]:
@@ -50,7 +50,7 @@ def session(harness: Harness, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(telegram_discovery, "PAUSE_SECONDS", 0)
     fake = SearchSession(
         {"Python jobs": [channel("py_jobs", 5000), channel("py_more", 800)]},
-        {"py_jobs": recent(DESIGN_JOB, DESIGN_JOB), "py_more": recent(DESIGN_JOB)},
+        {"py_jobs": recent(PYTHON_JOB, PYTHON_JOB), "py_more": recent(PYTHON_JOB)},
     )
 
     def build(config: JsonObject) -> TelegramAdapter:
@@ -94,7 +94,7 @@ def not_a_job(post_id: str) -> ParsedPost:
 
 
 def script(harness: Harness, strategy: SeekerStrategy) -> None:
-    # Telegram posts reach the parser unfiltered, so it sees the designer posts and rejects them.
+    # Posts naming a must-have skill reach the parser, which rejects these two.
     parsed = ParserResult(posts=[not_a_job("py_jobs/1"), not_a_job("py_jobs/2")], concerns=[])
     runs: dict[str, list[Scripted]] = {
         "telegram-post-parser": [parsed],

@@ -23,6 +23,7 @@ from mozg_outreach.letters.models import (
     TouchContext,
     TouchPurpose,
 )
+from mozg_outreach.letters.sameness import Phrasing
 from mozg_outreach.naturalize.models import Channel, WordBudget
 from mozg_outreach.naturalize.naturalizer import WORD_BUDGETS, Naturalizer, VoiceContext
 from mozg_outreach.pipelines.biz.approach import ReaderSequence, planned_hook, planned_sequences
@@ -42,11 +43,23 @@ logger = logging.getLogger(__name__)
 BIZ_LANGUAGE = "en"
 
 SUBJECT_MAX_CHARS = 55
+# Three openings per letter; a separate judge keeps the best (user's choice, 2026-11-17).
+CANDIDATES = 3
 # Follow-ups add one new thing and a nudge; a breakup is a short last note (outreach research).
 TOUCH_BUDGETS: dict[TouchPurpose, WordBudget] = {
     "follow_up": WordBudget(min=40, max=110),
     "breakup": WordBudget(min=30, max=70),
 }
+
+
+class RegionRules(BaseModel):
+    """What the company's location changes about every letter to it."""
+
+    gulf: bool = Field(default=False, description="Opt-out on every letter, and no casual 'Hi'.")
+    privacy_url: str | None = Field(
+        default=None, description="EU and UK first emails point to the sender's privacy notice."
+    )
+    notes: list[str] = Field(default_factory=list, description="Shown beside every letter.")
 
 
 class LetterRequest(BaseModel):
@@ -61,8 +74,12 @@ class LetterRequest(BaseModel):
     approach: StoredApproach | None = Field(
         default=None, description="When set, letters go to the plan's contacts with its angles."
     )
-    opt_out: bool = Field(
-        default=False, description="Add a line offering to stop writing (GCC data protection)."
+    region: RegionRules = Field(default_factory=RegionRules)
+    offers: list[str] = Field(
+        default_factory=list, description="Things the sender can send; asks offer only these."
+    )
+    recent: list[Phrasing] = Field(
+        default_factory=list, description="The project's recent letters to other companies."
     )
     existing: dict[int, str] = Field(
         default_factory=dict,
@@ -76,9 +93,12 @@ class LetterBatch(BaseModel):
 
 
 class BizLetterWriter:
-    def __init__(self, steps: PipelineSteps, naturalizer: Naturalizer) -> None:
+    def __init__(
+        self, steps: PipelineSteps, naturalizer: Naturalizer, candidates: int = CANDIDATES
+    ) -> None:
         self._steps = steps
         self._composer = LetterComposer(steps, naturalizer)
+        self._candidates = candidates
 
     async def write(self, request: LetterRequest) -> LetterBatch:
         evidence = LetterBriefBuilder(request.company, request.dossier).evidence(request.fields)
@@ -134,7 +154,14 @@ class BizLetterWriter:
         assert request.approach is not None
         # The company inbox has no one to profile.
         style = await self._profile(sequence.contact, request.company) if sequence.named else None
-        total = len(request.approach.plan.touches)
+        approach = request.approach
+        total = len(approach.plan.touches)
+        first_step = sequence.touches[0].touch.step if sequence.touches else 0
+        others = [
+            approach.reader(t)
+            for t in sorted(approach.plan.touches, key=lambda t: t.step)
+            if t.step < first_step and approach.reader(t) != sequence.contact.name
+        ]
         earlier: list[EarlierTouch] = []
         written: list[WrittenLetter | Skipped] = []
         for planned in sequence.touches:
@@ -149,6 +176,7 @@ class BizLetterWriter:
                     talking_points=touch.talking_points,
                     in_thread=planned.in_thread,
                     earlier=list(earlier),
+                    others_contacted=list(dict.fromkeys(others)) if not earlier else [],
                 )
                 addressee = Addressee(
                     contact=sequence.contact,
@@ -235,18 +263,16 @@ class BizLetterWriter:
             sender_voice=request.sender.voice,
             sender_background=request.background,
             ask=ask,
+            offers=request.offers,
             touch=touch,
+            avoid_phrasings=_phrasings(request.recent),
             revision=request.revision.revision if request.revision else None,
         )
-        party = LetterParty(
-            recipient=contact.name if addressee.named else None, sender=request.sender.name
-        )
-        frame = LetterFrame.build(route.channel, request.sender.tone, party, BIZ_LANGUAGE)
         guessed = route.confidence == "guessed"
         return await self._composer.compose(
             Composition(
                 brief=brief,
-                frame=frame.with_opt_out(BIZ_LANGUAGE) if request.opt_out else frame,
+                frame=_frame(request, addressee, touch),
                 voice=request.voices.get(route.channel, VoiceContext(profile=None, samples=[])),
                 delivery=Delivery(
                     address=route.address,
@@ -256,6 +282,9 @@ class BizLetterWriter:
                     else None,
                 ),
                 calibration=_calibration(style),
+                notes=request.region.notes,
+                recent=request.recent,
+                candidates=self._candidates,
             )
         )
 
@@ -275,6 +304,30 @@ class BizLetterWriter:
             # Without a read the letter keeps a neutral shape; that is the documented fallback.
             logger.warning("profiler failed for %s: %s", contact.name, exc)
             return None
+
+
+def _phrasings(recent: list[Phrasing]) -> list[str]:
+    lines = [p.opening for p in recent] + [p.ask for p in recent if p.ask]
+    return list(dict.fromkeys(lines))
+
+
+def _frame(request: LetterRequest, addressee: Addressee, touch: TouchContext | None) -> LetterFrame:
+    """Salutation and sign-off; the first email to each reader offers to stop, and emails sign
+    with the sender's card."""
+    route, region = addressee.route, request.region
+    party = LetterParty(
+        recipient=addressee.contact.name if addressee.named else None, sender=request.sender.name
+    )
+    frame = LetterFrame.build(
+        route.channel, request.sender.tone, party, BIZ_LANGUAGE, casual_hi=not region.gulf
+    )
+    emailed = touch is not None and any(e.channel == "email" for e in touch.earlier)
+    first_email = route.channel == "email" and not emailed
+    if first_email or region.gulf:
+        frame = frame.with_opt_out(BIZ_LANGUAGE, region.privacy_url if first_email else None)
+    if route.channel == "email":
+        frame = frame.model_copy(update={"card": request.sender.card})
+    return frame
 
 
 def _writes(sequence: ReaderSequence, due: set[int]) -> bool:

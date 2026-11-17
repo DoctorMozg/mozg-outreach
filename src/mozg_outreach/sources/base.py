@@ -125,19 +125,33 @@ class HttpFeedAdapter(ABC):
     async def _get_json(
         self, url: str, errors: list[str], params: dict[str, str | int] | None = None
     ) -> object | None:
+        response = await self._get(url, errors, params)
+        if response is None:
+            return None
+        try:
+            payload: object = response.json()
+        except ValueError as exc:
+            errors.append(f"{self.name}: {type(exc).__name__} for {url}")
+            logger.warning("%s: no JSON from %s", self.name, url)
+            return None
+        return payload
+
+    async def _get(
+        self, url: str, errors: list[str], params: dict[str, str | int] | None = None
+    ) -> httpx.Response | None:
+        """The response, or None with the failure recorded in `errors`."""
         await self._limiter.wait()
         try:
             response = await self._client.get(
                 url, params=params, headers={"User-Agent": USER_AGENT}
             )
             response.raise_for_status()
-            payload: object = response.json()
         except httpx.HTTPStatusError as exc:
             errors.append(f"{self.name}: HTTP {exc.response.status_code} for {url}")
-        except (httpx.TransportError, ValueError) as exc:
+        except httpx.TransportError as exc:
             errors.append(f"{self.name}: {type(exc).__name__} for {url}")
         else:
-            return payload
+            return response
         logger.warning("%s: request failed for %s", self.name, url)
         return None
 

@@ -15,6 +15,9 @@ CONFIGS: dict[str, dict[str, object]] = {
     "remoteok": {},
     "arbeitnow": {"max_pages": 2},
     "hn_whoishiring": {},
+    "himalayas": {"max_pages": 1},
+    "weworkremotely": {"feeds": ["remote-jobs"]},
+    "workingnomads": {},
     "telegram": {"channels": ["jobs_chan"]},
 }
 

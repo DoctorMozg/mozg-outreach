@@ -3,6 +3,7 @@ import pytest
 from mozg_outreach.letters.frame import LetterFrame, LetterParty
 from mozg_outreach.letters.models import Tone
 from mozg_outreach.naturalize.models import Channel
+from mozg_outreach.pipelines.biz.models import SenderCard
 
 PARTY = LetterParty(recipient="Jane  Example", sender="Stan Petrov")
 
@@ -88,3 +89,57 @@ class TestOptOut:
         frame = LetterFrame.build("email", "warm", PARTY, "en").with_opt_out("en")
         with pytest.raises(ValueError, match="does not end with"):
             frame.finish("Hi Jane,\n\nBody.\n\nCheers,\nStan")
+
+    def test_the_privacy_line_follows_the_opt_out(self) -> None:
+        frame = LetterFrame.build("email", "neutral", PARTY, "en").with_opt_out(
+            "en", "sgon.ai/privacy"
+        )
+        finished = frame.finish(frame.assemble("Body."))
+        assert finished.splitlines()[-5:-3] == [
+            "If this isn't relevant to you, just let me know and I won't write again.",
+            "How I handle your data: sgon.ai/privacy",
+        ]
+
+
+class TestCard:
+    CARD = "Stan Petrov\nFounder, Acme\nacme.example | linkedin.com/in/stan"
+
+    def test_the_card_goes_under_the_sign_off(self) -> None:
+        frame = LetterFrame.build("email", "neutral", PARTY, "en").with_opt_out("en")
+        frame = frame.model_copy(update={"card": self.CARD})
+
+        finished = frame.finish(frame.assemble("Body."))
+
+        assert finished.endswith(f"Best regards,\nStan\n\n{self.CARD}")
+        assert f"{frame.opt_out}\n\nBest regards," in finished
+
+    def test_the_card_reads_like_a_signature(self) -> None:
+        card = SenderCard(
+            title="Founder",
+            company="Acme",
+            website="https://www.acme.example/",
+            linkedin="https://www.linkedin.com/in/stan/",
+            phone="+971 50 000 0000",
+        )
+        assert card.text("Stan Petrov") == (
+            "Stan Petrov\nFounder, Acme\nacme.example | linkedin.com/in/stan | +971 50 000 0000"
+        )
+
+    def test_no_card_when_only_the_name_is_known(self) -> None:
+        assert SenderCard().text("Stan Petrov") is None
+
+
+@pytest.mark.parametrize(
+    ("channel", "recipient", "salutation"),
+    [
+        ("email", "Jane Doe", "Hello Jane,"),
+        ("dm", "Jane Doe", "Hello Jane,"),
+        ("dm", None, "Hello,"),
+    ],
+)
+def test_gulf_readers_never_get_a_casual_hi(
+    channel: Channel, recipient: str | None, salutation: str
+) -> None:
+    party = LetterParty(recipient=recipient, sender="Stan Petrov")
+    frame = LetterFrame.build(channel, "warm", party, "en", casual_hi=False)
+    assert frame.salutation == salutation

@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -85,6 +85,11 @@ class Steps:
     async def item(self, item_id: int) -> JsonObject:
         return await self.api.ok("GET", f"/api/items/{item_id}")
 
+    async def state(self, item_id: int) -> JsonObject:
+        current = (await self.item(item_id))["approach_step"]
+        assert isinstance(current, dict)
+        return current
+
 
 @pytest.fixture
 async def steps(tmp_path: Path) -> AsyncIterator[Steps]:
@@ -109,6 +114,10 @@ class TestMarkDone:
             "channel": "email",
             "reader": "Ann Lee",
             "due": None,
+            "state": "active",
+            "reason": None,
+            "resume_on": None,
+            "recycle_on": None,
         }
 
         current = await steps.done(item_id, 1, "2026-11-16")
@@ -169,3 +178,97 @@ class TestMarkDone:
 
         assert refused.status_code == status
         assert message in refused.text
+
+
+class TestSequenceState:
+    async def log(
+        self, steps: Steps, item_id: int, kind: str, on: date, until: date | None = None
+    ) -> None:
+        body = {
+            "kind": kind,
+            "happened_at": f"{on.isoformat()}T10:00:00",
+            "until": until and until.isoformat(),
+        }
+        await steps.api.ok("POST", f"/api/items/{item_id}/interactions", body)
+
+    async def started(self, steps: Steps, on: date) -> int:
+        item_id = await steps.company()
+        await steps.done(item_id, 1, on.isoformat())
+        return item_id
+
+    @pytest.mark.parametrize(
+        ("kind", "reason"),
+        [
+            ("replied", "replied"),
+            ("refused", "refused"),
+            ("opted_out", "asked not to be contacted"),
+            ("bounced", "bounced"),
+        ],
+    )
+    async def test_an_outcome_after_the_first_touch_stops_it(
+        self, steps: Steps, kind: str, reason: str
+    ) -> None:
+        item_id = await self.started(steps, date(2026, 11, 16))
+        await self.log(steps, item_id, kind, date(2026, 11, 18))
+
+        current = await steps.state(item_id)
+
+        assert current["state"] == "stopped"
+        assert current["reason"] == f"{reason} on 2026-11-18"
+        assert (current["step"], current["due"], current["recycle_on"]) == (None, None, None)
+
+    async def test_an_outcome_before_the_sequence_started_does_not_stop_it(
+        self, steps: Steps
+    ) -> None:
+        item_id = await steps.company()
+        await self.log(steps, item_id, "replied", date(2026, 11, 1))
+        await steps.done(item_id, 1, "2026-11-16")
+
+        current = await steps.state(item_id)
+
+        assert (current["state"], current["step"]) == ("active", 2)
+
+    async def test_not_now_comes_back_on_their_date_or_after_ninety_days(
+        self, steps: Steps
+    ) -> None:
+        dated = await self.started(steps, date(2026, 11, 16))
+        undated = await self.started(steps, date(2026, 11, 16))
+        await self.log(steps, dated, "not_now", date(2026, 11, 18), until=date(2027, 2, 1))
+        await self.log(steps, undated, "not_now", date(2026, 11, 18))
+
+        assert (await steps.state(dated))["recycle_on"] == "2027-02-01"
+        assert (await steps.state(undated))["recycle_on"] == "2027-02-16"
+
+    async def test_a_finished_silent_sequence_is_re_planned_ninety_days_after_its_last_touch(
+        self, steps: Steps
+    ) -> None:
+        item_id = await self.started(steps, date(2026, 11, 16))
+        await steps.done(item_id, 2, "2026-11-19")
+        await steps.done(item_id, 3, "2026-11-23")
+
+        current = await steps.state(item_id)
+
+        assert (current["state"], current["recycle_on"]) == ("done", "2027-02-21")
+
+    async def test_out_of_office_pauses_until_two_working_days_after_the_return(
+        self, steps: Steps
+    ) -> None:
+        today = date.today()
+        item_id = await self.started(steps, today - timedelta(days=1))
+        back = today + timedelta(days=(4 - today.weekday()) % 7 + 7)  # a Friday next week
+        await self.log(steps, item_id, "out_of_office", today, until=back)
+
+        current = await steps.state(item_id)
+
+        resume = (back + timedelta(days=4)).isoformat()  # Friday + 2 working days = Tuesday
+        assert (current["state"], current["step"]) == ("paused", 2)
+        assert (current["resume_on"], current["due"]) == (resume, resume)
+        assert current["reason"] == f"out of office (back {back.isoformat()})"
+
+    async def test_a_past_return_date_no_longer_pauses(self, steps: Steps) -> None:
+        item_id = await self.started(steps, date(2026, 11, 2))
+        await self.log(steps, item_id, "out_of_office", date(2026, 11, 3), until=date(2026, 11, 6))
+
+        current = await steps.state(item_id)
+
+        assert (current["state"], current["due"]) == ("active", "2026-11-05")

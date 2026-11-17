@@ -15,7 +15,7 @@ from mozg_outreach.pipelines.biz.models import Strategy
 from mozg_outreach.pipelines.fields import FieldProposal
 from mozg_outreach.storage.models import JsonObject
 from mozg_outreach.storage.repositories import FieldSpecRepository
-from tests.pipelines.biz.conftest import FIXTURES, load_fixture
+from tests.pipelines.biz.conftest import FIXTURES, FakeSites, load_fixture
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner, Scripted
 from tests.runs.conftest import FakeFeed
 
@@ -88,7 +88,13 @@ async def open_api(
 ) -> AsyncIterator[Api]:
     settings = Settings(home=tmp_path / "home", prompts=REPO_PROMPTS, ui_dist=tmp_path / "no-ui")
     feed = FakeFeed()
-    app = create_app(settings, runner=runner, adapters=lambda _kind, _config: feed, mailbox=mailbox)
+    app = create_app(
+        settings,
+        runner=runner,
+        adapters=lambda _kind, _config: feed,
+        mailbox=mailbox,
+        sites=FakeSites(),
+    )
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

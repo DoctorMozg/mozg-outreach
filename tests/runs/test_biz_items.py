@@ -2,8 +2,9 @@ import pytest
 
 from mozg_outreach.agents import AgentRunError
 from mozg_outreach.domain import ProjectMode, RunStatus
-from mozg_outreach.letters.models import LetterBrief
+from mozg_outreach.letters.models import DraftReview, LetterBrief
 from mozg_outreach.pipelines.biz.discovery import dedup_companies
+from mozg_outreach.pipelines.biz.letters import CANDIDATES
 from mozg_outreach.pipelines.biz.models import ScoutResult, Strategy
 from mozg_outreach.pipelines.biz.outreach import APPROACH, DOSSIER
 from mozg_outreach.storage.models import Draft, Item, Project, Run
@@ -58,7 +59,7 @@ class TestEnrichFlow:
     async def test_enrichment_plans_the_approach_and_drafts_the_letters(
         self, harness: Harness, katana: int
     ) -> None:
-        harness.script(outreach_script())
+        harness.script(outreach_script(CANDIDATES))
 
         run, item, drafts = await enrich(harness, katana)
 
@@ -71,11 +72,17 @@ class TestEnrichFlow:
         ]
         briefs = harness.runner.payloads["expert-copywriter"]
         assert all(isinstance(b, LetterBrief) and b.ask and b.touch for b in briefs)
+        review = DraftReview.model_validate(drafts[0].review)
+        assert [(c.score, c.chosen) for c in review.candidates] == [
+            (48, True),
+            (48, False),
+            (48, False),
+        ]
 
     async def test_a_failed_plan_still_drafts_with_the_default_routing(
         self, harness: Harness, katana: int
     ) -> None:
-        script = outreach_script()
+        script = outreach_script(CANDIDATES)
         script["outreach-approach-planner"] = [
             AgentRunError("outreach-approach-planner", "error_max_turns", "ran out of turns")
         ]

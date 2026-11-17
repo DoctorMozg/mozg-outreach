@@ -2,6 +2,7 @@ import imaplib
 from collections.abc import Callable
 from datetime import UTC, datetime
 from email import message_from_bytes, policy
+from email.message import EmailMessage
 
 import pytest
 from pydantic import SecretStr
@@ -13,8 +14,8 @@ from mozg_outreach.mail import (
     MailError,
     OutgoingDraft,
 )
-from mozg_outreach.mail.gmail import build_message, special_folders
-from mozg_outreach.mail.models import ADDRESS_VAR, PASSWORD_VAR
+from mozg_outreach.mail.gmail import build_message, is_auto_reply, plain_text, special_folders
+from mozg_outreach.mail.models import ADDRESS_VAR, PASSWORD_VAR, Attachment
 
 PASSWORD = "abcdabcdabcdabcd"
 DRAFTS = '"[Gmail]/&BCcENQRABD0EPgQyBDgEOgQ4-"'  # a Russian-language account's Drafts
@@ -183,7 +184,8 @@ class TestThreads:
                 "FETCH",
                 "5,6",
                 "(X-GM-MSGID X-GM-LABELS FLAGS INTERNALDATE "
-                "BODY.PEEK[HEADER.FIELDS (FROM MESSAGE-ID SUBJECT)])",
+                "BODY.PEEK[HEADER.FIELDS "
+                "(FROM MESSAGE-ID SUBJECT AUTO-SUBMITTED X-AUTOREPLY X-AUTORESPOND)])",
             )
         ]
 
@@ -219,6 +221,29 @@ class TestThreads:
         (message,) = (await mailbox.threads([9001]))[9001]
 
         assert message.draft is draft
+
+
+class TestText:
+    async def test_reads_the_sent_messages_text_by_its_gmail_id(
+        self, imap: FakeImap, mailbox: GmailMailbox
+    ) -> None:
+        sent = EmailMessage()
+        sent.set_content("Hi Ann,\n\nWhat I sent.\n")
+        imap.searches["1802"] = [b"9"]
+        imap.fetch = [(b"9 (UID 9 BODY[] {64}", sent.as_bytes()), b")"]
+
+        assert await mailbox.text(1802) == "Hi Ann,\n\nWhat I sent.\n"
+        assert imap.calls == [
+            ("SELECT", ALL, True),
+            ("SEARCH", "X-GM-MSGID", "1802"),
+            ("FETCH", "9", "(BODY.PEEK[])"),
+        ]
+
+    async def test_a_missing_message_is_an_error(
+        self, imap: FakeImap, mailbox: GmailMailbox
+    ) -> None:
+        with pytest.raises(MailError, match="no message 1802"):
+            await mailbox.text(1802)
 
 
 class TestErrors:
@@ -279,6 +304,21 @@ class TestMessage:
         assert parsed["In-Reply-To"] == parsed["References"] == "<CAF1x@mail.gmail.com>"
         assert parsed["Subject"] == "Re: Pricing data at Acme"
 
+    def test_a_cv_goes_in_as_a_pdf_attachment(self) -> None:
+        cv = Attachment(filename="Stan Petrov CV.pdf", content=b"%PDF-1.7 cv")
+        with_cv = DRAFT.model_copy(update={"attachments": [cv]})
+
+        parsed = message_from_bytes(build_message(with_cv, "me@example.com"), policy=policy.default)
+
+        assert parsed.get_content_type() == "multipart/mixed"
+        [body, attached] = list(parsed.iter_parts())
+        assert body.get_content().replace("\r\n", "\n") == DRAFT.body + "\n"
+        assert (attached.get_content_type(), attached.get_filename()) == (
+            "application/pdf",
+            "Stan Petrov CV.pdf",
+        )
+        assert attached.get_content() == b"%PDF-1.7 cv"
+
 
 class TestSettings:
     def test_unset_means_gmail_is_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -314,3 +354,32 @@ class TestSettings:
 
         with pytest.raises(MailConfigError, match=problem):
             GmailSettings.from_env()
+
+
+@pytest.mark.parametrize(
+    ("auto_submitted", "autoreply", "subject", "auto"),
+    [
+        ("auto-replied", False, "Re: Pricing data", True),
+        ("no", False, "Re: Pricing data", False),
+        ("", True, "Re: Pricing data", True),
+        ("", False, "Automatic reply: Pricing data", True),
+        ("", False, "Out of Office: Pricing data", True),
+        ("", False, "Abwesenheitsnotiz: Pricing data", True),
+        ("", False, "Re: out of office until Monday?", False),
+        ("", False, "Re: Pricing data", False),
+    ],
+)
+def test_auto_replies_are_known_by_header_or_subject(
+    auto_submitted: str, autoreply: bool, subject: str, auto: bool
+) -> None:
+    assert is_auto_reply(auto_submitted, autoreply, subject) is auto
+
+
+def test_plain_text_takes_the_text_part_of_a_multipart_message() -> None:
+    message = EmailMessage()
+    message.set_content("Hi Ann,\n\nThe text I sent.\n")
+    message.add_alternative("<p>Hi Ann,</p><p>The text I sent.</p>", subtype="html")
+    assert plain_text(message.as_bytes()) == "Hi Ann,\n\nThe text I sent.\n"
+    html_only = EmailMessage()
+    html_only.set_content("<p>Hi</p>", subtype="html")
+    assert plain_text(html_only.as_bytes()) == ""

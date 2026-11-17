@@ -59,6 +59,10 @@ class SourceItem(BaseModel):
 
 class SourceQuery(BaseModel):
     keywords: list[str] = Field(default_factory=list)
+    search_terms: list[str] = Field(
+        default_factory=list,
+        description="What a searchable source queries for; nothing is filtered by them.",
+    )
     since: datetime | None = None
     limit: int = Field(default=100, ge=1)
     total_limit: int | None = Field(default=None, ge=1, description="Cap across all channels.")

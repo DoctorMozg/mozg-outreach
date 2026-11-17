@@ -15,6 +15,7 @@ class FakeMailbox:
     def __init__(self) -> None:
         self.threads_by_id: dict[int, list[ThreadMessage]] = {}
         self.pushed: list[OutgoingDraft] = []
+        self.bodies: dict[int, str] = {}
         self.offline = False
         self._ids = count(1000)
 
@@ -23,6 +24,7 @@ class FakeMailbox:
         self._check()
         new_thread, message_id = next(self._ids), next(self._ids)
         self.pushed.append(draft)
+        self.bodies[message_id] = draft.body
         message = self._message(message_id, ME, draft=True, subject=draft.subject)
         answered = [
             t
@@ -48,15 +50,24 @@ class FakeMailbox:
         self._check()
         return {t: list(self.threads_by_id.get(t, [])) for t in thread_ids}
 
-    def send(self, thread_id: int, at: datetime) -> None:
-        """The user clicks Send on the thread's draft."""
+    async def text(self, message_id: int) -> str:
+        self._check()
+        return self.bodies[message_id]
+
+    def send(self, thread_id: int, at: datetime, body: str | None = None) -> None:
+        """The user clicks Send on the thread's draft, maybe after editing it to `body`."""
         thread = self.threads_by_id[thread_id]
         draft = next(m for m in thread if m.draft)
+        if body is not None:
+            self.bodies[draft.message_id] = body
         sent = {"draft": False, "received_at": at, "header_id": f"<{draft.message_id}@mail>"}
         thread[thread.index(draft)] = draft.model_copy(update=sent)
 
-    def receive(self, thread_id: int, sender: str, at: datetime) -> None:
-        self.threads_by_id[thread_id].append(self._message(next(self._ids), sender, at=at))
+    def receive(
+        self, thread_id: int, sender: str, at: datetime, *, auto: bool = False, subject: str = ""
+    ) -> None:
+        message = self._message(next(self._ids), sender, at=at, subject=subject)
+        self.threads_by_id[thread_id].append(message.model_copy(update={"auto": auto}))
 
     def _check(self) -> None:
         if self.offline:

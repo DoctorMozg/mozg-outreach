@@ -59,6 +59,9 @@ class TestSkills:
             ("C", "C++ developer", False),
             ("K8s", "EKS/K8s clusters", True),
             ("Rust", "rusty pipes", False),
+            ("Python", "Senior Python-разработчик", True),
+            ("Go", "Go-разработчик, удалённо", True),
+            ("C", "C-suite leadership", False),
         ],
     )
     def test_term_boundaries(self, term: str, text: str, found: bool) -> None:

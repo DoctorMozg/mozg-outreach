@@ -9,7 +9,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from email import policy
 from email.message import EmailMessage
-from email.parser import BytesHeaderParser
+from email.parser import BytesHeaderParser, BytesParser
 from email.utils import formataddr, formatdate, make_msgid, parseaddr
 from typing import Protocol
 
@@ -36,6 +36,13 @@ _LABELS = re.compile(rb"\bX-GM-LABELS \(((?:[^)\"]|\"[^\"]*\")*)\)")
 _DRAFT_LABEL = re.compile(rb'(?:^|[\s(])(?:\\Draft|"\\\\Draft")(?=$|[\s)])')
 _INTERNALDATE = re.compile(rb'\bINTERNALDATE "([^"]+)"')
 _MESSAGE = re.compile(rb"^\d+ \(")
+# Autoresponders that skip RFC 3834 headers still mark the subject, in the reader's language.
+_AUTO_SUBJECT = re.compile(
+    r"^(?:automatic reply|auto(?:matic)?[- ]?reply|autoreply|auto-response|out of (?:the )?office"
+    r"|abwesenheit|automatische antwort|r[ée]ponse automatique|absence|respuesta autom[áa]tica"
+    r"|автоответ|автоматический ответ)",
+    re.IGNORECASE,
+)
 
 
 class Mailbox(Protocol):
@@ -50,6 +57,8 @@ class Mailbox(Protocol):
 
     async def threads(self, thread_ids: Sequence[int]) -> dict[int, list[ThreadMessage]]: ...
 
+    async def text(self, message_id: int) -> str: ...
+
 
 def build_message(draft: OutgoingDraft, address: str) -> bytes:
     message = EmailMessage(policy=policy.SMTP)
@@ -63,6 +72,10 @@ def build_message(draft: OutgoingDraft, address: str) -> bytes:
         message["In-Reply-To"] = draft.in_reply_to
         message["References"] = draft.in_reply_to
     message.set_content(draft.body)
+    for attachment in draft.attachments:
+        message.add_attachment(
+            attachment.content, maintype="application", subtype="pdf", filename=attachment.filename
+        )
     return message.as_bytes()
 
 
@@ -90,6 +103,10 @@ class GmailMailbox:
         if not thread_ids:
             return {}
         return await asyncio.to_thread(self._run, lambda s: s.threads(thread_ids))
+
+    async def text(self, message_id: int) -> str:
+        """The plain-text body of one message, to compare what was sent with the draft."""
+        return await asyncio.to_thread(self._run, lambda s: s.text(message_id))
 
     def _run[TResult](self, work: Callable[["_Session"], TResult]) -> TResult:
         try:
@@ -164,7 +181,8 @@ class _Session:
             # PEEK, so reading the thread doesn't mark the user's mail as read.
             items = (
                 "(X-GM-MSGID X-GM-LABELS FLAGS INTERNALDATE "
-                "BODY.PEEK[HEADER.FIELDS (FROM MESSAGE-ID SUBJECT)])"
+                "BODY.PEEK[HEADER.FIELDS "
+                "(FROM MESSAGE-ID SUBJECT AUTO-SUBMITTED X-AUTOREPLY X-AUTORESPOND)])"
             )
             fetched = _fetched(self._uid("FETCH", ",".join(uids), items))
             found[thread_id] = sorted(
@@ -172,6 +190,17 @@ class _Session:
                 key=lambda m: m.received_at,
             )
         return found
+
+    def text(self, message_id: int) -> str:
+        everything = self._folder(ALL)
+        _ok(self._imap.select(everything, readonly=True), f"SELECT {everything}")
+        uids = _first(self._uid("SEARCH", "X-GM-MSGID", str(message_id))).decode().split()
+        if not uids:
+            raise MailError(f"Gmail has no message {message_id}")
+        fetched = _fetched(self._uid("FETCH", uids[0], "(BODY.PEEK[])"))
+        if not fetched:
+            raise MailError(f"Gmail returned no body for message {message_id}")
+        return plain_text(fetched[0][1])
 
     def _search(self, thread_id: int) -> list[str]:
         data = self._uid("SEARCH", "X-GM-THRID", str(thread_id))
@@ -209,13 +238,38 @@ def _thread_message(meta: bytes, header: bytes) -> ThreadMessage:
         raise MailError(f"FETCH reply has no INTERNALDATE: {meta!r}")
     headers = BytesHeaderParser(policy=policy.default).parsebytes(header)
     header_id = str(headers.get("Message-ID", "")).strip()
+    subject = str(headers.get("Subject", ""))
     return ThreadMessage(
         message_id=_number(meta, "X-GM-MSGID"),
         sender=parseaddr(str(headers.get("From", "")))[1].lower(),
         draft=_is_draft(meta),
         received_at=datetime.strptime(date.group(1).decode().strip(), "%d-%b-%Y %H:%M:%S %z"),
         header_id=header_id or None,
-        subject=str(headers.get("Subject", "")),
+        subject=subject,
+        auto=is_auto_reply(
+            str(headers.get("Auto-Submitted", "")),
+            any(headers.get(h) for h in ("X-Autoreply", "X-Autorespond")),
+            subject,
+        ),
+    )
+
+
+def plain_text(raw: bytes) -> str:
+    """The text/plain part of a message, or empty when it has none."""
+    message = BytesParser(policy=policy.default).parsebytes(raw)
+    if not isinstance(message, EmailMessage):
+        return ""
+    part = message.get_body(preferencelist=("plain",))
+    return str(part.get_content()) if part is not None else ""
+
+
+def is_auto_reply(auto_submitted: str, autoreply_header: bool, subject: str) -> bool:
+    """RFC 3834's Auto-Submitted, the older X-Autoreply headers, or an autoresponder subject."""
+    submitted = auto_submitted.strip().lower()
+    return (
+        bool(submitted and submitted != "no")
+        or autoreply_header
+        or _AUTO_SUBJECT.match(subject.strip()) is not None
     )
 
 

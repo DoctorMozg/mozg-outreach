@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from mozg_outreach.apply.models import ApplicantProfile
 from mozg_outreach.domain import BriefFact, facts_text
+from mozg_outreach.pipelines.biz.enrichment_models import SiteContacts
 from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
 
 Seniority = Literal["intern", "junior", "mid", "senior", "staff", "principal", "executive"]
@@ -381,6 +382,9 @@ class JudgeResult(BaseModel):
 
 class ContactInput(BaseModel):
     listing: Listing
+    site: SiteContacts | None = Field(
+        default=None, description="What Python already read on the employer's own pages."
+    )
 
 
 class NamedContact(BaseModel):
@@ -398,4 +402,11 @@ class JobContacts(BaseModel):
     linkedin_company: str | None
     pattern_guesses: list[str] = Field(description="careers@ style guesses; labelled as guesses.")
     apply_url: str | None
+    company_domain: str | None = Field(
+        default=None, description="The employer's own website domain, never a job board's."
+    )
+    company_email: str | None = Field(
+        default=None, description="A published general inbox (info@, contact@) of the employer."
+    )
+    company_email_source: str | None = None
     concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)

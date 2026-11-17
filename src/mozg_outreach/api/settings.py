@@ -3,12 +3,13 @@
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from mozg_outreach.browser import BrowserSettings
 from mozg_outreach.mail import GmailSettings
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+BRAVE_KEY = "MOZG_OUTREACH_BRAVE_API_KEY"
 
 
 class Settings(BaseModel):
@@ -20,6 +21,8 @@ class Settings(BaseModel):
     browser: BrowserSettings = Field(default_factory=BrowserSettings)
     # None leaves Gmail off: no draft pushing and no polling.
     gmail: GmailSettings | None = None
+    # None leaves LinkedIn lookups to the contact finder's own web search.
+    brave_api_key: SecretStr | None = None
 
     @property
     def database(self) -> Path:
@@ -41,4 +44,5 @@ class Settings(BaseModel):
             max_parallel_runs=int(runs) if runs else 2,
             browser=BrowserSettings.model_validate({"channel": channel}),
             gmail=GmailSettings.from_env(),
+            brave_api_key=SecretStr(brave) if (brave := os.environ.get(BRAVE_KEY)) else None,
         )

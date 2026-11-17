@@ -1,11 +1,18 @@
 from datetime import UTC, datetime
 
 from mozg_outreach.pipelines.seeker.feeds import FeedRequest, JobFeeds, to_listing
+from mozg_outreach.pipelines.seeker.models import SkillRules
 from mozg_outreach.sources.models import FetchResult, SourceItem, SourceQuery
 
 from .conftest import LONG_POSTING, TODAY
 
 NOW = datetime(2026, 11, 14, 9, tzinfo=UTC)
+PYTHON_OR_CPP = SkillRules(
+    must_have_skills=[],
+    must_have_or_groups=[["Python", "C++"]],
+    nice_to_have_skills=[],
+    synonym_clusters={},
+)
 
 
 def item(**fields: object) -> SourceItem:
@@ -70,7 +77,7 @@ async def test_collect_keeps_recent_jobs_and_cursors() -> None:
     adapter = FakeAdapter("greenhouse", fresh)
     outcome = await JobFeeds([adapter]).collect(
         FeedRequest(
-            keywords=["Backend Engineer"],
+            skills=PYTHON_OR_CPP,
             recency_days=7,
             today=TODAY,
             cursors={"greenhouse": "2026-11-01T00:00:00+00:00"},
@@ -80,3 +87,24 @@ async def test_collect_keeps_recent_jobs_and_cursors() -> None:
     assert outcome.cursors == {"greenhouse": "2026-11-14T09:00:00+00:00"}
     assert outcome.concerns == ["greenhouse: GET https://boards.greenhouse.io/x 404"]
     assert adapter.calls[0][1] == "2026-11-01T00:00:00+00:00"
+
+
+async def test_feeds_keep_jobs_naming_a_must_have_skill_whatever_their_title() -> None:
+    result = FetchResult(
+        items=[
+            item(source_item_id="1", title="Senior Software Engineer", raw_text="C++17, CUDA"),
+            item(source_item_id="2", title="Tech Lead Salesforce", raw_text="Apex and Flows"),
+            item(source_item_id="3", title="ML Engineer", raw_text="PyTorch and python tooling"),
+        ]
+    )
+    adapter = FakeAdapter("remoteok", result)
+
+    outcome = await JobFeeds([adapter]).collect(
+        FeedRequest(skills=PYTHON_OR_CPP, recency_days=7, today=TODAY, cursors={})
+    )
+
+    assert [i.listing.title for i in outcome.listings] == [
+        "Senior Software Engineer",
+        "ML Engineer",
+    ]
+    assert adapter.calls[0][0].keywords == [], "feeds come back whole; skills filter them here"

@@ -5,7 +5,15 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from claude_agent_sdk import AssistantMessage, TextBlock, ToolUseBlock, create_sdk_mcp_server
+from claude_agent_sdk import (
+    AssistantMessage,
+    CLIConnectionError,
+    CLIJSONDecodeError,
+    ProcessError,
+    TextBlock,
+    ToolUseBlock,
+    create_sdk_mcp_server,
+)
 
 from mozg_outreach.agents import (
     AgentEvent,
@@ -107,6 +115,25 @@ class TestFailures:
         with pytest.raises(AgentRunError) as info:
             await runner.run(sample_prompt, ScoutInput(region="x"), ScoutResult, workspace=tmp_path)
         assert info.value.subtype == "error_max_budget_usd"
+
+    @pytest.mark.parametrize(
+        ("error", "subtype"),
+        [
+            (ProcessError("Command failed", exit_code=1, stderr="boom"), "ProcessError"),
+            (CLIConnectionError("Failed to start Claude Code"), "CLIConnectionError"),
+            (CLIJSONDecodeError("{oops", ValueError("bad json")), "CLIJSONDecodeError"),
+        ],
+    )
+    async def test_sdk_failures_become_run_errors(
+        self, sample_prompt: AgentPrompt, tmp_path: Path, error: Exception, subtype: str
+    ) -> None:
+        # Callers handle AgentRunError; a raw SDK error would surface as a 500.
+        fake = FakeQuery([assistant(TextBlock("working"))], fail=error)
+        runner = AgentRunner(RunnerSettings(), query_fn=fake)
+        with pytest.raises(AgentRunError) as info:
+            await runner.run(sample_prompt, ScoutInput(region="x"), ScoutResult, workspace=tmp_path)
+        assert info.value.subtype == subtype
+        assert info.value.__cause__ is error
 
     async def test_stream_without_result(self, sample_prompt: AgentPrompt, tmp_path: Path) -> None:
         runner = AgentRunner(RunnerSettings(), query_fn=FakeQuery([]))

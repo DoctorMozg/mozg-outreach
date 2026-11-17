@@ -27,7 +27,8 @@ import { IconColumns3, IconExternalLink, IconMail, IconRoute, IconSearch, IconSp
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, enrichHint, get, type Graph, type Item, type Project, type Run } from "../api";
-import { ActivityBadge, Empty, EnrichedBadge, ErrorBox, Score, StepBadge, Value } from "../components/common";
+import { ActivityBadge, Empty, EnrichedBadge, ErrorBox, replanDue, Score, StepBadge, Value } from "../components/common";
+import { Duplicates } from "../components/Duplicates";
 import { GraphView } from "../components/GraphView";
 import { href } from "../router";
 
@@ -54,6 +55,7 @@ export function Report({ project }: { project: Project }): ReactElement {
           <TextInput type="date" size="xs" aria-label="To" leftSection={<Text size="xs">to</Text>} leftSectionWidth={30} value={until} onChange={(e) => setUntil(e.currentTarget.value)} />
         </Group>
       </Group>
+      {project.mode === "biz" && <Duplicates project={project} />}
       {view === "leads" ? <Leads project={project} range={range} /> : <Connections project={project} range={range} />}
     </Stack>
   );
@@ -85,6 +87,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
   });
   const [query, setQuery] = useState("");
   const [onlyEnriched, setOnlyEnriched] = useState(false);
+  const [onlyReplan, setOnlyReplan] = useState(false);
   // Ticked rows for the bulk bar; they live only on this page.
   const [ticked, setTicked] = useState<ReadonlySet<number>>(new Set());
   const tick = (id: number): void =>
@@ -115,7 +118,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
 
   const needle = query.trim().toLowerCase();
   const rows = (items.data ?? []).filter(
-    (i) => (!onlyEnriched || i.enriched) && (kind === "all" || i.kind === kind) && (!needle || i.title.toLowerCase().includes(needle)),
+    (i) => (!onlyEnriched || i.enriched) && (!onlyReplan || replanDue(i.approach_step)) && (kind === "all" || i.kind === kind) && (!needle || i.title.toLowerCase().includes(needle)),
   );
   // Bulk actions take only the ticked rows on screen, so a filter never hides what they touch.
   const chosen = rows.filter((i) => ticked.has(i.id));
@@ -156,6 +159,7 @@ function Leads({ project, range }: { project: Project; range: Record<string, str
             />
           )}
           <Switch size="sm" label="Enriched only" checked={onlyEnriched} onChange={(e) => setOnlyEnriched(e.currentTarget.checked)} />
+          {!seeker && <Switch size="sm" label="Re-plan due" checked={onlyReplan} onChange={(e) => setOnlyReplan(e.currentTarget.checked)} />}
         </Group>
         <Group gap="xs">
           <Select

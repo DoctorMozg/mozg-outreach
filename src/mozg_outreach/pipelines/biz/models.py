@@ -1,5 +1,6 @@
 """Contracts between the biz discovery pipeline and its agents (inputs and structured outputs)."""
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -11,11 +12,53 @@ CONCERNS_DESCRIPTION = (
 )
 
 
+class Asset(BaseModel):
+    """Something the sender can send on a "yes": a guide, a case study, a demo."""
+
+    name: str = Field(min_length=1)
+    about: str = Field(default="", description="Who it is for and what it shows.")
+    url: str = ""
+
+    def offer(self) -> str:
+        return f"{self.name}: {self.about}" if self.about else self.name
+
+
 class Offering(BaseModel):
     what: str = Field(min_length=1)
     value_prop: str = Field(min_length=1)
     differentiators: list[str] = Field(default_factory=list)
     proof_points: list[str] = Field(default_factory=list)
+    assets: list[Asset] = Field(
+        default_factory=list,
+        title="Things you can send",
+        description="Letters offer only these, so a yes never leaves you writing one in a hurry.",
+    )
+
+
+class SenderCard(BaseModel):
+    """The signature under every email; readers check it before they answer."""
+
+    title: str = Field(default="", description="Your role, e.g. Founder.")
+    company: str = ""
+    website: str = ""
+    linkedin: str = ""
+    phone: str = ""
+    postal_address: str = Field(default="", description="US law wants one in marketing email.")
+    privacy_url: str = Field(
+        default="", description="Your privacy notice; first emails to EU and UK firms link it."
+    )
+
+    def text(self, name: str) -> str | None:
+        """The card's lines under the sign-off, or None when nothing beyond the name is set."""
+        role = ", ".join(part for part in (self.title, self.company) if part)
+        links = " | ".join(_bare(u) for u in (self.website, self.linkedin, self.phone) if u)
+        lines = [line for line in (role, links, self.postal_address) if line]
+        return "\n".join([name, *lines]) if lines else None
+
+
+def _bare(url: str) -> str:
+    """A link as people write it in a signature: no scheme, no www, no trailing slash."""
+    return re.sub(r"^(?:https?://)?(?:www\.)?", "", url.strip()).rstrip("/")
 
 
 class Icp(BaseModel):
@@ -47,6 +90,7 @@ class BizBrief(BaseModel):
     competitors: list[str] = Field(default_factory=list)
     notes: str = ""
     facts: list[BriefFact] = Field(default_factory=list)
+    sender: SenderCard = Field(default_factory=SenderCard, title="Signature")
 
     def background(self) -> str | None:
         """What letters may claim about the sender's company beyond the offering."""

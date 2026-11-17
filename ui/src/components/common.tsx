@@ -46,6 +46,9 @@ export function Score({ value, size = "md" }: { value: number | null; size?: Bad
 export const INTERACTION_LABELS = {
   sent: "Sent",
   replied: "Replied",
+  out_of_office: "Out of office",
+  not_now: "Not now",
+  opted_out: "Asked to stop",
   bounced: "Bounced",
   called: "Called",
   met: "Met",
@@ -59,7 +62,21 @@ export function interactionLabel(kind: string): string {
   return INTERACTION_LABELS[kind as InteractionKind] ?? kind;
 }
 
-const ACTIVITY_COLORS: Record<string, string> = { sent: "blue", replied: "teal", bounced: "red", called: "grape", met: "grape", declined: "red", refused: "orange" };
+const ACTIVITY_COLORS: Record<string, string> = {
+  sent: "blue",
+  replied: "teal",
+  out_of_office: "yellow",
+  not_now: "orange",
+  opted_out: "red",
+  bounced: "red",
+  called: "grape",
+  met: "grape",
+  declined: "red",
+  refused: "orange",
+};
+
+/** Log kinds that take a date: the return from an out-of-office, or when to come back. */
+export const DATED_KINDS: Partial<Record<InteractionKind, string>> = { out_of_office: "Back on", not_now: "Come back on" };
 
 /** The lead's last logged status and note; `projectId` is the list's project, to flag another one's log. */
 export function ActivityBadge({ activity, projectId, size = "xs" }: { activity: Activity | null; projectId: number; size?: BadgeProps["size"] }): ReactElement | null {
@@ -76,13 +93,18 @@ export function ActivityBadge({ activity, projectId, size = "xs" }: { activity: 
   );
 }
 
-const STEP_CHANNELS = { email: "email", linkedin: "LinkedIn", phone: "call" } as const;
+const STEP_CHANNELS = { email: "email", linkedin: "LinkedIn", phone: "call", form: "contact form" } as const;
 
 /** Whole days from today (local) to a YYYY-MM-DD date; negative when it is past. */
 function daysUntil(day: string): number {
   const now = new Date();
   const [y, m, d] = day.split("-").map(Number) as [number, number, number];
   return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / 86_400_000);
+}
+
+/** The sequence may start again: it finished or stopped for now, and its rest is over. */
+export function replanDue(step: ApproachStep | null): boolean {
+  return step?.recycle_on != null && daysUntil(step.recycle_on) <= 0;
 }
 
 const plural = (n: number): string => `${n} day${n === 1 ? "" : "s"}`;
@@ -97,11 +119,27 @@ function countdown(days: number): string {
 /** Where a company's approach sequence stands: the next step, to whom, and when it is due. */
 export function StepBadge({ step, size = "xs" }: { step: ApproachStep | null; size?: BadgeProps["size"] }): ReactElement | null {
   if (!step) return null;
-  if (step.step === null) {
+  if (step.state === "stopped" || step.state === "done") {
+    const replan = step.recycle_on ? daysUntil(step.recycle_on) : null;
+    const label = step.state === "stopped" ? `stopped: ${step.reason ?? ""}` : "sequence done";
+    const again = replan === null ? "" : replan <= 0 ? " · re-plan due" : ` · re-plan in ${plural(replan)}`;
+    const tip = step.recycle_on ? `A new sequence, with a new angle or person, may start on ${step.recycle_on}.` : "No new sequence for this company.";
     return (
-      <Badge size={size} variant="light" color="gray">
-        sequence done
-      </Badge>
+      <Tooltip label={tip} multiline maw={300}>
+        <Badge size={size} variant="light" color={replan !== null && replan <= 0 ? "violet" : "gray"}>
+          {label}
+          {again}
+        </Badge>
+      </Tooltip>
+    );
+  }
+  if (step.state === "paused") {
+    return (
+      <Tooltip label={`${step.reason ?? "Paused"}; step ${step.step} goes on ${step.resume_on}.`}>
+        <Badge size={size} variant="light" color="yellow">
+          paused until {step.resume_on}
+        </Badge>
+      </Tooltip>
     );
   }
   const days = step.due ? daysUntil(step.due) : null;

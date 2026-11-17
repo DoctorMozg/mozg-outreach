@@ -100,9 +100,9 @@ export interface Item {
   approach_step: ApproachStep | null;
 }
 
-/** The first approach touch not done yet (approach_models.py ApproachStep). */
+/** The first approach touch not done yet, or why the sequence stopped (approach_models.py ApproachStep). */
 export interface ApproachStep {
-  /** Null when every touch is done. */
+  /** Null when every touch is done or the sequence stopped. */
   step: number | null;
   total: number;
   done: number;
@@ -110,6 +110,13 @@ export interface ApproachStep {
   reader: string | null;
   /** YYYY-MM-DD: the first touch's date plus this touch's day offset; null before the first touch. */
   due: string | null;
+  state: "active" | "paused" | "stopped" | "done";
+  /** Why it stopped or paused, with the date. */
+  reason: string | null;
+  /** YYYY-MM-DD: when a paused sequence goes on. */
+  resume_on: string | null;
+  /** YYYY-MM-DD: when a stopped-for-now or finished sequence may be re-planned. */
+  recycle_on: string | null;
 }
 
 /** What the user last did with a lead, logged here or on the same lead in another project. */
@@ -131,6 +138,48 @@ export function enrichHint(item: Item): { label: string; note: string | null } {
   return { label: "Enrich again", note: `Already enriched${when}; running it again repeats the paid searches${extra}.` };
 }
 
+export interface DuplicateLead {
+  id: number;
+  title: string;
+}
+
+/** One company saved as several leads; a merge keeps `keep`. */
+export interface DuplicateGroup {
+  keep: DuplicateLead;
+  drop: DuplicateLead[];
+}
+
+/** A Beta(1, 1) posterior on a reply rate. */
+export interface Rate {
+  sent: number;
+  replied: number;
+  mean: number;
+  low: number;
+  high: number;
+}
+
+export interface OutcomeRow {
+  group: "angle" | "purpose";
+  name: string;
+  rate: Rate;
+}
+
+export interface Outcomes {
+  rows: OutcomeRow[];
+  level: number;
+  sent: number;
+}
+
+export interface CandidateReview {
+  variant: string;
+  subject: string | null;
+  text: string;
+  problems: string[];
+  /** Judge points over both orders; null when it wasn't judged. */
+  score: number | null;
+  chosen: boolean;
+}
+
 export interface DraftReview {
   address?: string;
   address_confidence?: string;
@@ -142,6 +191,8 @@ export interface DraftReview {
   changes?: string[];
   problems?: string[];
   review_notes?: string[];
+  /** Every draft the judge compared, the chosen one included; empty for a single draft. */
+  candidates?: CandidateReview[];
   edited_by_user?: boolean;
   based_on_version?: number;
 }
@@ -165,6 +216,8 @@ export interface Interaction {
   kind: string;
   note: string;
   happened_at: string;
+  /** YYYY-MM-DD: an out-of-office's return, or when a "not now" said to come back. */
+  until: string | null;
 }
 
 /** An email letter put into the user's Gmail Drafts, and what the mailbox shows became of it. */
@@ -179,6 +232,13 @@ export interface MailThread {
   sent_at: string | null;
   replied_at: string | null;
   bounced_at: string | null;
+  auto_replied_at: string | null;
+  /** What the user sent, as Gmail has it. */
+  sent_body: string | null;
+  /** Share of the draft's words changed before sending, 0 to 1. */
+  edited: number | null;
+  /** Only on a push answer: e.g. a jump in the day's volume. */
+  warnings?: string[];
 }
 
 /** The Gmail account drafts go to; null when Gmail isn't set up. */
@@ -196,6 +256,16 @@ export interface LinkedEntity {
   kind: "person" | "company";
   name: string;
   role: string;
+}
+
+/** One person from the enrichment dossier's contacts. */
+export interface KeyPerson {
+  name: string;
+  title: string;
+  linkedin: string | null;
+  relevance: string;
+  source_url: string;
+  confidence: "high" | "medium" | "low";
 }
 
 export interface ItemDetail extends Item {
@@ -335,7 +405,7 @@ export interface CvChoice {
   concerns: string[];
 }
 
-export type TouchChannel = "email" | "linkedin" | "phone";
+export type TouchChannel = "email" | "linkedin" | "phone" | "form";
 
 /** What `seeker.apply` filled on a job's form (apply/models.py FillReport). */
 export interface FillReport {

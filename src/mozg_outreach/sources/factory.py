@@ -23,6 +23,14 @@ from mozg_outreach.sources.feeds import (
     RemotiveConfig,
 )
 from mozg_outreach.sources.hn import HnConfig, HnHiringAdapter
+from mozg_outreach.sources.remote_boards import (
+    HimalayasAdapter,
+    HimalayasConfig,
+    WeWorkRemotelyAdapter,
+    WeWorkRemotelyConfig,
+    WorkingNomadsAdapter,
+    WorkingNomadsConfig,
+)
 from mozg_outreach.sources.telegram import TelegramAdapter, TelegramConfig
 
 logger = logging.getLogger(__name__)
@@ -61,6 +69,9 @@ _BUILDERS: dict[str, Builder] = {
     "remoteok": _http(RemoteOkConfig, RemoteOkAdapter),
     "arbeitnow": _http(ArbeitnowConfig, ArbeitnowAdapter),
     "hn_whoishiring": _http(HnConfig, HnHiringAdapter),
+    "himalayas": _http(HimalayasConfig, HimalayasAdapter),
+    "weworkremotely": _http(WeWorkRemotelyConfig, WeWorkRemotelyAdapter),
+    "workingnomads": _http(WorkingNomadsConfig, WorkingNomadsAdapter),
     "telegram": _telegram,
 }
 
@@ -69,8 +80,11 @@ _BUILDERS: dict[str, Builder] = {
 DEFAULT_SOURCES: dict[str, dict[str, object]] = {
     "arbeitnow": {},
     "hn_whoishiring": {},
+    "himalayas": {},
     "remoteok": {},
     "remotive": {},
+    "weworkremotely": {},
+    "workingnomads": {},
     "telegram": {"discover": True},
 }
 

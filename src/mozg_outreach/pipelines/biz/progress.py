@@ -1,6 +1,7 @@
 """The user marks approach steps done by hand; each one is logged on the lead once."""
 
 import logging
+from collections.abc import Sequence
 from datetime import date, datetime
 
 from sqlalchemy import select
@@ -13,14 +14,24 @@ from mozg_outreach.pipelines.biz.approach_models import (
     StoredApproach,
     TouchChannel,
 )
-from mozg_outreach.pipelines.biz.outreach import APPROACH
+from mozg_outreach.pipelines.biz.outreach import APPROACH, logged
 from mozg_outreach.storage.models import Interaction, Item, MailThread
 from mozg_outreach.storage.repositories import InteractionRepository, ItemRepository
 
 logger = logging.getLogger(__name__)
 
-LOGGED_AS: dict[TouchChannel, str] = {"email": "sent", "linkedin": "sent", "phone": "called"}
-CHANNEL_NAMES: dict[TouchChannel, str] = {"email": "email", "linkedin": "LinkedIn", "phone": "call"}
+LOGGED_AS: dict[TouchChannel, str] = {
+    "email": "sent",
+    "linkedin": "sent",
+    "phone": "called",
+    "form": "sent",
+}
+CHANNEL_NAMES: dict[TouchChannel, str] = {
+    "email": "email",
+    "linkedin": "LinkedIn",
+    "phone": "call",
+    "form": "contact form",
+}
 
 
 class StepError(ValueError):
@@ -84,9 +95,15 @@ class ApproachProgress:
 
     def _store(self, item: Item, approach: StoredApproach) -> ApproachStep:
         ItemRepository(self._session).set_detail(item, APPROACH, approach)
-        current = approach.current()
+        current = approach.current(logged(InteractionRepository(self._session).history(item.id)))
         logger.info("item %d: approach at step %s of %d", item.id, current.step, current.total)
         return current
+
+
+def sequence_step(item: Item, interactions: Sequence[Interaction]) -> ApproachStep | None:
+    """The item's approach position given what was logged on it; None without a plan."""
+    stored = item.details.get(APPROACH)
+    return StoredApproach.model_validate(stored).current(logged(interactions)) if stored else None
 
 
 def _approach(item: Item) -> StoredApproach:

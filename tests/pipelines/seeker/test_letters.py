@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from mozg_outreach.agents import PromptLibrary
 from mozg_outreach.letters.composer import WrittenLetter
 from mozg_outreach.letters.models import LetterBrief, LetterDraft, SenderSettings
@@ -97,17 +99,39 @@ async def test_no_named_contact_goes_to_hiring_team_via_apply_form(
     assert brief.subject_max_chars is None
 
 
-async def test_named_contact_email_is_used_and_guesses_are_not(
-    strategy: SeekerStrategy, tmp_path: Path
-) -> None:
-    letter, _ = await write(strategy, contacts("jane@acme.example"), tmp_path)
-    assert letter.text.startswith("Dear Jane Example,")
-    assert (letter.review.address, letter.review.address_confidence) == (
-        "jane@acme.example",
-        "published",
+class TestDelivery:
+    async def test_a_published_email_wins_and_gets_an_application_subject(
+        self, strategy: SeekerStrategy, tmp_path: Path
+    ) -> None:
+        letter, _ = await write(strategy, contacts("jane@acme.example"), tmp_path)
+        assert letter.text.startswith("Dear Jane Example,")
+        assert (letter.review.address, letter.review.address_confidence) == (
+            "jane@acme.example",
+            "published",
+        )
+        assert letter.subject == "Application: Senior Backend Engineer - Stan Petrov"
+
+    @pytest.mark.parametrize(
+        ("update", "address", "confidence"),
+        [
+            ({"careers_email": "hr@acme.example"}, "hr@acme.example", "published"),
+            ({"company_email": "info@acme.example"}, "info@acme.example", "shared_inbox"),
+            ({}, "careers@acme.example", "guessed"),
+            ({"pattern_guesses": []}, "https://jobs.acme.example/backend/apply", "apply_form"),
+        ],
+        ids=["HR inbox", "company inbox", "guessed careers@", "application form"],
     )
-    no_email, _ = await write(strategy, contacts(None), tmp_path)
-    assert no_email.review.address == "https://jobs.acme.example/backend/apply"
+    async def test_without_a_personal_email_the_next_route_is_used(
+        self,
+        strategy: SeekerStrategy,
+        tmp_path: Path,
+        update: dict[str, object],
+        address: str,
+        confidence: str,
+    ) -> None:
+        letter, _ = await write(strategy, contacts(None).model_copy(update=update), tmp_path)
+        assert (letter.review.address, letter.review.address_confidence) == (address, confidence)
+        assert (letter.subject is None) == (confidence == "apply_form")
 
 
 RU_BODY = " ".join(

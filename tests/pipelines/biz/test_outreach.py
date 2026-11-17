@@ -6,23 +6,29 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from mozg_outreach.agents import PromptLibrary
-from mozg_outreach.domain import BriefFact, FieldValue
+from mozg_outreach.domain import BriefFact, FieldValue, ItemKind
 from mozg_outreach.letters.frame import WORDINGS
-from mozg_outreach.letters.models import LetterBrief, Revision, RevisionTarget
+from mozg_outreach.letters.models import DraftReview, LetterBrief, Revision, RevisionTarget
+from mozg_outreach.mail.suppression import Suppressions
 from mozg_outreach.naturalize.punctuation import PunctuationChecker
 from mozg_outreach.naturalize.validation import body_word_count
-from mozg_outreach.pipelines.biz.approach_models import StoredApproach
+from mozg_outreach.pipelines.biz.approach import SequenceClosedError
+from mozg_outreach.pipelines.biz.approach_models import ApproachInput, StoredApproach
 from mozg_outreach.pipelines.biz.discovery import dedup_companies
 from mozg_outreach.pipelines.biz.enrichment_models import (
     CompanyDossier,
 )
-from mozg_outreach.pipelines.biz.models import BizBrief, ScoutResult, Strategy
-from mozg_outreach.pipelines.biz.outreach import APPROACH, DOSSIER, BizOutreach
+from mozg_outreach.pipelines.biz.models import Asset, BizBrief, ScoutResult, SenderCard, Strategy
+from mozg_outreach.pipelines.biz.outreach import APPROACH, DOSSIER, GERMANY_CONSENT, BizOutreach
 from mozg_outreach.pipelines.biz.progress import ApproachProgress
 from mozg_outreach.pipelines.steps import PipelineSteps
-from mozg_outreach.storage.models import Entity, Item, Project, Run
-from mozg_outreach.storage.repositories import DraftRepository, ItemRepository
-from tests.pipelines.biz.conftest import load_fixture, outreach_script
+from mozg_outreach.storage.models import Draft, Entity, Item, Project, Run
+from mozg_outreach.storage.repositories import (
+    DraftRepository,
+    InteractionRepository,
+    ItemRepository,
+)
+from tests.pipelines.biz.conftest import BODY, load_fixture, outreach_script
 from tests.pipelines.conftest import REPO_PROMPTS, RecordedRunner
 
 
@@ -36,7 +42,7 @@ def item(session: Session, project: Project, run: Run) -> Item:
 def outreach(session: Session, tmp_path: Path) -> tuple[BizOutreach, RecordedRunner]:
     runner = RecordedRunner(outreach_script())
     steps = PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path)
-    return BizOutreach(session, steps), runner
+    return BizOutreach(session, steps, candidates=1), runner
 
 
 async def test_item_becomes_enriched_scored_and_drafted(
@@ -66,8 +72,8 @@ async def test_item_becomes_enriched_scored_and_drafted(
     assert 0 < len(draft.subject) <= 55
     lines = draft.body.splitlines()
     assert lines[0] == "Hello Jane,"
-    assert lines[-2:] == ["Best regards,", "Stan"]
-    assert WORDINGS["en"].opt_out not in draft.body, "Tallinn is outside the GCC"
+    # Every first email offers to stop; Tallinn is in the EU, but the brief has no privacy URL.
+    assert lines[-4:] == [WORDINGS["en"].opt_out, "", "Best regards,", "Stan"]
     assert 60 <= body_word_count(draft.body) <= 100
     assert PunctuationChecker().check(f"{draft.subject}\n{draft.body}") == []
     assert draft.review["problems"] == []
@@ -138,7 +144,9 @@ async def test_rewriting_one_step_keeps_the_others_as_context(
     ):
         script[agent].append(script[agent][index])
     runner = RecordedRunner(script)
-    service = BizOutreach(session, PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path))
+    service = BizOutreach(
+        session, PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path), candidates=1
+    )
     await service.enrich(item, strategy)
     await service.plan_approach(item, strategy)
     await service.write_letters(item, strategy)
@@ -239,7 +247,9 @@ async def test_replanning_rewrites_only_the_steps_not_done(
     script["expert-copywriter"] += script["expert-copywriter"][1:]
     script["expert-naturalizer"] += script["expert-naturalizer"][1:]
     runner = RecordedRunner(script)
-    service = BizOutreach(session, PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path))
+    service = BizOutreach(
+        session, PipelineSteps(runner, PromptLibrary(REPO_PROMPTS), tmp_path), candidates=1
+    )
     await service.enrich(item, strategy)
     await service.plan_approach(item, strategy)
     await service.write_letters(item, strategy)
@@ -257,3 +267,112 @@ async def test_replanning_rewrites_only_the_steps_not_done(
     assert isinstance(rewritten, LetterBrief)
     assert rewritten.touch
     assert rewritten.touch.earlier[0].text == opener.body
+
+
+async def test_no_letters_once_the_company_asked_to_stop(
+    session: Session, item: Item, strategy: Strategy, outreach: tuple[BizOutreach, RecordedRunner]
+) -> None:
+    service, runner = outreach
+    await service.enrich(item, strategy)
+    InteractionRepository(session).log(item.id, "opted_out")
+
+    with pytest.raises(SequenceClosedError, match="opted out"):
+        await service.write_letters(item, strategy)
+    assert "expert-copywriter" not in runner.payloads
+
+
+async def test_a_german_sequence_signs_offers_to_stop_once_and_warns_about_consent(
+    session: Session,
+    project: Project,
+    item: Item,
+    strategy: Strategy,
+    outreach: tuple[BizOutreach, RecordedRunner],
+) -> None:
+    brief = load_fixture("brief", BizBrief)
+    brief.sender = SenderCard(
+        title="Founder", company="Stan Cloud", privacy_url="stan.example/privacy"
+    )
+    brief.offering.assets = [Asset(name="Cloud cost checklist", about="for SaaS teams")]
+    project.brief = brief.model_dump(mode="json")
+    berlin = FieldValue(value="Berlin, Germany", source_url="https://katana.example")
+    item.fields = {**item.fields, "location": berlin.model_dump(mode="json")}
+    service, runner = outreach
+
+    await service.enrich(item, strategy)
+    planned = await service.plan_approach(item, strategy)
+    await service.write_letters(item, strategy)
+
+    opener, *follow_ups = DraftRepository(session).for_item(item.id)
+    card = "Stan\nFounder, Stan Cloud"
+    assert opener.body.endswith(
+        f"{WORDINGS['en'].opt_out}\nHow I handle your data: stan.example/privacy\n\n"
+        f"Best regards,\nStan\n\n{card}"
+    )
+    assert [d.body.endswith(f"Best regards,\nStan\n\n{card}") for d in follow_ups] == [True, True]
+    assert all(WORDINGS["en"].opt_out not in d.body for d in follow_ups)
+    notes = [DraftReview.model_validate(d.review).review_notes for d in [opener, *follow_ups]]
+    assert all(GERMANY_CONSENT in n for n in notes)
+    assert GERMANY_CONSENT in planned.plan.concerns
+    [plan_input] = runner.payloads["outreach-approach-planner"]
+    assert isinstance(plan_input, ApproachInput)
+    assert plan_input.offer.assets == ["Cloud cost checklist: for SaaS teams"]
+    briefs = [b for b in runner.payloads["expert-copywriter"] if isinstance(b, LetterBrief)]
+    assert {tuple(b.offers) for b in briefs} == {("Cloud cost checklist: for SaaS teams",)}
+
+
+async def test_every_letter_in_a_gulf_sequence_offers_to_stop(
+    session: Session, item: Item, strategy: Strategy, outreach: tuple[BizOutreach, RecordedRunner]
+) -> None:
+    dubai = FieldValue(value="Dubai, United Arab Emirates", source_url="https://katana.example")
+    item.fields = {**item.fields, "location": dubai.model_dump(mode="json")}
+    service, _ = outreach
+
+    await service.enrich(item, strategy)
+    await service.plan_approach(item, strategy)
+    await service.write_letters(item, strategy)
+
+    drafts = DraftRepository(session).for_item(item.id)
+    assert len(drafts) == 3
+    assert all(WORDINGS["en"].opt_out in d.body for d in drafts)
+    assert all("How I handle your data" not in d.body for d in drafts)
+
+
+async def test_the_planner_never_sees_a_suppressed_address(
+    session: Session, item: Item, strategy: Strategy, outreach: tuple[BizOutreach, RecordedRunner]
+) -> None:
+    Suppressions(session).add("hello@katanamrp.com", "bounced", None)
+    service, runner = outreach
+    await service.enrich(item, strategy)
+
+    planned = await service.plan_approach(item, strategy)
+
+    [plan_input] = runner.payloads["outreach-approach-planner"]
+    assert isinstance(plan_input, ApproachInput)
+    addresses = {r.address for c in plan_input.contacts for r in c.routes}
+    assert "hello@katanamrp.com" not in addresses
+    assert "Left out hello@katanamrp.com: bounced." in planned.plan.concerns
+
+
+async def test_letters_steer_clear_of_the_projects_other_letters(
+    session: Session,
+    project: Project,
+    item: Item,
+    strategy: Strategy,
+    outreach: tuple[BizOutreach, RecordedRunner],
+) -> None:
+    other = Item(project_id=project.id, kind=ItemKind.COMPANY, dedup_key="bolt", title="Bolt")
+    session.add(other)
+    session.flush()
+    earlier = f"Hello Ann,\n\n{BODY.replace('EUR 14M', 'EUR 9M')}\n\nBest regards,\nStan"
+    session.add(Draft(item_id=other.id, channel="email", recipient="Ann", body=earlier, review={}))
+    service, runner = outreach
+
+    await service.enrich(item, strategy)
+    await service.write_letters(item, strategy)
+
+    [brief] = runner.payloads["expert-copywriter"]
+    assert isinstance(brief, LetterBrief)
+    assert brief.avoid_phrasings[0].startswith("Congrats on the EUR 9M Series B extension")
+    [draft] = DraftRepository(session).for_item(item.id)
+    notes = DraftReview.model_validate(draft.review).review_notes
+    assert any(n.startswith("The opening is close to the letter to Bolt") for n in notes)

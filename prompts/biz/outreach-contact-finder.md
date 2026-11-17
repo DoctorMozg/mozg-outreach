@@ -32,6 +32,7 @@ The input is a JSON object with these fields:
 - `source_urls` (list): pages search already found the company on; start there instead of searching for the website.
 - `target_profile` (object or null): the target company profile; its `sectors` and `company_stage` hint which roles matter.
 - `outreach_angles` (list): the planned outreach angles; use them to decide which decision-makers to prioritize.
+- `site` (object or null): what Python already read on the company's own pages. `emails` are published addresses with their `source_url`, `profiles` are LinkedIn links the site itself carries (`text` is usually the person's name), `pages` lists the pages read and `concerns` what failed. Use them, don't fetch those pages again for addresses, and spend your turns on what the site doesn't say.
 
 ## Source Discipline
 
@@ -52,31 +53,44 @@ When WebFetch returns an empty shell, asks to enable JavaScript, or the list loa
 
 ## Process
 
+Work through every step below before you return. A dossier without a single email or LinkedIn route leaves the sender nothing to write to, so an empty result is only acceptable after each step was tried. Name each step that found nothing in `concerns`, for example "No LinkedIn profile found for Jane Doe (searched name with company)".
+
 ### Step 1: Key People
 
-1. Fetch the company website's "About", "Team", or "Leadership" page
+1. Find who leads the company today, not who led it at launch: search `"<company name>" CEO OR "managing director" OR "general manager" OR founder` and prefer the most recent dated source. An old article is a lead to check, not an answer.
+1. Fetch the company website's "About", "Team", or "Leadership" page when `site` didn't already read it
 1. Extract key people: name, title, and any linked profiles
-1. Search LinkedIn: `"<person name>" "<company name>" linkedin`
 1. Prioritize decision-makers based on the strategy context (e.g., CTO for tech products, VP Sales for partnerships, CEO for small companies)
 1. Cap at 5 key people per company
 1. Start from `decision_maker` and `source_urls` in the input when set, and confirm the person on a fetched page
 1. For each person, look for a route: a firm profile page, a published personal email or direct phone, then LinkedIn
 
-### Step 2: Email Addresses
+### Step 2: LinkedIn, for every key person
 
-1. Fetch the company's "Contact" page
-1. Extract any listed email addresses
-1. Search: `"<company name>" contact email`
+1. Match `site.profiles` to people by name first.
+1. Search `site:linkedin.com/in "<person name>" "<company name>"`, then `"<person name>" "<company name>" linkedin` if that finds nothing.
+1. LinkedIn profiles can't be fetched (they need a login), so a search result is the evidence: take the profile URL from a result whose title or snippet names both the person and the company, and keep `source_url` as the page that named the person.
+1. Someone found only through LinkedIn search counts too: `source_url` is the profile URL, `quote` is the result's title line as shown, and `confidence` is `low`.
+1. Skip a profile whose result shows another employer as current.
+
+### Step 3: Email Addresses
+
+1. Start from `site.emails`; they are already verified and are kept whatever you return.
+1. When `site` is null or found none, fetch the Contact page and the privacy policy. Privacy notices often name a data protection or privacy inbox.
+1. Search `"@<domain>"` (and the parent group's domain for a brand of a larger group) to find addresses the company published elsewhere: press releases, tenders, directories, conference pages.
+1. Look for a media or press contact on the newsroom or in press releases.
 1. If a specific person's email is publicly listed (e.g., on a conference speaker page), include it
 1. Only if no published address exists, you may propose generic role addresses (info@, hello@, sales@, contact@ + company domain) as `pattern_guess`
+1. When a published address of one named employee shows the format (jane.doe@, jdoe@), you may apply that format to a key person as `pattern_guess`, with `source_url` the page that shows the format. Without such an example, never guess a person's address.
 
-### Step 3: Phone & Messaging
+### Step 4: Phone & Messaging
 
 1. Extract phone numbers from contact pages
 1. Look for WhatsApp Business links
 1. Check for Calendly/booking links (direct meeting scheduling)
+1. Note the page of the website's contact form (a form with a message box) in `contact_form`, unless `site.contact_form` already has it
 
-### Step 4: Social Presence
+### Step 5: Social Presence
 
 1. Find the company's LinkedIn page URL
 1. Find Twitter/X account
@@ -108,6 +122,7 @@ Return the result as the structured output, not as a file. Its JSON shape:
   },
   "whatsapp": null,
   "booking_link": null,
+  "contact_form": "https://company.com/contact",
   "address": "123 Main St, City, Country",
   "social": {
     "linkedin_company": "https://linkedin.com/company/...",
@@ -130,7 +145,7 @@ Return the result as the structured output, not as a file. Its JSON shape:
 }
 ```
 
-`website` is the company's own site, never a listing, review, directory or social page (Trustpilot, Chambers, Legal500, LinkedIn and the like); `null` if you could not confirm it. Each key person carries a `quote`: the exact sentence from the page at `source_url` that names them. A person without a quote from a page you fetched is discarded downstream, so leave them out. `confidence` is `high` for the company's own team page, `medium` for another first-party page, `low` for third-party sources or search snippets. `phone` is a direct number for that person with the same shape as a `phones` entry, or `null`.
+`website` is the company's own site, never a listing, review, directory or social page (Trustpilot, Chambers, Legal500, LinkedIn and the like); `null` if you could not confirm it. Each key person carries a `quote`: the exact sentence from the page at `source_url` that names them, or for someone found only on LinkedIn, the search result's title line. A person without a quote is discarded downstream, so leave them out. `confidence` is `high` for the company's own team page, `medium` for another first-party page, `low` for third-party sources or search snippets. `phone` is a direct number for that person with the same shape as a `phones` entry, or `null`.
 
 Missing single values are `null` and missing lists are empty. Every person, email and phone carries a `source_url`: the page where you saw it. A person's `email` is an object with the same `address`, `kind` and `source_url` fields as an `emails` entry, or `null`. `kind` is `published` when the address appears on a page you read, and `pattern_guess` when you derived it from a pattern; for a guess, `source_url` is the page that shows the company's address format or domain.
 
@@ -143,7 +158,7 @@ Missing single values are `null` and missing lists are empty. Every person, emai
 ## Rules
 
 - **Respect privacy** — only collect publicly available information.
-- **Never invent people or emails** — a name must come from a page you read. An email is `published` only if you saw that exact address on a page. Generic role addresses derived from a pattern are the only allowed guesses, each labelled `pattern_guess`. Never guess a person's address.
+- **Never invent people or emails** — a name must come from a page you read or a search result you saw. An email is `published` only if you saw that exact address on a page. Guesses are limited to generic role addresses and a person's address in a format a published colleague address shows, each labelled `pattern_guess`.
 - **Verify LinkedIn profiles** — confirm the person currently works at the company. Don't link to someone who left.
 - **No fabrication** — if you can't find contact info, leave fields as null/empty.
 - **One company only** — you analyze exactly one company per invocation.

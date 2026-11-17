@@ -138,8 +138,11 @@ class TestProjects:
             "web_search",
             "arbeitnow",
             "hn_whoishiring",
+            "himalayas",
             "remoteok",
             "remotive",
+            "weworkremotely",
+            "workingnomads",
             "telegram",
         }
         assert all(s["enabled"] for s in seeker)

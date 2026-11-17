@@ -13,6 +13,7 @@ from mozg_outreach.pipelines.biz.assessment import BizAssessment
 from mozg_outreach.pipelines.biz.assessment_models import AssessmentContext
 from mozg_outreach.pipelines.biz.directories import Directories, default_catalog
 from mozg_outreach.pipelines.biz.discovery import BizDiscovery, DiscoveryError
+from mozg_outreach.pipelines.biz.duplicates import CompanyDuplicates
 from mozg_outreach.pipelines.biz.models import (
     BizBrief,
     ClimateReport,
@@ -129,9 +130,10 @@ async def scout(ctx: Ctx) -> PhaseResult:
             region=_region(ctx, _brief(ctx)),
             limit=ctx.state.options.limit,
         )
-    ctx.state.candidates = outcome.candidates
     ctx.state.concerns += outcome.concerns
     with ctx.db.session() as session:
+        # Earlier runs may have saved a company under its domain or an older form of its name.
+        ctx.state.candidates = CompanyDuplicates(session, ctx.project_id).known(outcome.candidates)
         items = ItemRepository(session)
         ctx.state.item_ids = [
             items.upsert(ctx.project_id, ctx.run_id, c).id for c in ctx.state.candidates

@@ -67,9 +67,12 @@ def result_message(
 class FakeQuery:
     """Stands in for `claude_agent_sdk.query`: records options, replays scripted messages."""
 
-    def __init__(self, messages: Sequence[Message], delay: float = 0.0) -> None:
+    def __init__(
+        self, messages: Sequence[Message], delay: float = 0.0, fail: Exception | None = None
+    ) -> None:
         self.messages = list(messages)
         self.delay = delay
+        self.fail = fail
         self.calls: list[tuple[str, ClaudeAgentOptions]] = []
         self.active = 0
         self.max_active = 0
@@ -82,6 +85,8 @@ class FakeQuery:
             await asyncio.sleep(self.delay)
             for message in self.messages:
                 yield message
+            if self.fail is not None:
+                raise self.fail
         finally:
             self.active -= 1
 

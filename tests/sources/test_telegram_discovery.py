@@ -69,6 +69,32 @@ class TestFind:
 
         assert [c.username for c in result.channels] == ["big", "small"]
 
+    async def test_off_stack_channels_are_dropped_and_on_stack_ones_rank_first(self) -> None:
+        python_job = "Hiring: Python developer, remote, salary 5k"
+        js_job = "Hiring: React developer, remote, salary 5k"
+        session = SearchSession(
+            {
+                "python jobs": [
+                    channel("js_jobs", 90000),
+                    channel("mixed", 50000),
+                    channel("py_jobs", 100),
+                ]
+            },
+            {
+                "js_jobs": posts(js_job, js_job, js_job),
+                "mixed": posts(python_job, js_job, js_job),
+                "py_jobs": posts(python_job, python_job, js_job),
+            },
+        )
+
+        discovery = ChannelDiscovery(session, lambda text: "Python" in text)
+        result = await discovery.find(request("python"))
+
+        assert [(c.username, c.skill_share) for c in result.channels] == [
+            ("py_jobs", 0.67),
+            ("mixed", 0.33),
+        ]
+
     async def test_failed_search_is_a_concern_and_other_terms_continue(self) -> None:
         session = SearchSession({"go jobs": [channel("go_jobs")]}, {"go_jobs": posts(JOB)})
 

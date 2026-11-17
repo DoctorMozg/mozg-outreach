@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from pydantic import BaseModel, Field
@@ -24,6 +25,8 @@ MAX_CANDIDATES = 30
 SAMPLE_POSTS = 20
 ACTIVE_DAYS = 14
 MIN_JOB_SHARE = 0.3
+# A job channel for another stack (JavaScript, PHP) posts nothing the user can apply to.
+MIN_SKILL_SHARE = 0.15
 # Words job posts use in English and Russian, the two languages job channels mostly post in.
 JOB_MARKERS = re.compile(
     r"vacanc|hiring|we.re looking|salary|requirements|apply|remote|full[- ]time|"
@@ -38,6 +41,9 @@ class FoundChannel(BaseModel):
     subscribers: int | None
     last_post: datetime
     job_share: float = Field(description="Share of recent posts that read like job posts.")
+    skill_share: float | None = Field(
+        default=None, description="Share of recent posts naming a must-have skill."
+    )
     query: str = Field(description="The search that found it.")
 
 
@@ -64,8 +70,11 @@ def job_share(posts: list[ChannelMessage]) -> float:
 
 
 class ChannelDiscovery:
-    def __init__(self, session: TelegramSession) -> None:
+    def __init__(
+        self, session: TelegramSession, relevant: Callable[[str], bool] | None = None
+    ) -> None:
         self._session = session
+        self._relevant = relevant
 
     async def find(self, request: DiscoveryRequest) -> DiscoveryResult:
         concerns: list[str] = []
@@ -75,7 +84,9 @@ class ChannelDiscovery:
             checked = await self._vet(query, info, request.now, concerns)
             if checked is not None:
                 found.append(checked)
-        found.sort(key=lambda c: (c.job_share, c.subscribers or 0), reverse=True)
+        found.sort(
+            key=lambda c: (c.skill_share or 0, c.job_share, c.subscribers or 0), reverse=True
+        )
         kept = found[: request.limit]
         logger.info("telegram discovery: %d candidates, %d kept", len(candidates), len(kept))
         return DiscoveryResult(channels=kept, concerns=concerns)
@@ -118,11 +129,22 @@ class ChannelDiscovery:
         if now - last_post > timedelta(days=ACTIVE_DAYS) or share < MIN_JOB_SHARE:
             logger.debug("telegram discovery: @%s dropped (share %.2f)", info.username, share)
             return None
+        on_skills = self._skill_share(posts)
+        if on_skills is not None and on_skills < MIN_SKILL_SHARE:
+            logger.debug("telegram discovery: @%s off-stack (%.2f)", info.username, on_skills)
+            return None
         return FoundChannel(
             username=info.username,
             title=info.title,
             subscribers=info.subscribers,
             last_post=last_post,
             job_share=round(share, 2),
+            skill_share=None if on_skills is None else round(on_skills, 2),
             query=query,
         )
+
+    def _skill_share(self, posts: list[ChannelMessage]) -> float | None:
+        if self._relevant is None:
+            return None
+        texts = [p.text for p in posts if p.text.strip()]
+        return sum(1 for t in texts if self._relevant(t)) / len(texts) if texts else 0.0

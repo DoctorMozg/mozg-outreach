@@ -10,7 +10,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from mozg_outreach.agents import (
     AgentOutputError,
@@ -29,7 +29,9 @@ from mozg_outreach.browser import BrowserService
 from mozg_outreach.browser.toolkit import TOOLKIT, BrowserToolkit
 from mozg_outreach.mail import GmailMailbox, Mailbox, MailError
 from mozg_outreach.mail.drafts import GmailDrafts, MailDraftError
+from mozg_outreach.pipelines.biz.profile_search import BraveProfiles, ProfileFinder
 from mozg_outreach.pipelines.biz.progress import StepError
+from mozg_outreach.pipelines.biz.site_contacts import SiteReader, SiteSweep
 from mozg_outreach.runs.catalog import FLOWS
 from mozg_outreach.runs.flow import AdapterFactory
 from mozg_outreach.runs.manager import RunEnvironment, RunManager, RunStateError
@@ -50,14 +52,23 @@ def _error(status: int) -> Callable[[Request, Exception], Awaitable[JSONResponse
     return handle
 
 
+def _brave(client: httpx.AsyncClient, key: SecretStr | None) -> ProfileFinder | None:
+    if key is None:
+        logger.info("no Brave Search key: LinkedIn lookups are left to the contact finder")
+        return None
+    return BraveProfiles(client, key)
+
+
 def create_app(
     settings: Settings,
     runner: StepRunner | None = None,
     adapters: AdapterFactory | None = None,
     applications: ApplyDesk | None = None,
     mailbox: Mailbox | None = None,
+    sites: SiteReader | None = None,
+    profiles: ProfileFinder | None = None,
 ) -> FastAPI:
-    """Build the app; tests pass a recorded runner, fake feeds, apply browser and mailbox."""
+    """Build the app; tests pass a recorded runner, fake feeds, browser, mailbox and lookups."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -88,6 +99,8 @@ def create_app(
                     adapters=factory,
                     max_parallel_runs=settings.max_parallel_runs,
                     applications=applications or apply_browser,
+                    sites=sites or SiteSweep(client),
+                    profiles=profiles or _brave(client, settings.brave_api_key),
                 ),
                 FLOWS,
             )

@@ -463,6 +463,7 @@ interface FoundChannel {
   subscribers: number | null;
   last_post: string;
   job_share: number;
+  skill_share: number | null;
   query: string;
 }
 
@@ -493,6 +494,7 @@ function ChannelGate({ run, gate, onDone }: GateProps): ReactElement {
               <Table.Th>Channel</Table.Th>
               <Table.Th ta="right">Subscribers</Table.Th>
               <Table.Th ta="right">Job posts</Table.Th>
+              <Table.Th ta="right">On your skills</Table.Th>
               <Table.Th>Last post</Table.Th>
               <Table.Th>Found by</Table.Th>
             </Table.Tr>
@@ -513,6 +515,7 @@ function ChannelGate({ run, gate, onDone }: GateProps): ReactElement {
                 </Table.Td>
                 <Table.Td ta="right">{c.subscribers ?? "?"}</Table.Td>
                 <Table.Td ta="right">{Math.round(c.job_share * 100)}%</Table.Td>
+                <Table.Td ta="right">{c.skill_share == null ? "?" : `${Math.round(c.skill_share * 100)}%`}</Table.Td>
                 <Table.Td>{c.last_post.slice(0, 10)}</Table.Td>
                 <Table.Td c="dimmed">{c.query}</Table.Td>
               </Table.Tr>

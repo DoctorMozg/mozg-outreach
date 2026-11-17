@@ -72,6 +72,12 @@ class SkillMatcher:
 def _pattern(term: str) -> re.Pattern[str]:
     # Short terms like "Go" or "R" are also common words, so they must match in their own case.
     flags = 0 if len(term) <= 3 else re.IGNORECASE
-    # A term ending in a symbol (C++, C#) may run into a version: "C++17".
-    after = r"(?![+#])" if not term[-1].isalnum() else r"(?![\w+#-])"
+    # A term ending in a symbol (C++, C#) may run into a version: "C++17". A hyphen ends a
+    # word ("Python-разработчик", "Go-developer"), except after one letter ("C-suite").
+    if not term[-1].isalnum():
+        after = r"(?![+#])"
+    elif len(term) == 1:
+        after = r"(?![\w+#-])"
+    else:
+        after = r"(?![\w+#])"
     return re.compile(rf"(?<![\w+#.-]){re.escape(term)}{after}", flags)

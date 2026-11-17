@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Literal
 
@@ -255,6 +256,32 @@ class DraftRepository:
             )
         )
 
+    def recent(
+        self, project_id: int, other_than: int, channels: Sequence[str], limit: int
+    ) -> list[tuple[str, Draft]]:
+        """The project's newest letters to other leads, newest version of each, with lead title."""
+        rows = self._session.execute(
+            select(Item.title, Draft)
+            .join(Item, Item.id == Draft.item_id)
+            .where(
+                Item.project_id == project_id,
+                Draft.item_id != other_than,
+                Draft.channel.in_(channels),
+            )
+            .order_by(Draft.id.desc())
+        )
+        seen: set[tuple[int, str, str, int | None]] = set()
+        found: list[tuple[str, Draft]] = []
+        for title, draft in rows:
+            key = (draft.item_id, draft.channel, draft.recipient, draft.step)
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append((title, draft))
+            if len(found) == limit:
+                break
+        return found
+
 
 class LeadActivity(BaseModel):
     """What the user last did with a lead: the newest status, apart from notes, and newest note."""
@@ -305,6 +332,17 @@ class InteractionRepository:
             )
             found.take(entry, project_id)
         return {i.id: latest[i.kind, i.dedup_key] for i in items if (i.kind, i.dedup_key) in latest}
+
+    def for_items(self, item_ids: Sequence[int]) -> dict[int, list[Interaction]]:
+        """Each item's interactions, oldest first."""
+        found: dict[int, list[Interaction]] = {}
+        for entry in self._session.scalars(
+            select(Interaction)
+            .where(Interaction.item_id.in_(item_ids))
+            .order_by(Interaction.happened_at, Interaction.id)
+        ):
+            found.setdefault(entry.item_id, []).append(entry)
+        return found
 
     def history(self, item_id: int) -> list[Interaction]:
         return list(

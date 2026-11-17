@@ -55,7 +55,7 @@ Open <http://127.0.0.1:8742>. The server has no auth, because it drives your Cla
 > [!WARNING]
 > If `ANTHROPIC_API_KEY` is set in the environment, agent runs bill the API instead of your subscription. The service logs a warning at startup when it sees one.
 
-**Contents:** [Workflow](#a-typical-biz-workflow) · [Data sources](#data-sources) · [Telegram](#telegram) · [Configuration](#configuration) · [Cost](#cost) · [Development](#development) · [License and origin](#license-and-origin)
+**Contents:** [Workflow](#a-typical-biz-workflow) · [Sending from Gmail](#sending-from-gmail) · [Data sources](#data-sources) · [Telegram](#telegram) · [Configuration](#configuration) · [Cost](#cost) · [Development](#development) · [License and origin](#license-and-origin)
 
 ## A typical biz workflow
 
@@ -69,15 +69,49 @@ Open <http://127.0.0.1:8742>. The server has no auth, because it drives your Cla
 
 Before step 6, open **Voice** and paste messages you wrote yourself, per channel (`email`, `dm`, `cover_letter`, `proposal`). Add style rules, one per line, and build the profile. Your rules win over inferred style. Set your name and tone (`warm`, `neutral` or `formal`) in the **Sender** section of the Brief tab: they pick the salutation and sign-off of every letter.
 
+Two more parts of the biz brief need filling in before you enrich. **Signature** (title, company, website, LinkedIn, phone, postal address, privacy URL) goes under the sign-off of every email, after naturalizing. **Things you can send** (name, about, URL) are the only offers that letters and the approach planner make, apart from a short note on how you would approach the problem.
+
+Every first email to a person ends with a line offering to stop writing, and so does every letter to a Gulf (GCC) company. First emails to EU and UK companies also link your privacy URL when it is set. For German companies, the review notes warn that cold B2B email needs prior consent (section 7 UWG).
+
 Seeker projects work the same way without the fields step. **Write with AI** takes your CV pasted as text instead of a URL, and the brief picks jobs, gigs or both. Gigs have no enrich action: you go straight from a gig to its proposal.
 
 The project page also has a **Delete project** button. After a second click it removes the project's runs, report and drafts. People and companies stay in the registry.
+
+## Sending from Gmail
+
+The app never sends. It puts email letters into your Gmail Drafts, and you send them from Gmail.
+
+1. Set the two Gmail variables below and restart the service.
+1. Open an email letter and click **Put in Gmail drafts**. A guessed address needs one more confirm click. A cover letter written for an email address goes in the same way, with the CV picked for the job attached as a PDF.
+1. Send the draft from Gmail. A poller checks the threads every 5 minutes and logs sent, replied and bounced on the lead. An auto-reply is logged as out of office, and the thread stays watched.
+1. After a send, the draft shows how much you edited it and a **What you sent** diff.
+
+Guards:
+
+- At most 3 guessed addresses go to Gmail a day.
+- A bounce, or a logged opt-out or refusal, suppresses those addresses in every project. Pushes are refused and the planner leaves them out. A bounce also blocks guessed addresses on that domain.
+- A push warns when the day's volume goes above twice the last week's daily average, from 5 letters up.
+
+How letters are written:
+
+- Each biz letter gets 3 drafts that open differently: an observation, a problem or a peer story. Hard rules for English emails and DMs send a draft back to the copywriter. A subject must be 2 to 4 words with no "?" or digits. The first sentence is 20 words or fewer and doesn't start with "I" or "We". A first letter has exactly one question and no call ask, and follow-ups carry no "just following up" bumps.
+- Drafts tied on the fewest broken rules go to a separate judge, which scores them twice in swapped order. Python sums the points and only the winner is naturalized. The **Other drafts** tab shows the rest with their scores.
+- Style warnings (reading grade over 7, sentences over 22 words, more "we" than "you", too many facts, hype words) become review notes. So do openings or asks that sit close to a recent letter to another company.
+
+The approach sequence:
+
+- The planner emails at most 2 people per company, with at most 4 emails and 2 calls per person. A call comes only beside a letter and is never last.
+- The history log takes **Out of office** (with a return date), **Not now** (with a come-back date) and **Opted out**. Replied, refused, declined, opted out, not now and bounced stop the sequence. Out of office pauses it, and due dates move to 2 business days after the return, or 14 days when there is no date.
+- A silent sequence that ended can be re-planned after 90 days, or at the not-now date. Use the **Re-plan due** filter on the report. A re-plan has at most 3 touches with a new angle. A company that refused or opted out gets no new sequence.
+- The **Outcomes** tab shows reply rates per angle and per touch for letters sent from Gmail, with a 90% likely range. While ranges overlap, no angle has proven better.
 
 ## Data sources
 
 Web search is available to every mode: agents search and read the web. Feed adapters serve seeker projects only and give jobs. Kinds registered in `src/mozg_outreach/sources/factory.py`:
 
-`greenhouse`, `lever`, `ashby`, `remotive`, `remoteok`, `arbeitnow`, `hn_whoishiring`, `telegram`
+`greenhouse`, `lever`, `ashby`, `remotive`, `remoteok`, `arbeitnow`, `hn_whoishiring`, `himalayas`, `weworkremotely`, `workingnomads`, `telegram`
+
+Feeds are filtered by your must-have skills, not by job titles: a listing stays when its title or text names one. Himalayas is searched once per skill. Its terms forbid passing its jobs on to other boards or aggregators.
 
 Add a source on the **Sources** tab by picking a kind and editing its JSON config.
 
@@ -101,11 +135,14 @@ The login prompts for your phone number, code and 2FA password, then saves a ses
 | `MOZG_OUTREACH_PORT`                   | `8742`                                  | Port on `127.0.0.1`                                         |
 | `MOZG_OUTREACH_MAX_RUNS`               | `2`                                     | Runs that may execute in parallel                           |
 | `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` | none                                    | Telegram API credentials                                    |
+| `MOZG_OUTREACH_GMAIL_ADDRESS`          | none                                    | Your Gmail address. Set it together with the password       |
+| `MOZG_OUTREACH_GMAIL_APP_PASSWORD`     | none                                    | Google Workspace app password, spaces ignored               |
+| `MOZG_OUTREACH_BRAVE_API_KEY`          | none                                    | Brave Search key for LinkedIn lookups during enrichment     |
 | `MOZG_TELEGRAM_SESSION`                | `~/.local/share/mozg-outreach/telegram` | Telegram session file base path                             |
 
 ## Cost
 
-Every agent step uses Claude Code subscription usage. The run page shows the cost of each run in USD. One **Write with AI** draft costs roughly $0.35 to $0.40 of usage (measured), because it runs two agent calls: the brief and the report fields. Live tests (below) also spend subscription usage.
+Every agent step uses Claude Code subscription usage. The run page shows the cost of each run in USD. One **Write with AI** draft costs roughly $0.35 to $0.40 of usage (measured), because it runs two agent calls: the brief and the report fields. Each biz letter runs 3 copywriter calls and up to 2 judge calls before the naturalizer, so a letter costs roughly 3 to 4 times what a single-draft letter did. Live tests (below) also spend subscription usage.
 
 ## Development
 

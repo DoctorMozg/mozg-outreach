@@ -31,6 +31,7 @@ from mozg_outreach.pipelines.seeker.models import (
     SeekerStrategy,
 )
 from mozg_outreach.pipelines.seeker.search import SeekerSearch, load_boards, to_candidate
+from mozg_outreach.pipelines.seeker.skills import SkillMatcher
 from mozg_outreach.pipelines.seeker.telegram_posts import TelegramPosts, TelegramRequest
 from mozg_outreach.pipelines.summary import (
     RunSummary,
@@ -93,6 +94,10 @@ class SeekerOptions(BaseModel):
     max_boards: int = Field(default=4, ge=0, le=15, description="Web boards scouted by agents.")
     research_fields_top: int = Field(
         default=10, ge=0, le=30, description="Best leads whose report fields are researched."
+    )
+    # Run 11 spent 44% of its cost identifying all 22 leads before any was picked.
+    identify_top: int = Field(
+        default=8, ge=0, le=30, description="Best leads whose employer and people are identified."
     )
     summary: bool = Field(default=True, description="Summarize patterns across the scored leads.")
 
@@ -254,7 +259,9 @@ async def discover_channels(ctx: Ctx) -> PhaseResult:
         terms=_discovery_terms(_strategy(ctx)), known=known, limit=room, now=datetime.now(UTC)
     )
     async with adapter.open_session() as session:
-        result = await ChannelDiscovery(session).find(request)
+        matcher = SkillMatcher(_strategy(ctx))
+        discovery = ChannelDiscovery(session, lambda text: matcher.match(text).gate_passed)
+        result = await discovery.find(request)
     ctx.state.concerns += result.concerns
     if result.channels:
         ctx.state.found = ChannelChoice(channels=result.channels)
@@ -339,17 +346,16 @@ async def collect(ctx: Ctx) -> PhaseResult:
                 kinds=kinds,
                 oldest=ctx.today - timedelta(days=widest),
                 cursor=row.cursor,
+                skills=strategy,
             ),
         )
         scouted += posts.listings
         ctx.state.concerns += posts.concerns
         _save_cursors(ctx, posts.cursors)
     if rows and strategy.jobs and "job" in kinds:
-        titles = strategy.jobs.titles
-        keywords = [*titles, *(a for t in titles for a in strategy.title_aliases.get(t, []))]
         feeds = await JobFeeds([ctx.adapters(r.kind, r.config) for r in rows]).collect(
             FeedRequest(
-                keywords=keywords,
+                skills=strategy,
                 recency_days=_scope_days(brief, "job"),
                 today=ctx.today,
                 cursors={r.kind: r.cursor for r in rows},
@@ -363,7 +369,8 @@ async def collect(ctx: Ctx) -> PhaseResult:
         scouted += outcome.listings
         ctx.state.concerns += outcome.concerns
     ctx.state.scouted = scouted
-    ctx.emit("collected", {"listings": len(scouted)})
+    by_source = Counter(s.source for s in scouted)
+    ctx.emit("collected", {"listings": len(scouted), "by_source": dict(by_source)})
     return None
 
 
@@ -433,6 +440,8 @@ async def identify(ctx: Ctx) -> PhaseResult:
     with ctx.db.session() as session:
         open_items = _open(session, ctx.state.item_ids)
         promising = [i for i in open_items if (i.score_total or 0) >= IDENTIFY_MIN_SCORE]
+        promising.sort(key=lambda i: i.score_total or 0, reverse=True)
+        promising = promising[: ctx.state.options.identify_top]
         logger.info("identifying %d of %d open items", len(promising), len(open_items))
         tasks = [_listing_task(item, hidden) for item in promising]
     report = await LeadEnrichment(ctx.db, ctx.steps).run(

@@ -18,10 +18,8 @@ from mozg_outreach.pipelines.seeker.models import (
     Board,
     BoardPlan,
     BoardResearchInput,
-    ContactInput,
     EngagementType,
     Excluded,
-    JobContacts,
     KindPlan,
     Listing,
     ListingKind,
@@ -192,14 +190,6 @@ class SeekerSearch:
             ranker = Ranker(SkillMatcher(strategy), profile, today)
             ranked += ranker.rank(of_kind, judgments)
         return sorted(ranked, key=lambda r: r.score.total or 0.0, reverse=True)
-
-    async def contacts(self, listing: Listing) -> JobContacts:
-        return await self._steps.run(
-            "seeker",
-            "job-contact-finder",
-            ContactInput(listing=listing.for_agents([])),
-            JobContacts,
-        )
 
 
 def _scout_inputs(

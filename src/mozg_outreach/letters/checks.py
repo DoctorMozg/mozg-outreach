@@ -5,13 +5,16 @@ from typing import Literal, get_args
 
 from pydantic import BaseModel
 
+from mozg_outreach.letters.cold import ColdRules
 from mozg_outreach.letters.frame import LetterFrame
 from mozg_outreach.letters.models import LetterBrief
 from mozg_outreach.naturalize.models import SoftPunctuation
 from mozg_outreach.naturalize.punctuation import PunctuationChecker
 from mozg_outreach.naturalize.validation import body_word_count
 
-ProblemKind = Literal["subject", "frame", "word_budget", "punctuation", "markdown", "number"]
+ProblemKind = Literal[
+    "subject", "frame", "word_budget", "punctuation", "markdown", "number", "cold_rule"
+]
 
 # A digit after a letter is part of a term (B2B, Q3, EC2), not a figure to verify.
 _NUMBER = re.compile(r"(?<![A-Za-z])\d+(?:[.,]\d+)*")
@@ -42,6 +45,8 @@ class LetterChecker:
         ).casefold()
         # Whole numbers, so "3" isn't supported just because a URL or "2023" contains a 3.
         self._numbers = set(_NUMBER.findall(self._evidence))
+        cold = brief.channel in ("email", "dm") and brief.language == "en"
+        self._cold = ColdRules(brief) if cold else None
 
     def check(self, subject: str | None, text: str) -> list[LetterProblem]:
         problems = [*self._subject(subject), *self._frame_problems(text)]
@@ -58,7 +63,14 @@ class LetterChecker:
         for number in self.unsupported_numbers(subject, text):
             detail = f"{number!r} is not in the evidence"
             problems.append(LetterProblem(kind="number", detail=detail))
+        if self._cold:
+            for detail in self._cold.problems(subject, self._body(text)):
+                problems.append(LetterProblem(kind="cold_rule", detail=detail))
         return problems
+
+    def warnings(self, text: str) -> list[str]:
+        """Style notes for the user's eye; they never send a draft back."""
+        return self._cold.warnings(self._body(text)) if self._cold else []
 
     def unsupported_numbers(self, subject: str | None, text: str) -> list[str]:
         written = _DURATION.sub(" ", f"{subject or ''}\n{text}")
@@ -82,6 +94,10 @@ class LetterChecker:
             detail = f"subject has {len(subject)} characters, limit {limit}"
             return [LetterProblem(kind="subject", detail=detail)]
         return []
+
+    def _body(self, text: str) -> str:
+        frame = {self._frame.salutation, self._frame.closing, self._frame.signature}
+        return "\n".join(line for line in text.splitlines() if line.strip() not in frame).strip()
 
     def _frame_problems(self, text: str) -> list[LetterProblem]:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
