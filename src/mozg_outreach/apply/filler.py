@@ -9,7 +9,7 @@ from pathlib import Path
 
 from playwright.async_api import Page
 
-from mozg_outreach.apply.answers import Answerer, check, question
+from mozg_outreach.apply.answers import CHOICE_KINDS, Answerer, check, question
 from mozg_outreach.apply.ats import Ats, standard_key
 from mozg_outreach.apply.form import FormError, SafeActor, SubmitGuard, locate_form, scan
 from mozg_outreach.apply.models import (
@@ -20,6 +20,8 @@ from mozg_outreach.apply.models import (
     FillSource,
     FormField,
     OpenField,
+    ProfileKey,
+    decode_photo,
 )
 from mozg_outreach.apply.policy import protected_reason
 
@@ -100,19 +102,33 @@ class _Fill:
                 self._leave(form_field, "a custom dropdown the service can't pick safely")
                 continue
             key = standard_key(ats, form_field)
-            if key is None:
+            if key is None and form_field.kind == "file":
+                self._leave(form_field, "an upload only you can choose")
+            elif key is None:
                 left.append(form_field)
             elif key == "resume":
                 await self._attach_cv(form_field, files)
             elif key == "cover_letter":
                 await self._letter(form_field, files)
+            elif key == "photo":
+                await self._attach_photo(form_field, files)
             else:
-                value = self._app.profile.value(key)
-                if value:
-                    await self._put(form_field, value, "profile")
-                else:
-                    self._leave(form_field, f"your profile has no {key.replace('_', ' ')}")
+                await self._profile_value(form_field, key)
         return left
+
+    async def _profile_value(self, form_field: FormField, key: ProfileKey) -> None:
+        name = key.replace("_", " ")
+        value = self._app.profile.value(key)
+        if not value:
+            self._leave(form_field, f"your profile has no {name}")
+            return
+        if form_field.kind in CHOICE_KINDS:
+            option = _option(form_field, value)
+            if option is None:
+                self._leave(form_field, f"your {name} {value!r} is not one of the options")
+                return
+            value = option
+        await self._put(form_field, value, "profile")
 
     async def answers(self, questions: list[FormField], answerer: Answerer) -> None:
         if not questions:
@@ -155,6 +171,15 @@ class _Fill:
         path.write_bytes(self._app.cv_pdf)
         await self._attach(form_field, path, "cv")
 
+    async def _attach_photo(self, form_field: FormField, files: Path) -> None:
+        if self._app.profile.photo is None:
+            self._leave(form_field, "your profile has no photo")
+            return
+        photo = decode_photo(self._app.profile.photo)
+        path = files / f"{_file_stem(self._app.profile)} photo.{photo.extension}"
+        path.write_bytes(photo.data)
+        await self._attach(form_field, path, "profile")
+
     async def _letter(self, form_field: FormField, files: Path) -> None:
         if not self._app.letter:
             self._leave(form_field, "no cover letter draft yet")
@@ -195,6 +220,14 @@ class _Fill:
         self.for_user.append(
             OpenField(label=form_field.label, required=form_field.required, reason=reason)
         )
+
+
+def _option(form_field: FormField, value: str) -> str | None:
+    wanted = value.casefold()
+    return next(
+        (o.value for o in form_field.options if wanted in (o.label.casefold(), o.value.casefold())),
+        None,
+    )
 
 
 def _file_stem(profile: ApplicantProfile) -> str:

@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Card, Fieldset, Group, NumberInput, Select, Stack, Switch, Text, Textarea, TextInput, Tooltip } from "@mantine/core";
+import { ActionIcon, Button, Card, Fieldset, FileInput, Group, Image, NumberInput, Select, Stack, Switch, Text, Textarea, TextInput, Tooltip } from "@mantine/core";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { type ReactElement, useEffect, useState } from "react";
 import type { Json } from "../api";
@@ -18,6 +18,7 @@ type Schema = {
   maxLength?: number;
   minimum?: number;
   maximum?: number;
+  format?: string;
 };
 
 const LONG_TEXT = /(_text|notes|preferences|what|value_prop|goal|voice)$/;
@@ -143,6 +144,9 @@ interface InputProps {
 
 function Input({ name, label, required, field, value, onChange }: InputProps): ReactElement {
   const common = { label, description: field.description, withAsterisk: required };
+  if (field.format === "data-url") {
+    return <ImageInput label={label} description={field.description} value={typeof value === "string" ? value : null} onChange={onChange} />;
+  }
   if (field.enum) {
     return <Select {...common} data={field.enum} value={value === undefined || value === null ? null : String(value)} onChange={onChange} />;
   }
@@ -178,6 +182,36 @@ function Input({ name, label, required, field, value, onChange }: InputProps): R
         <TextInput {...common} value={String(value ?? "")} onChange={(e) => onChange(e.currentTarget.value === "" ? null : e.currentTarget.value)} />
       );
   }
+}
+
+interface ImageProps {
+  label: string;
+  description: string | undefined;
+  value: string | null;
+  onChange: (v: string | null) => void;
+}
+
+/** Keeps the picked image inline as a data URL, which the server validates. */
+function ImageInput({ label, description, value, onChange }: ImageProps): ReactElement {
+  const pick = (file: File | null): void => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => onChange(typeof reader.result === "string" ? reader.result : null);
+    reader.readAsDataURL(file);
+  };
+  return (
+    <Group align="flex-end" gap="md">
+      {value && <Image src={value} alt={label} w={96} h={96} radius="md" fit="cover" />}
+      <FileInput label={label} description={description} accept="image/jpeg,image/png,image/webp" placeholder={value ? "Replace" : "Choose an image"} value={null} onChange={pick} maw={260} />
+      {value && (
+        <Tooltip label="Remove">
+          <ActionIcon variant="subtle" color="red" onClick={() => onChange(null)} aria-label={`Remove ${label.toLowerCase()}`}>
+            <IconTrash size={16} />
+          </ActionIcon>
+        </Tooltip>
+      )}
+    </Group>
+  );
 }
 
 const lines = (text: string): string[] => text.split("\n").filter((line) => line.trim() !== "");

@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -22,7 +23,12 @@ class PipelineSteps:
         self.cost_usd = 0.0
 
     async def run[TResult: BaseModel](
-        self, group: str, agent: str, payload: BaseModel, result_type: type[TResult]
+        self,
+        group: str,
+        agent: str,
+        payload: BaseModel,
+        result_type: type[TResult],
+        screenshots: Sequence[bytes] = (),
     ) -> TResult:
         result = await self._runner.run(
             self._prompts.get(group, agent),
@@ -30,6 +36,7 @@ class PipelineSteps:
             result_type,
             workspace=self._workspace,
             on_event=self._on_event,
+            screenshots=screenshots,
         )
         self.cost_usd += result.cost_usd
         return result.value

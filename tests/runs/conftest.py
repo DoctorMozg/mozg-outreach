@@ -5,8 +5,7 @@ from pathlib import Path
 import pytest
 
 from mozg_outreach.agents import PromptLibrary
-from mozg_outreach.apply.answers import Answerer
-from mozg_outreach.apply.desk import OnSent
+from mozg_outreach.apply.desk import ApplyAgents, OnSent
 from mozg_outreach.apply.filler import Application
 from mozg_outreach.apply.models import ApplicantProfile, FilledField, FillReport, OpenField
 from mozg_outreach.domain import BriefFact, ProjectMode
@@ -67,7 +66,7 @@ class FakeDesk:
         self.on_sent: OnSent | None = None
 
     async def prepare(
-        self, item_id: int, url: str, application: Application, answerer: Answerer, on_sent: OnSent
+        self, item_id: int, url: str, application: Application, agents: ApplyAgents, on_sent: OnSent
     ) -> FillReport:
         self.prepared.append((item_id, url, application))
         self.on_sent = on_sent

@@ -1,11 +1,12 @@
 import asyncio
+import base64
 import logging
 import os
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterable, AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -28,8 +29,14 @@ PAGE_READS = frozenset({"WebFetch", mcp_tool_name("browser", "open")})
 logger = logging.getLogger(__name__)
 
 
+# The SDK takes streaming-input messages as untyped dicts; this is their shape, nothing more.
+type UserMessage = dict[str, Any]
+
+
 class QueryFn(Protocol):
-    def __call__(self, *, prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[Message]: ...
+    def __call__(
+        self, *, prompt: str | AsyncIterable[UserMessage], options: ClaudeAgentOptions
+    ) -> AsyncIterator[Message]: ...
 
 
 @dataclass(frozen=True)
@@ -77,6 +84,7 @@ class StepRunner(Protocol):
         workspace: Path,
         budget_usd: float | None = None,
         on_event: EventSink | None = None,
+        screenshots: Sequence[bytes] = (),
     ) -> AgentResult[TResult]: ...
 
 
@@ -124,7 +132,9 @@ class AgentRunner:
         workspace: Path,
         budget_usd: float | None = None,
         on_event: EventSink | None = None,
+        screenshots: Sequence[bytes] = (),
     ) -> AgentResult[TResult]:
+        """`screenshots` are PNGs sent with the input, for steps that look at a page."""
         workspace.mkdir(parents=True, exist_ok=True)
         unknown = [name for name in prompt.toolkits if name not in self._toolkits]
         if unknown:
@@ -136,7 +146,9 @@ class AgentRunner:
             options = self._options(prompt, result_type, workspace, budget_usd, sessions)
             logger.info("agent %s/%s started in %s", prompt.group, prompt.name, workspace)
             emit(AgentEvent(prompt.name, "started", prompt.model))
-            result = await self._consume(prompt.name, render_input(payload), options, emit)
+            text = render_input(payload)
+            user_prompt = _with_images(text, screenshots) if screenshots else text
+            result = await self._consume(prompt.name, user_prompt, options, emit)
 
         if result.is_error or result.subtype != "success":
             raise AgentRunError(prompt.name, result.subtype, result.result or "no detail")
@@ -203,7 +215,11 @@ class AgentRunner:
         )
 
     async def _consume(
-        self, agent: str, user_prompt: str, options: ClaudeAgentOptions, emit: EventSink
+        self,
+        agent: str,
+        user_prompt: str | AsyncIterable[UserMessage],
+        options: ClaudeAgentOptions,
+        emit: EventSink,
     ) -> ResultMessage:
         result: ResultMessage | None = None
         try:
@@ -229,6 +245,25 @@ class AgentRunner:
         if result is None:
             raise AgentRunError(agent, "no_result", "stream ended without a ResultMessage")
         return result
+
+
+async def _with_images(text: str, pngs: Sequence[bytes]) -> AsyncIterator[UserMessage]:
+    """One user message holding the input and the images, so the model reads both at once."""
+    images = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": base64.b64encode(png).decode(),
+            },
+        }
+        for png in pngs
+    ]
+    yield {
+        "type": "user",
+        "message": {"role": "user", "content": [*images, {"type": "text", "text": text}]},
+    }
 
 
 def render_input(payload: BaseModel) -> str:

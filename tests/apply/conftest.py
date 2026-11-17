@@ -5,8 +5,15 @@ from pathlib import Path
 import pytest
 from playwright.async_api import Page, Route, async_playwright
 
+from mozg_outreach.apply.desk import ApplyAgents
 from mozg_outreach.apply.filler import Application
-from mozg_outreach.apply.models import AnswerInput, AnswerSet, ApplicantProfile
+from mozg_outreach.apply.models import (
+    AnswerInput,
+    AnswerSet,
+    ApplicantProfile,
+    FormFinderInput,
+    FormFinding,
+)
 
 EMBED = "https://job-boards.greenhouse.io/embed/job_app?for=acme&token=1"
 PAGES = {
@@ -19,12 +26,19 @@ PAGES = {
 }
 PAGE_DIR = Path(__file__).parent / "pages"
 
+# A 1x1 PNG.
+PHOTO = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
 PROFILE = ApplicantProfile(
     first_name="Max",
     last_name="Example",
     email="max@example.com",
     phone="+44 20 7946 0000",
+    country="United Kingdom",
     linkedin="https://www.linkedin.com/in/max-example",
+    photo=PHOTO,
 )
 
 
@@ -86,3 +100,22 @@ class ScriptedAnswerer:
         ]
         skipped = [q.id for q in request.questions if q.label not in self.by_label]
         return AnswerSet.model_validate({"answers": answers, "skipped": skipped, "concerns": []})
+
+
+@dataclass
+class ScriptedFinder:
+    """Picks the control with the given text, or none; records what it was shown."""
+
+    pick: str | None
+    asked: list[tuple[FormFinderInput, bytes]] = field(default_factory=list)
+
+    async def find(self, request: FormFinderInput, screenshot: bytes) -> FormFinding:
+        self.asked.append((request, screenshot))
+        chosen = next((c.id for c in request.controls if c.text == self.pick), None)
+        return FormFinding(control_id=chosen, reason="scripted", concerns=[])
+
+
+def agents(
+    answerer: ScriptedAnswerer | None = None, finder: ScriptedFinder | None = None
+) -> ApplyAgents:
+    return ApplyAgents(answerer or ScriptedAnswerer({}), finder or ScriptedFinder(None))

@@ -42,6 +42,9 @@ class TestGreenhouseEmbed:
         assert files == ["Max Example CV.pdf"]
         letter = await form.eval_on_selector("#cover_letter", "el => el.files[0].name")
         assert letter == "Max Example cover letter.txt"
+        photo = await form.eval_on_selector("#photo", "el => el.files[0].name")
+        assert photo == "Max Example photo.png"
+        assert await form.input_value("#country") == "GB"
         assert {f.source for f in report.filled} == {"profile", "cv", "letter", "answerer"}
         assert not [r for r in traffic.requests if r.startswith("POST")]
 
@@ -55,8 +58,9 @@ class TestGreenhouseEmbed:
         report = await FormFiller(answerer).fill(tab, application())
 
         asked = {q.label for q in answerer.asked[0].questions}
-        assert asked == {WHY, "Years of Python", "Notice period"}
+        assert asked == {WHY, "Years of Python"}
         open_labels = {f.label: f.reason for f in report.for_user}
+        assert open_labels["Notice period"] == "your profile has no notice period"
         assert "demographic" in open_labels["Gender"]
         assert (
             "work authorization" in open_labels["Are you legally authorized to work in the UK? *"]
@@ -149,8 +153,12 @@ async def test_fields_the_page_hides_are_neither_asked_nor_filled(
     assert filled == {"Full name", "Email", "Resume/CV", "Open to relocation?", "Why Acme?"}
     assert await tab.eval_on_selector("input[name=resume]", "el => el.files.length") == 1
     assert await tab.is_checked("input[name=relocate]"), "a styled checkbox is still ticked"
-    labels = {f.label for f in report.for_user}
-    assert labels.isdisjoint({"Your email", "Weekly digest", "Keyword", "Coupon"})
+    reasons = {f.label: f.reason for f in report.for_user}
+    assert reasons["Writing sample"] == "an upload only you can choose", (
+        "and the answerer isn't asked"
+    )
+    assert set(reasons).isdisjoint({"Your email", "Weekly digest", "Keyword", "Coupon"})
+    assert "Portfolio PDF" not in reasons, "an upload in a hidden tab isn't part of the form"
 
 
 class TestTimeLimits:

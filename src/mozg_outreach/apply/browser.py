@@ -10,11 +10,19 @@ from playwright.async_api import BrowserContext, Page, Playwright, async_playwri
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from mozg_outreach.apply.answers import Answerer
-from mozg_outreach.apply.desk import OnSent
+from mozg_outreach.apply.ats import form_url
+from mozg_outreach.apply.desk import ApplyAgents, OnSent
 from mozg_outreach.apply.filler import Application, FormFiller
-from mozg_outreach.apply.form import FormError
-from mozg_outreach.apply.models import FillReport
+from mozg_outreach.apply.finder import FormFinder
+from mozg_outreach.apply.form import (
+    ACTION_MS,
+    FormError,
+    apply_link,
+    has_form,
+    page_controls,
+    press,
+)
+from mozg_outreach.apply.models import FillReport, FormFinderInput
 
 logger = logging.getLogger(__name__)
 
@@ -44,23 +52,16 @@ class ApplyBrowser:
         self._watchers: dict[int, asyncio.Task[None]] = {}
 
     async def prepare(
-        self, item_id: int, url: str, application: Application, answerer: Answerer, on_sent: OnSent
+        self, item_id: int, url: str, application: Application, agents: ApplyAgents, on_sent: OnSent
     ) -> FillReport:
         await self.close(item_id)
         context = await self._started()
         page = await context.new_page()
         self._pages[item_id] = page
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=OPEN_MS)
-        except PlaywrightError as exc:
-            raise FormError(f"could not open {url}: {str(exc).splitlines()[0]}") from exc
-        try:
-            await page.wait_for_load_state("load", timeout=SETTLE_MS)
-        except PlaywrightTimeoutError:
-            logger.info(
-                "item %d: %s still loading after %d ms; filling anyway", item_id, url, SETTLE_MS
-            )
-        report = await FormFiller(answerer).fill(page, application)
+        await _open(page, url)
+        found = [] if await has_form(page) else await _find_form(page, application, agents.finder)
+        report = await FormFiller(agents.answerer).fill(page, application)
+        report = report.model_copy(update={"concerns": [*found, *report.concerns]})
         await page.bring_to_front()
         self._watchers[item_id] = asyncio.create_task(self._watch(item_id, page, on_sent))
         return report
@@ -119,6 +120,61 @@ class ApplyBrowser:
                 logger.info("item %d: confirmation page at %s", item_id, page.url)
                 on_sent(page.url)
                 return
+
+
+async def _find_form(page: Page, application: Application, finder: FormFinder) -> list[str]:
+    """Gets from a job page to its form; returns what the applicant should know about how."""
+    # A plain Apply link needs no agent: open its address, never click it.
+    link = await apply_link(page)
+    if link is not None and link != page.url:
+        logger.info("no form at %s; opening its apply link %s", page.url, link)
+        await _open(page, link)
+        if await has_form(page):
+            return []
+    controls = await page_controls(page)
+    if not controls:
+        return ["No form and nothing to open one was found on the page."]
+    shot = await page.screenshot(type="png", timeout=ACTION_MS)
+    finding = await finder.find(
+        FormFinderInput(
+            job_title=application.job_title,
+            company=application.company,
+            page_url=page.url,
+            controls=controls,
+        ),
+        shot,
+    )
+    control = next((c for c in controls if c.id == finding.control_id), None)
+    if control is None:
+        logger.info("form finder found no way to the form at %s: %s", page.url, finding.reason)
+        return [f"No application form found: {finding.reason}", *finding.concerns]
+    logger.info("form finder picked %s %r at %s", control.kind, control.text, page.url)
+    if control.kind == "link" and control.href:
+        await _open(page, control.href)
+    else:
+        await press(page, control)
+    note = f"Opened the form through {control.text!r} on the job page."
+    return [note, *finding.concerns]
+
+
+async def _open(page: Page, url: str) -> None:
+    """Opens the form's own page; a known system's job page redirects there."""
+    await _goto(page, form_url(url))
+    # A link often lands on the system's job page after a redirect; the form is one page on.
+    landed = form_url(page.url)
+    if landed != page.url:
+        await _goto(page, landed)
+
+
+async def _goto(page: Page, url: str) -> None:
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=OPEN_MS)
+    except PlaywrightError as exc:
+        raise FormError(f"could not open {url}: {str(exc).splitlines()[0]}") from exc
+    try:
+        await page.wait_for_load_state("load", timeout=SETTLE_MS)
+    except PlaywrightTimeoutError:
+        logger.info("%s still loading after %d ms; filling anyway", url, SETTLE_MS)
 
 
 async def _frame_texts(page: Page) -> list[str]:

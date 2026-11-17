@@ -1,4 +1,5 @@
 import asyncio
+import base64
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -31,6 +32,30 @@ VALID_OUTPUT = {"companies": [{"name": "Acme", "domain": "acme.io"}]}
 
 def assistant(*blocks: TextBlock | ToolUseBlock) -> AssistantMessage:
     return AssistantMessage(content=list(blocks), model="claude-sonnet-5-5")
+
+
+async def test_screenshots_go_with_the_input_as_png_images(
+    sample_prompt: AgentPrompt, tmp_path: Path
+) -> None:
+    fake = FakeQuery([result_message(VALID_OUTPUT)])
+    runner = AgentRunner(RunnerSettings(), query_fn=fake)
+
+    await runner.run(
+        sample_prompt,
+        ScoutInput(region="Berlin"),
+        ScoutResult,
+        workspace=tmp_path / "ws",
+        screenshots=[b"\x89PNG page"],
+    )
+
+    [(text, _)] = fake.calls
+    assert '"region": "Berlin"' in text
+    [[image]] = fake.images
+    assert image["source"] == {
+        "type": "base64",
+        "media_type": "image/png",
+        "data": base64.b64encode(b"\x89PNG page").decode(),
+    }
 
 
 class TestSuccess:

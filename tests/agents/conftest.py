@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Sequence
 from pathlib import Path
 
 import pytest
@@ -8,6 +8,7 @@ from claude_agent_sdk.types import ModelUsage
 from pydantic import BaseModel
 
 from mozg_outreach.agents import AgentPrompt, PromptLibrary
+from mozg_outreach.agents.runner import UserMessage
 
 SAMPLE_PROMPT = """---
 name: sample-scout
@@ -74,11 +75,22 @@ class FakeQuery:
         self.delay = delay
         self.fail = fail
         self.calls: list[tuple[str, ClaudeAgentOptions]] = []
+        # Image blocks of streamed prompts, per call; a plain string prompt has none.
+        self.images: list[list[UserMessage]] = []
         self.active = 0
         self.max_active = 0
 
-    async def __call__(self, *, prompt: str, options: ClaudeAgentOptions) -> AsyncIterator[Message]:
-        self.calls.append((prompt, options))
+    async def __call__(
+        self, *, prompt: str | AsyncIterable[UserMessage], options: ClaudeAgentOptions
+    ) -> AsyncIterator[Message]:
+        if isinstance(prompt, str):
+            self.calls.append((prompt, options))
+            self.images.append([])
+        else:
+            [sent] = [m async for m in prompt]
+            blocks = sent["message"]["content"]
+            self.calls.append(("".join(b["text"] for b in blocks if b["type"] == "text"), options))
+            self.images.append([b for b in blocks if b["type"] == "image"])
         self.active += 1
         self.max_active = max(self.max_active, self.active)
         try:

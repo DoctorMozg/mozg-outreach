@@ -8,10 +8,14 @@
   <label style="visibility: hidden">Coupon<input name="coupon"></label>
 </nav>
 <h1>Data Engineer</h1>
+<div role="tabpanel" hidden>
+  <label>Portfolio PDF<input name="portfolio" type="file" style="display: none"></label>
+</div>
 <form method="post" action="/apply">
   <label>Full name<input name="name"></label>
   <label>Email<input name="email" type="email"></label>
   <label>Resume/CV<input name="resume" type="file" style="display: none"></label>
+  <label>Writing sample<input name="sample" type="file"></label>
   <label><input type="checkbox" name="relocate" style="opacity: 0">Open to relocation?</label>
   <label>Why Acme?<textarea name="why"></textarea></label>
   <button>Submit</button>

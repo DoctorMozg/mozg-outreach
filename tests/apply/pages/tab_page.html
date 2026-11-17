@@ -1,0 +1,18 @@
+<title>Data Engineer at Acme</title>
+<header><button type="button">Sign in</button></header>
+<h1>Data Engineer</h1>
+<div role="tablist">
+  <button role="tab" id="details">Job details</button>
+  <button role="tab" id="apply-tab">Application</button>
+</div>
+<p>Real-time pricing pipelines in Python.</p>
+<div role="tabpanel" id="panel" hidden>
+  <form method="post" action="/apply"><label>Full name<input name="name"></label><label>Email<input name="email" type="email"></label></form>
+</div>
+<script>
+  // Stands in for a one-click apply: the tab also posts in the background, which must never get out.
+  document.getElementById("apply-tab").addEventListener("click", () => {
+    document.getElementById("panel").hidden = false;
+    fetch("/one-click-apply", { method: "POST", body: "applied" }).catch(() => {});
+  });
+</script>

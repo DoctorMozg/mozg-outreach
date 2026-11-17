@@ -1,5 +1,6 @@
 import asyncio
 from collections import defaultdict
+from collections.abc import Sequence
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -17,6 +18,7 @@ class RecordedRunner:
     def __init__(self, script: dict[str, list[Scripted]]) -> None:
         self._script = {name: list(results) for name, results in script.items()}
         self.payloads: defaultdict[str, list[BaseModel]] = defaultdict(list)
+        self.screenshots: defaultdict[str, list[list[bytes]]] = defaultdict(list)
         # Pages each agent "fetches", reported as WebFetch events before its result.
         self.fetches: dict[str, list[str]] = {}
 
@@ -29,8 +31,10 @@ class RecordedRunner:
         workspace: Path,
         budget_usd: float | None = None,
         on_event: EventSink | None = None,
+        screenshots: Sequence[bytes] = (),
     ) -> AgentResult[TResult]:
         self.payloads[prompt.name].append(payload)
+        self.screenshots[prompt.name].append(list(screenshots))
         for url in self.fetches.get(prompt.name, []):
             if on_event:
                 on_event(AgentEvent(prompt.name, "tool_use", "WebFetch", url=url))
@@ -66,6 +70,7 @@ class HangingRunner(RecordedRunner):
         workspace: Path,
         budget_usd: float | None = None,
         on_event: EventSink | None = None,
+        screenshots: Sequence[bytes] = (),
     ) -> AgentResult[TResult]:
         self.started.set()
         await asyncio.Event().wait()

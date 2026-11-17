@@ -1,9 +1,21 @@
+import base64
+
 import pytest
+from pydantic import ValidationError
 
 from mozg_outreach.apply.answers import check
-from mozg_outreach.apply.ats import GENERIC, GREENHOUSE, LEVER, ats_for, standard_key
-from mozg_outreach.apply.models import Answer, FieldKind, FieldOption, FormField
+from mozg_outreach.apply.ats import GENERIC, GREENHOUSE, LEVER, ats_for, form_url, standard_key
+from mozg_outreach.apply.models import (
+    PHOTO_BYTES,
+    Answer,
+    ApplicantProfile,
+    FieldKind,
+    FieldOption,
+    FormField,
+    decode_photo,
+)
 from mozg_outreach.apply.policy import protected_reason
+from tests.apply.conftest import PHOTO
 
 
 def form_field(label: str, kind: FieldKind = "text", name: str | None = None) -> FormField:
@@ -55,6 +67,34 @@ class TestProtected:
         assert protected_reason(form_field("Question 7", name="eeo_race"))
 
 
+LEVER_JOB = "https://jobs.lever.co/acme/5f6c0a2e-1b2c-4d3e-9f00-123456789abc"
+
+
+@pytest.mark.parametrize(
+    ("job_page", "form"),
+    [
+        (
+            "https://crossing.recruitee.com/o/backend-developer?lang=en",
+            "https://crossing.recruitee.com/o/backend-developer/c/new?lang=en",
+        ),
+        (LEVER_JOB, f"{LEVER_JOB}/apply"),
+        (
+            "https://jobs.ashbyhq.com/acme/5f6c0a2e-1b2c-4d3e-9f00-123456789abc",
+            "https://jobs.ashbyhq.com/acme/5f6c0a2e-1b2c-4d3e-9f00-123456789abc/application",
+        ),
+    ],
+    ids=["recruitee", "lever", "ashby"],
+)
+def test_a_known_systems_job_page_leads_to_its_form(job_page: str, form: str) -> None:
+    assert form_url(job_page) == form
+    assert form_url(form) == form, "the form page itself stays"
+
+
+def test_other_pages_are_opened_as_they_are() -> None:
+    for url in ("https://acme.example/careers/1", "https://job-boards.greenhouse.io/acme/jobs/1"):
+        assert form_url(url) == url
+
+
 class TestStandardFields:
     def test_systems_are_found_by_host(self) -> None:
         assert ats_for("https://job-boards.greenhouse.io/acme/jobs/1") is GREENHOUSE
@@ -72,6 +112,22 @@ class TestStandardFields:
             ("Cover letter", "textarea", "cover_letter"),
             ("Resume", "textarea", None),
             ("Where are you based?", "text", "location"),
+            ("Preferred first name", "text", "preferred_name"),
+            ("Email address", "text", "email"),
+            ("Address", "text", "address"),
+            ("City", "text", "city"),
+            ("ZIP code", "text", "postal_code"),
+            ("Country", "select", "country"),
+            ("Current job title", "text", "current_title"),
+            ("Years of experience *", "text", "years_experience"),
+            ("Years of Python", "select", None),
+            ("Which languages do you speak?", "text", "languages"),
+            ("University", "text", "university"),
+            ("Highest degree", "select", "degree"),
+            ("Notice period", "text", "notice_period"),
+            ("When can you start?", "text", "available_from"),
+            ("Photo", "file", "photo"),
+            ("Profile picture", "file", "photo"),
         ],
     )
     def test_labels_map_to_profile_keys(self, label: str, kind: FieldKind, key: str | None) -> None:
@@ -79,6 +135,36 @@ class TestStandardFields:
 
     def test_a_known_name_beats_the_label(self) -> None:
         assert standard_key(LEVER, form_field("Your org", name="org")) == "current_company"
+
+
+class TestApplicantPhoto:
+    def test_an_image_data_url_decodes_with_its_extension(self) -> None:
+        photo = decode_photo(PHOTO)
+        assert photo.extension == "png"
+        assert photo.data.startswith(b"\x89PNG")
+
+    @pytest.mark.parametrize(
+        ("url", "problem"),
+        [
+            ("https://example.com/me.jpg", "base64 image data URL"),
+            ("data:image/gif;base64,R0lGOD==", "JPEG, PNG or WebP"),
+            (
+                "data:image/png;base64," + base64.b64encode(bytes(PHOTO_BYTES + 1)).decode(),
+                "byte limit",
+            ),
+        ],
+        ids=["link", "gif", "too-big"],
+    )
+    def test_the_profile_rejects_other_photos(self, url: str, problem: str) -> None:
+        with pytest.raises(ValidationError, match=problem):
+            ApplicantProfile(first_name="Max", last_name="Example", email="m@x.io", photo=url)
+
+    def test_values_read_as_text_and_files_have_none(self) -> None:
+        profile = ApplicantProfile(
+            first_name="Max", last_name="Example", email="m@x.io", years_experience=12, photo=PHOTO
+        )
+        assert profile.value("years_experience") == "12"
+        assert profile.value("photo") is None
 
 
 class TestAnswerCheck:

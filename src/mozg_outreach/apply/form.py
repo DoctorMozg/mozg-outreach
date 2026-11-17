@@ -11,17 +11,23 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from pydantic import TypeAdapter
 
 from mozg_outreach.apply.ats import GENERIC, Ats, ats_for
-from mozg_outreach.apply.models import FormField
+from mozg_outreach.apply.models import FormField, PageControl
 
 logger = logging.getLogger(__name__)
 
 MARK = "data-mozg-field"
 SCAN_SCRIPT = (Path(__file__).parent / "scan.js").read_text(encoding="utf-8")
 GUARD_SCRIPT = (Path(__file__).parent / "guard.js").read_text(encoding="utf-8")
+APPLY_LINK_SCRIPT = (Path(__file__).parent / "apply_link.js").read_text(encoding="utf-8")
+CONTROLS_SCRIPT = (Path(__file__).parent / "controls.js").read_text(encoding="utf-8")
+CONTROL_MARK = "data-mozg-control"
 _FIELDS = TypeAdapter(list[FormField])
+_CONTROLS = TypeAdapter(list[PageControl])
 # A field that isn't editable within this is left to the applicant instead of stalling the fill.
 ACTION_MS = 5_000
 SCRIPT_SECONDS = 10.0
+# A tab renders its form, or a button starts its navigation, within this.
+PRESS_SETTLE_MS = 1_500
 
 
 class FormError(RuntimeError):
@@ -49,6 +55,64 @@ async def scan(frame: Frame) -> list[FormField]:
     except PlaywrightError as exc:
         raise FormError(f"could not read the form at {frame.url}: {exc}") from exc
     return _FIELDS.validate_python(raw)
+
+
+async def has_form(page: Page) -> bool:
+    """Whether the page shows a field to type into; a lone upload button is not a form."""
+    _, frame = await locate_form(page)
+    return any(f.kind != "file" for f in await scan(frame))
+
+
+async def apply_link(page: Page) -> str | None:
+    try:
+        found = await asyncio.wait_for(page.evaluate(APPLY_LINK_SCRIPT), SCRIPT_SECONDS)
+    except (TimeoutError, PlaywrightError) as exc:
+        logger.info("no apply link read from %s: %s", page.url, exc)
+        return None
+    return found if isinstance(found, str) else None
+
+
+async def page_controls(page: Page) -> list[PageControl]:
+    try:
+        raw = await asyncio.wait_for(page.evaluate(CONTROLS_SCRIPT, CONTROL_MARK), SCRIPT_SECONDS)
+    except TimeoutError as exc:
+        raise FormError(
+            f"the page at {page.url} did not answer within {SCRIPT_SECONDS:g} s"
+        ) from exc
+    except PlaywrightError as exc:
+        raise FormError(f"could not list the controls at {page.url}: {exc}") from exc
+    return _CONTROLS.validate_python(raw)
+
+
+async def press(page: Page, control: PageControl) -> None:
+    """Clicks a tab or button outside every form; nothing the page sends meanwhile gets out."""
+    target = page.locator(f'[{CONTROL_MARK}="{control.id}"]').first
+
+    async def reads_only(route: Route) -> None:
+        # A button outside a form can still post in the background, as one-click applies do.
+        if route.request.method != "GET":
+            logger.warning(
+                "blocked %s %s after pressing %r",
+                route.request.method,
+                route.request.url,
+                control.text,
+            )
+            await route.abort("blockedbyclient")
+            return
+        await route.fallback()
+
+    await page.route("**/*", reads_only)
+    try:
+        await target.click(timeout=ACTION_MS)
+        await page.wait_for_timeout(PRESS_SETTLE_MS)
+    except PlaywrightError as exc:
+        raise FormError(f"could not press {control.text!r}: {str(exc).splitlines()[0]}") from exc
+    finally:
+        await page.unroute("**/*", reads_only)
+    try:
+        await page.wait_for_load_state("domcontentloaded", timeout=ACTION_MS)
+    except PlaywrightTimeoutError:
+        logger.info("%s still loading after pressing %r", page.url, control.text)
 
 
 class SafeActor:

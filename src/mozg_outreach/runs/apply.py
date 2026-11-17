@@ -3,7 +3,9 @@
 import logging
 
 from mozg_outreach.apply.answers import AgentAnswerer
+from mozg_outreach.apply.desk import ApplyAgents
 from mozg_outreach.apply.filler import Application
+from mozg_outreach.apply.finder import AgentFormFinder
 from mozg_outreach.apply.form import FormError
 from mozg_outreach.cvs.models import CV_CHOICE, CvChoice
 from mozg_outreach.pipelines.seeker.models import JobContacts, Listing, SeekerBrief
@@ -61,7 +63,7 @@ async def apply_fill(ctx: Ctx) -> PhaseResult:
                 cv_pdf=cv_pdf,
                 letter=_cover_letter(ctx.db, item.id),
             ),
-            AgentAnswerer(ctx.steps),
+            ApplyAgents(AgentAnswerer(ctx.steps), AgentFormFinder(ctx.steps)),
             on_sent,
         )
     except FormError:
