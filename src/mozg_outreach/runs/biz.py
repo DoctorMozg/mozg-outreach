@@ -41,11 +41,11 @@ DIRECTORY_TIMEOUT_S = 30.0
 
 
 class BizOptions(BaseModel):
-    limit: int = Field(default=20, ge=1, le=100)
+    limit: int = Field(default=50, ge=1, le=100)
     region: str | None = Field(default=None, description="Hard filter over the brief's regions.")
-    climate: bool = Field(default=False, description="Research the market climate first.")
+    climate: bool = Field(default=True, description="Research the market climate first.")
     sources_per_sector: int = Field(
-        default=1, ge=1, le=3, description="Directories found and scouted for each target sector."
+        default=3, ge=1, le=3, description="Directories found and scouted for each target sector."
     )
     summary: bool = Field(default=True, description="Summarize patterns across the scored leads.")
 

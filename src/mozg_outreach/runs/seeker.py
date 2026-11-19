@@ -93,13 +93,13 @@ class SeekerOptions(BaseModel):
         default=True,
         description="Reuse the last search's strategy and boards while the brief is unchanged.",
     )
-    max_boards: int = Field(default=4, ge=0, le=15, description="Web boards scouted by agents.")
+    max_boards: int = Field(default=10, ge=0, le=15, description="Web boards scouted by agents.")
     research_fields_top: int = Field(
-        default=10, ge=0, le=30, description="Best leads whose report fields are researched."
+        default=20, ge=0, le=30, description="Best leads whose report fields are researched."
     )
-    # Run 11 spent 44% of its cost identifying all 22 leads before any was picked.
+    # Identifying is costly (run 11 spent 44% of its cost on it); the user prefers coverage.
     identify_top: int = Field(
-        default=8, ge=0, le=30, description="Best leads whose employer and people are identified."
+        default=30, ge=0, le=30, description="Best leads whose employer and people are identified."
     )
     summary: bool = Field(default=True, description="Summarize patterns across the scored leads.")
 

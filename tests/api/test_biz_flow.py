@@ -56,6 +56,10 @@ SUMMARY = RunSummary(
 )
 
 
+# A search the scripts cover: no market climate step and one directory per sector.
+SMALL: dict[str, object] = {"limit": 20, "climate": False, "sources_per_sector": 1}
+
+
 def search_script(strategy: Strategy) -> dict[str, list[Scripted]]:
     sources = load_fixture("sources", SourceList)
     two_sources = sources.model_copy(update={"sources": sources.sources[:2]})
@@ -83,7 +87,7 @@ async def test_brief_to_scored_report_through_the_strategy_gate(
     run = await api.ok(
         "POST",
         f"/api/projects/{project_id}/runs",
-        {"options": {"limit": 5, "sources_per_sector": 1}},
+        {"options": {**SMALL, "limit": 5}},
     )
     run_id = int(str(run["id"]))
     parked = await api.settle(run_id)
@@ -142,7 +146,7 @@ async def test_an_archived_company_found_again_is_not_assessed_again(
     run = await api.ok(
         "POST",
         f"/api/projects/{project_id}/runs",
-        {"options": {"limit": 5, "sources_per_sector": 1}},
+        {"options": {**SMALL, "limit": 5}},
     )
     run_id = int(str(run["id"]))
     await api.settle(run_id)
@@ -197,7 +201,7 @@ async def approved_run(api: Api, strategy: Strategy, options: dict[str, object])
     fields_run = await api.ok("POST", f"/api/projects/{project_id}/fields/propose")
     await api.settle(int(str(fields_run["id"])))
     await api.ok("POST", f"/api/projects/{project_id}/fields/1/accept")
-    run = await api.ok("POST", f"/api/projects/{project_id}/runs", {"options": options})
+    run = await api.ok("POST", f"/api/projects/{project_id}/runs", {"options": SMALL | options})
     run_id = int(str(run["id"]))
     await api.settle(run_id)
     await api.ok("POST", f"/api/runs/{run_id}/gate", {"approve": True})

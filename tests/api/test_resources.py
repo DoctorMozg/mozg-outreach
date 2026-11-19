@@ -44,7 +44,9 @@ class TestRuns:
     async def test_gate_errors(self, api: Api, strategy: Strategy) -> None:
         project_id = await api.biz_project()
         api.script({"outreach-strategist": [strategy]})
-        run = await api.ok("POST", f"/api/projects/{project_id}/runs", {})
+        run = await api.ok(
+            "POST", f"/api/projects/{project_id}/runs", {"options": {"climate": False}}
+        )
         await api.settle(int(str(run["id"])))
         bad_edit = await api.client.post(
             f"/api/runs/{run['id']}/gate", json={"approve": True, "revised": {"goal": 1}}
