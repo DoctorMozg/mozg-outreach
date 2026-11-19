@@ -1,11 +1,12 @@
 """Start, watch, gate, cancel and resume runs; events stream over SSE with replay."""
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from mozg_outreach.api.schemas import RunEventOut, RunOut, RunStart, SearchReadiness
@@ -26,17 +27,26 @@ def run_out(svc: Services, run_id: int) -> RunOut:
         return RunOut.model_validate(get_or_404(session, Run, run_id))
 
 
+def unfinished_runs(
+    session: Session, pipeline: str, match: Mapping[str, object], project_id: int | None = None
+) -> list[int]:
+    """Unfinished runs of a pipeline whose state holds these values; a missing key reads as None."""
+    query = select(Run).where(Run.pipeline == pipeline, Run.finished_at.is_(None))
+    if project_id is not None:
+        query = query.where(Run.project_id == project_id)
+    return [
+        r.id
+        for r in session.scalars(query.order_by(Run.id))
+        if all(r.state.get(key) == value for key, value in match.items())
+    ]
+
+
 def open_runs(
     svc: Services, project_id: int, pipeline: str, item_id: int | None = None
 ) -> list[int]:
     """Unfinished runs of a pipeline on one item, or on the whole project when item_id is None."""
     with svc.db.session() as session:
-        rows = session.scalars(
-            select(Run).where(
-                Run.project_id == project_id, Run.pipeline == pipeline, Run.finished_at.is_(None)
-            )
-        )
-        return [r.id for r in rows if r.state.get("item_id") == item_id]
+        return unfinished_runs(session, pipeline, {"item_id": item_id}, project_id)
 
 
 def ensure_idle(svc: Services, project_id: int, pipeline: str, item_id: int | None = None) -> None:

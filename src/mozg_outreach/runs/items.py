@@ -52,6 +52,8 @@ class ItemState(RunState):
     item_id: int
     revision: RevisionAsk | None = None
     application: FillReport | None = None
+    # Kept apart from `feedback`, which a gate's rejection writes.
+    note: str | None = Field(default=None, description="The user's notes for a re-plan.")
 
 
 logger = logging.getLogger(__name__)
@@ -128,7 +130,7 @@ async def biz_approach(ctx: Ctx) -> PhaseResult:
     with ctx.db.session() as session:
         item = _row(session, ctx.state.item_id)
         approach = await BizOutreach(session, ctx.steps).plan_approach(
-            item, strategy, ctx.state.feedback
+            item, strategy, ctx.state.note
         )
     ctx.state.concerns += approach.plan.concerns
     ctx.emit("approach", {"touches": len(approach.plan.touches)})

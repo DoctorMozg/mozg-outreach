@@ -23,7 +23,7 @@ import {
   Transition,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArchive, IconArchiveOff, IconColumns3, IconExternalLink, IconMail, IconSearch, IconSparkles, IconTable } from "@tabler/icons-react";
+import { IconArchive, IconArchiveOff, IconColumns3, IconExternalLink, IconMail, IconRoute, IconSearch, IconSparkles, IconTable } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactElement, useState } from "react";
 import { call, enrichHint, get, type Graph, type Item, type Project, type Run } from "../api";
@@ -400,9 +400,10 @@ function BulkBar({ project, chosen, archivedView, onStarted, onArchived }: BulkB
                   <Tooltip label="Plans the approach again and writes a letter for each step not done yet">
                     <NoteButton
                       label={`Re-plan ${replannable.length}`}
-                      text={REPLAN_NOTE}
+                      text={{ ...REPLAN_NOTE, footer: `The same note goes to all ${replannable.length} leads. ${REPLAN_NOTE.footer}` }}
+                      icon={<IconRoute size={14} />}
                       loading={bulk.isPending}
-                      onStart={(feedback) => bulk.mutate({ action: "approach", items: replannable, body: { feedback } })}
+                      onStart={(feedback) => bulk.mutateAsync({ action: "approach", items: replannable, body: { feedback } })}
                     />
                   </Tooltip>
                 )}

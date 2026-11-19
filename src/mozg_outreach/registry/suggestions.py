@@ -20,6 +20,7 @@ LOCATION_FIELDS = ("location", "city")
 class MergeSuggester:
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._registry = EntityRegistry(session)
 
     def suggest_for(self, entity: Entity) -> list[MergeSuggestion]:
         """Record suggestions pairing `entity` with look-alikes; rejected pairs stay rejected."""
@@ -29,7 +30,11 @@ class MergeSuggester:
         )
         for other in others:
             reason = self._reason(entity, other)
-            if reason and not self._known_pair(entity.id, other.id):
+            if (
+                reason
+                and not self._known_pair(entity.id, other.id)
+                and not self._registry.conflicting(entity.id, other.id)
+            ):
                 low, high = sorted((entity.id, other.id))
                 suggestion = MergeSuggestion(entity_a_id=low, entity_b_id=high, reason=reason)
                 self._session.add(suggestion)
@@ -44,7 +49,7 @@ class MergeSuggester:
         drop = self._session.get(Entity, suggestion.entity_b_id)
         if keep is None or drop is None:
             raise LookupError(f"merge suggestion {suggestion_id} points at a deleted entity")
-        return EntityRegistry(self._session).merge(keep, drop)
+        return self._registry.merge(keep, drop)
 
     def reject(self, suggestion_id: int) -> None:
         self._get(suggestion_id).status = "rejected"

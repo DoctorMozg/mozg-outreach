@@ -296,4 +296,4 @@ class TestReplanNote:
 
         state = run["state"]
         assert isinstance(state, dict)
-        assert state.get("feedback") == feedback
+        assert state.get("note") == feedback

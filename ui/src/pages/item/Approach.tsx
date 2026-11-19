@@ -1,5 +1,5 @@
 import { Alert, Anchor, Badge, Button, Card, Group, List, Stack, Text, Timeline, Title, Tooltip } from "@mantine/core";
-import { IconCheck, IconMail } from "@tabler/icons-react";
+import { IconCheck, IconMail, IconRoute } from "@tabler/icons-react";
 import { useMutation } from "@tanstack/react-query";
 import { type ReactElement } from "react";
 import { call, type ItemDetail, type PlanContact, type PlannedTouch, type Run, type StoredApproach } from "../../api";
@@ -33,9 +33,10 @@ export function Approach({ item, onChange, onOpenDraft }: ApproachProps): ReactE
     <NoteButton
       label={approach ? "Re-plan" : "Plan the approach"}
       text={REPLAN_NOTE}
+      icon={<IconRoute size={14} />}
       variant="default"
       loading={replan.isPending}
-      onStart={(feedback) => replan.mutate(feedback)}
+      onStart={(feedback) => replan.mutateAsync(feedback)}
     />
   );
   if (!approach) {

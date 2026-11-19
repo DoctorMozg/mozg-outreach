@@ -7,10 +7,11 @@ from sqlalchemy import delete, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from mozg_outreach.domain import EntityKind, FieldValue, IdentifierKind, SourceKind
-from mozg_outreach.registry.identifiers import Identifier
+from mozg_outreach.registry.identifiers import Identifier, normalize
 from mozg_outreach.storage.models import (
     Entity,
     EntityIdentifier,
+    EntityMerge,
     ItemLink,
     MergeSuggestion,
     RejectedIdentifier,
@@ -19,6 +20,9 @@ from mozg_outreach.storage.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Profile fields that repeat an identifier: taking the identifier off clears them too.
+IDENTIFIER_FIELDS = {"domain": IdentifierKind.DOMAIN, "linkedin": IdentifierKind.LINKEDIN}
 
 
 class SightingInput(BaseModel):
@@ -71,7 +75,12 @@ class EntityRegistry:
 
     def refresh(self, entity: Entity, fields: dict[str, FieldValue]) -> None:
         """A search the user asked for: its sourced values replace what the profile had."""
-        fresh = {k: v.model_dump(mode="json") for k, v in fields.items() if v.value is not None}
+        rejected = self._rejected(entity.id)
+        fresh = {
+            k: v.model_dump(mode="json")
+            for k, v in fields.items()
+            if v.value is not None and _field_identifier(k, v.value) not in rejected
+        }
         entity.profile = {**entity.profile, **fresh}
         self._session.flush()
 
@@ -83,6 +92,14 @@ class EntityRegistry:
         identifiers = [i for i in identifiers if (i.kind, i.value) not in rejected]
         for owner in self._owners(identifiers):
             if owner.id == entity.id:
+                continue
+            if self.conflicting(entity.id, owner.id):
+                # One was shown not to own an identifier the other holds: two different entities.
+                logger.warning(
+                    "registry: %r shares an identifier with %d but a search set them apart",
+                    entity.name,
+                    owner.id,
+                )
                 continue
             if owner.kind != entity.kind:
                 # An email or domain can't be both a person and a company; leave it with its owner.
@@ -122,6 +139,12 @@ class EntityRegistry:
         if row is None:
             return False
         self._session.delete(row)
+        entity.profile = {
+            k: v
+            for k, v in entity.profile.items()
+            if _field_identifier(k, FieldValue.model_validate(v).value)
+            != (identifier.kind, identifier.value)
+        }
         if (identifier.kind, identifier.value) not in self._rejected(entity.id):
             self._session.add(
                 RejectedIdentifier(
@@ -141,6 +164,47 @@ class EntityRegistry:
             entity.id,
         )
         return True
+
+    def unreject(self, entity: Entity, rejected_id: int) -> Identifier:
+        """The user says a search was wrong: the identifier may come back, and does now."""
+        row = self._session.get(RejectedIdentifier, rejected_id)
+        if row is None or row.entity_id != entity.id:
+            raise LookupError(f"entity {entity.id} has no rejected identifier {rejected_id}")
+        identifier = Identifier(kind=row.kind, value=row.value)
+        self._session.delete(row)
+        self._session.flush()
+        self.attach(entity, [identifier])
+        logger.info("registry: %s %s is %s %d again", row.kind, row.value, entity.kind, entity.id)
+        return identifier
+
+    def conflicting(self, a_id: int, b_id: int) -> bool:
+        """Whether either entity rejected an identifier the other one holds."""
+        for rejecter, holder in ((a_id, b_id), (b_id, a_id)):
+            found = self._session.scalar(
+                select(RejectedIdentifier.id)
+                .join(
+                    EntityIdentifier,
+                    (EntityIdentifier.kind == RejectedIdentifier.kind)
+                    & (EntityIdentifier.value == RejectedIdentifier.value),
+                )
+                .where(
+                    RejectedIdentifier.entity_id == rejecter, EntityIdentifier.entity_id == holder
+                )
+                .limit(1)
+            )
+            if found is not None:
+                return True
+        return False
+
+    def current(self, entity_id: int) -> Entity | None:
+        """The entity, or the one it was merged into; None once deleted."""
+        entity = self._session.get(Entity, entity_id)
+        if entity is not None:
+            return entity
+        kept = self._session.scalar(
+            select(EntityMerge.kept_id).where(EntityMerge.dropped_id == entity_id)
+        )
+        return self._session.get(Entity, kept) if kept is not None else None
 
     def rejected(self, entity_id: int) -> list[Identifier]:
         return [Identifier(kind=k, value=v) for k, v in sorted(self._rejected(entity_id))]
@@ -212,6 +276,16 @@ class EntityRegistry:
                 self._session.delete(row)
             else:
                 row.entity_id = keep.id
+        self._session.flush()
+        # A rejection outranks the merge: neither side's rejected identifier stays on the result.
+        rejected = self._rejected(keep.id)
+        for owned in list(
+            self._session.scalars(
+                select(EntityIdentifier).where(EntityIdentifier.entity_id == keep.id)
+            )
+        ):
+            if (owned.kind, owned.value) in rejected:
+                self._session.delete(owned)
         for link in list(
             self._session.scalars(select(ItemLink).where(ItemLink.entity_id == drop.id))
         ):
@@ -224,6 +298,13 @@ class EntityRegistry:
             )
         )
         keep.profile = _fill_gaps(keep.profile, _profile_values(drop.profile))
+        for earlier in self._session.scalars(
+            select(EntityMerge).where(EntityMerge.kept_id == drop.id)
+        ):
+            earlier.kept_id = keep.id
+        # SQLite may reuse a deleted id, so an old record for this id is replaced.
+        self._session.merge(EntityMerge(dropped_id=drop.id, kept_id=keep.id))
+        self._session.flush()
         self._session.delete(drop)
         self._session.flush()
         return keep
@@ -286,6 +367,12 @@ class EntityRegistry:
             # A relation between the two merged entities would point at itself; drop it.
             if from_id != to_id:
                 self.relate(evidence)
+
+
+def _field_identifier(name: str, value: object) -> tuple[IdentifierKind, str] | None:
+    kind = IDENTIFIER_FIELDS.get(name)
+    found = normalize(kind, value) if kind and isinstance(value, str) else None
+    return (found.kind, found.value) if found else None
 
 
 def _profile_values(profile: dict[str, object]) -> dict[str, FieldValue]:

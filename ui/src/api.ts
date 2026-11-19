@@ -304,8 +304,10 @@ export interface Entity {
 export interface EntityDetail extends Entity {
   profile: Record<string, FieldValue>;
   identifiers: { kind: string; value: string }[];
-  // Identifiers a search showed to be someone else's; they are never added back.
-  rejected: { kind: string; value: string; source_url: string; quote: string }[];
+  // Identifiers a search showed to be someone else's; only restoring one adds it back.
+  rejected: { id: number; kind: string; value: string; source_url: string; quote: string }[];
+  // The "search again" run still open on it.
+  research_run: number | null;
   sightings: { source_kind: string; source_url: string; quote: string; project_id: number | null; seen_at: string }[];
   relations: {
     type: string;

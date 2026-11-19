@@ -1,13 +1,17 @@
 """Search again for one registry person or company, on the user's request."""
 
+import logging
+
 from pydantic import Field
 from sqlalchemy.orm import Session
 
 from mozg_outreach.pipelines.entities.research import EntityResearcher, EntityUpdate, research_input
 from mozg_outreach.registry.ingest import IngestContext
+from mozg_outreach.registry.registry import EntityRegistry
 from mozg_outreach.runs.flow import FlowContext, FlowSpec, Phase, PhaseResult, RunState
 from mozg_outreach.storage.models import Entity
 
+logger = logging.getLogger(__name__)
 ENTITY_RESEARCH = "registry.research"
 
 
@@ -33,9 +37,13 @@ async def research(ctx: Ctx) -> PhaseResult:
 
 
 def _entity(session: Session, ctx: Ctx) -> Entity:
-    entity = session.get(Entity, ctx.state.entity_id)
+    """A merge during the run moves the findings onto the entity it was merged into."""
+    entity = EntityRegistry(session).current(ctx.state.entity_id)
     if entity is None:
-        raise LookupError(f"entity {ctx.state.entity_id} was merged or deleted during the run")
+        raise LookupError(f"entity {ctx.state.entity_id} was deleted during the run")
+    if entity.id != ctx.state.entity_id:
+        logger.info("entity %d was merged into %d", ctx.state.entity_id, entity.id)
+        ctx.state.entity_id = entity.id
     return entity
 
 

@@ -255,8 +255,11 @@ async def test_leads_scoring_under_the_floor_stay_in_the_report_but_are_not_iden
     assert sent.model_dump()["url"] == FEED_URL
 
 
+@pytest.mark.parametrize(
+    ("cap", "identified"), [({"identify_top": 1}, 1), ({}, 2)], ids=["capped", "default"]
+)
 async def test_only_the_best_leads_are_identified(
-    harness: Harness, strategy: SeekerStrategy
+    harness: Harness, strategy: SeekerStrategy, cap: dict[str, int], identified: int
 ) -> None:
     project_id = harness.seeker_project()
     harness.feed.extra.append(
@@ -280,10 +283,10 @@ async def test_only_the_best_leads_are_identified(
             "seeker-judge": [
                 JudgeResult(judgments=[judgment(FEED_URL), judgment(OTHER_URL)], concerns=[])
             ],
-            "lead-identifier": [identity(company())],
+            "lead-identifier": [identity(company())] * identified,
         }
     )
-    options = {**OPTIONS, "identify_top": 1}
+    options = OPTIONS | cap
     search = harness.manager.start(project_id, "seeker.search", {"options": options})
     await harness.manager.wait(search)
     harness.manager.answer_gate(search, GateAnswer(approve=True))
@@ -294,7 +297,8 @@ async def test_only_the_best_leads_are_identified(
         assert all(
             (i.score_total or 0) >= IDENTIFY_MIN_SCORE for i in session.scalars(select(Item))
         )
-    assert len(harness.runner.payloads["lead-identifier"]) == 1
+    # The default cap (30) covers every strong lead in a small search.
+    assert len(harness.runner.payloads["lead-identifier"]) == identified
 
 
 async def test_a_later_search_leaves_an_archived_job_alone(

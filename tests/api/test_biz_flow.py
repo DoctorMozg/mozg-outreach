@@ -8,6 +8,8 @@ from mozg_outreach.domain import ItemKind, RunStatus
 from mozg_outreach.pipelines.biz.assessment_models import FitVerdict
 from mozg_outreach.pipelines.biz.models import (
     BriefReview,
+    ClimateReport,
+    ClimateSources,
     ScoutResult,
     SourceList,
     Strategy,
@@ -75,6 +77,36 @@ def search_script(strategy: Strategy) -> dict[str, list[Scripted]]:
         "fit-judge": [load_fixture("fit_verdict", FitVerdict)] * 2,
         "run-summarizer": [SUMMARY],
     }
+
+
+async def test_the_default_search_researches_the_market_first(
+    api: Api, strategy: Strategy, proposal: FieldProposal
+) -> None:
+    project_id = await api.project(brief=biz_brief())
+    await accepted_spec(api, project_id, proposal)
+    report = load_fixture("climate_report", ClimateReport)
+    api.script(
+        {
+            "outreach-climate-source-finder": [load_fixture("climate_sources", ClimateSources)],
+            "outreach-climate-researcher": [report],
+            "outreach-strategist": [strategy],
+        }
+    )
+
+    run = await api.ok("POST", f"/api/projects/{project_id}/runs", {})
+    parked = await api.settle(int(str(run["id"])))
+
+    assert parked["status"] == "awaiting_gate", parked["error"]
+    state = parked["state"]
+    assert isinstance(state, dict)
+    options = state["options"]
+    assert isinstance(options, dict)
+    assert (options["limit"], options["sources_per_sector"]) == (50, 3)
+    climate = state["climate"]
+    assert isinstance(climate, dict)
+    assert climate["climate_summary"] == report.climate_summary
+    planned = api.runner.payloads["outreach-strategist"][0].model_dump()
+    assert planned["climate"]["climate_summary"] == report.climate_summary
 
 
 async def test_brief_to_scored_report_through_the_strategy_gate(

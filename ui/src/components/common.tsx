@@ -2,12 +2,25 @@ import { Accordion, Alert, Anchor, Badge, type BadgeProps, Card, Group, List, Te
 import { IconAlertTriangle, IconExternalLink, IconInfoCircle, IconRefresh, IconSparkles } from "@tabler/icons-react";
 import type { ReactElement, ReactNode } from "react";
 import type { Activity, ApproachStep, FieldValue, Item, Mode, RunStatus } from "../api";
+import { href } from "../router";
 
 export function ErrorBox({ error }: { error: unknown }): ReactElement | null {
   if (!error) return null;
+  const message = error instanceof Error ? error.message : String(error);
+  // "run 12 is still open": the run it names is one click away.
+  const parts = message.split(/(\brun \d+\b)/);
   return (
     <Alert color="red" variant="light" icon={<IconAlertTriangle size={18} />}>
-      {error instanceof Error ? error.message : String(error)}
+      {parts.map((part, i) => {
+        const run = /^run (\d+)$/.exec(part);
+        return run ? (
+          <Anchor key={i} href={href.run(Number(run[1]))} inherit>
+            {part}
+          </Anchor>
+        ) : (
+          part
+        );
+      })}
     </Alert>
   );
 }

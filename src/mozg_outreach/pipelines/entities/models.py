@@ -8,10 +8,18 @@ from mozg_outreach.pipelines.biz.models import CONCERNS_DESCRIPTION
 from mozg_outreach.pipelines.leads.models import IdentifiedCompany, NamedPerson, SourcedFact
 
 
+class KnownIdentifier(BaseModel):
+    kind: Literal["linkedin", "domain", "email"]
+    value: str
+
+
 class EntityResearchInput(BaseModel):
     kind: Literal["person", "company"]
     name: str
-    known: dict[str, str] = Field(description="What the registry holds now, by field name.")
+    known: dict[str, str] = Field(description="Profile fields the registry holds, by name.")
+    identifiers: list[KnownIdentifier] = Field(
+        description="Every LinkedIn, domain and email the registry holds; may be several."
+    )
     employers: list[str] = Field(description="For a person: the companies they're linked to.")
     people: list[str] = Field(description="For a company: its linked people, 'Name, title'.")
     sources: list[str] = Field(description="Pages the registry saw it on, newest first.")
@@ -25,7 +33,7 @@ class FoundPerson(NamedPerson):
 
 class IdentifierCheck(BaseModel):
     kind: Literal["linkedin", "domain"]
-    value: str = Field(description="The known identifier, copied from `known`.")
+    value: str = Field(description="The identifier, copied from `identifiers`.")
     verdict: Literal["matches", "someone_else", "unclear"]
     source_url: str | None = Field(description="The page the verdict rests on; null if unclear.")
     quote: str = Field(description="Verbatim text from it that shows the verdict.")
@@ -38,5 +46,7 @@ class EntityFindings(BaseModel):
     people: list[FoundPerson] = Field(
         description="For a person: them, first. For a company: its key people."
     )
-    checks: list[IdentifierCheck] = Field(description="One per known LinkedIn and domain.")
+    checks: list[IdentifierCheck] = Field(
+        description="One per LinkedIn and domain in `identifiers`."
+    )
     concerns: list[str] = Field(description=CONCERNS_DESCRIPTION)

@@ -55,6 +55,7 @@ const EVENT_KINDS = [
   "approach",
   "application",
   "sent",
+  "entity",
 ];
 
 const ACTIVE: ReadonlySet<RunStatus> = new Set<RunStatus>(["pending", "running"]);
@@ -100,6 +101,12 @@ export function RunView({ id }: { id: number }): ReactElement {
   });
   const refresh = (): void => void client.invalidateQueries({ queryKey: ["run", id] });
   const events = useRunEvents(id, refresh);
+  const searched = run.data && !OPEN.has(run.data.status) && typeof run.data.state.entity_id === "number" ? run.data.state.entity_id : null;
+  useEffect(() => {
+    if (searched === null) return;
+    // A finished search rewrote the profile and its links; cached copies would show the old ones.
+    for (const queryKey of [["entity"], ["entities"], ["graph"]]) void client.invalidateQueries({ queryKey });
+  }, [client, searched]);
   const cancel = useMutation({ mutationFn: () => call<Run>("POST", `/api/runs/${id}/cancel`), onSuccess: refresh });
   const resume = useMutation({
     mutationFn: () => call<Run>("POST", `/api/runs/${id}/resume`),
@@ -123,9 +130,11 @@ export function RunView({ id }: { id: number }): ReactElement {
             {project.data?.name ?? "Project"}
           </Group>
         </Anchor>
-        <Anchor href={href.project(r.project_id, "report")} size="sm">
-          Report
-        </Anchor>
+        {entityId === null && (
+          <Anchor href={href.project(r.project_id, "report")} size="sm">
+            Report
+          </Anchor>
+        )}
         {itemId !== null && (
           <Anchor href={href.item(itemId)} size="sm">
             Lead
@@ -222,6 +231,11 @@ function describe(e: RunEvent): string {
   if (e.kind === "phase") return words(String(p.phase));
   if (e.kind === "gate") return `waiting for your ${String(p.kind)} approval`;
   if (e.kind === "status") return `${String(p.status)}${p.error ? `: ${String(p.error)}` : ""}`;
+  if (e.kind === "entity") {
+    const removed = Array.isArray(p.removed) ? p.removed.map(String) : [];
+    const notes = Array.isArray(p.notes) ? p.notes.map(String) : [];
+    return [removed.length ? `removed ${removed.join(", ")}` : "nothing removed", `${String(p.people)} people linked`, ...notes].join(" · ");
+  }
   // Payloads can carry whole lists (a strategy's concerns); the log names their size, not their content.
   return Object.entries(p)
     .filter(([, v]) => v !== null && (typeof v !== "object" || Array.isArray(v)))

@@ -254,6 +254,7 @@ class IdentifierOut(Row):
 class RejectedOut(Row):
     """An identifier a search showed to be someone else's, with the page that showed it."""
 
+    id: int
     kind: IdentifierKind
     value: str
     source_url: str
@@ -300,6 +301,7 @@ class EntityDetail(EntityOut):
     sightings: list[SightingOut]
     relations: list[RelationOut]
     leads: list[LeadOut]
+    research_run: int | None = Field(description="The search again run still open on it.")
 
 
 class GraphNode(BaseModel):

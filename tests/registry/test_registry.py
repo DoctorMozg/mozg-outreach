@@ -17,12 +17,14 @@ from mozg_outreach.registry.registry import (
     RelationInput,
     SightingInput,
 )
+from mozg_outreach.registry.suggestions import MergeSuggester
 from mozg_outreach.storage.models import (
     Entity,
     EntityIdentifier,
     ItemLink,
     MergeSuggestion,
     Project,
+    RejectedIdentifier,
     Relation,
     Run,
     Sighting,
@@ -222,6 +224,22 @@ class TestReject:
         # A later sighting with the wrong profile becomes its own entity, not Anna again.
         assert again.id != anna.id
 
+    def test_a_rejected_domain_never_returns_to_the_profile(
+        self, registry: EntityRegistry, session: Session
+    ) -> None:
+        site = ident(IdentifierKind.DOMAIN, "acme-robotics.com")
+        field = {"domain": FieldValue(value="https://acme-robotics.com", source_url="https://x.io")}
+        acme = registry.observe(
+            Observation(kind=EntityKind.COMPANY, name="Acme", identifiers=[site], fields=field)
+        )
+
+        registry.reject(acme, site, "https://acme-robotics.com", "Acme Robotics, Ohio")
+        cleared = dict(acme.profile)
+        registry.refresh(acme, field)
+
+        assert cleared == {}
+        assert acme.profile == {}
+
     def test_rejecting_what_the_entity_lacks_changes_nothing(
         self, registry: EntityRegistry, session: Session
     ) -> None:
@@ -243,6 +261,77 @@ class TestReject:
 
         assert registry.rejected(keep.id) == [wrong]
         assert self.identifiers(session, keep) == {"anna@acme.io"}
+
+    def set_apart(self, session: Session, entity: Entity, identifier: Identifier) -> None:
+        """A rejection of an identifier another entity holds, as an earlier search leaves it."""
+        session.add(
+            RejectedIdentifier(
+                entity_id=entity.id,
+                kind=identifier.kind,
+                value=identifier.value,
+                source_url=self.PROOF[0],
+                quote=self.PROOF[1],
+            )
+        )
+        session.flush()
+
+    def test_a_merge_drops_an_identifier_the_other_side_rejected(
+        self, registry: EntityRegistry, session: Session
+    ) -> None:
+        wrong = ident(IdentifierKind.LINKEDIN, self.WRONG)
+        anna = registry.observe(person("Anna Kask", ident(IdentifierKind.EMAIL, "anna@acme.io")))
+        nurse = registry.observe(person("Anna Kask", wrong))
+        self.set_apart(session, anna, wrong)
+
+        registry.merge(anna, nurse)
+
+        assert self.identifiers(session, anna) == {"anna@acme.io"}
+        assert registry.rejected(anna.id) == [wrong]
+
+    def test_a_shared_identifier_does_not_merge_entities_set_apart(
+        self, registry: EntityRegistry, session: Session
+    ) -> None:
+        wrong = ident(IdentifierKind.LINKEDIN, self.WRONG)
+        mail = ident(IdentifierKind.EMAIL, "anna@clinic.ee")
+        nurse = registry.observe(person("Anna Kask", wrong, mail))
+        anna = registry.observe(person("Anna Kask", ident(IdentifierKind.EMAIL, "anna@acme.io")))
+        self.set_apart(session, anna, wrong)
+
+        registry.attach(anna, [mail])
+
+        assert session.get(Entity, nurse.id) is not None
+        assert self.identifiers(session, nurse) == {wrong.value, mail.value}
+        assert registry.conflicting(anna.id, nurse.id)
+        assert MergeSuggester(session).suggest_for(anna) == []
+
+    def test_an_undone_rejection_gives_the_identifier_back(
+        self, registry: EntityRegistry, session: Session
+    ) -> None:
+        wrong = ident(IdentifierKind.LINKEDIN, self.WRONG)
+        anna = registry.observe(person("Anna Kask", wrong))
+        registry.reject(anna, wrong, *self.PROOF)
+        row = session.scalars(select(RejectedIdentifier)).one()
+
+        registry.unreject(anna, row.id)
+
+        assert self.identifiers(session, anna) == {wrong.value}
+        assert registry.rejected(anna.id) == []
+        with pytest.raises(LookupError):
+            registry.unreject(anna, row.id)
+
+
+def test_a_merged_entity_is_found_where_it_went(registry: EntityRegistry, session: Session) -> None:
+    first = registry.observe(person("Anna Kask"))
+    second = registry.observe(person("Anna Kask"))
+    third = registry.observe(person("Anna Kask"))
+    first_id = first.id
+
+    registry.merge(second, first)
+    registry.merge(third, second)
+
+    assert registry.current(first_id) == third
+    registry.delete(third)
+    assert registry.current(first_id) is None
 
 
 def test_refresh_replaces_values_and_keeps_the_rest(registry: EntityRegistry) -> None:

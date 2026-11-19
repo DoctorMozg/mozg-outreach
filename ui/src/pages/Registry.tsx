@@ -177,16 +177,31 @@ function Merges(): ReactElement | null {
 const RESEARCH_NOTE: NoteText = {
   prompt: "Anything to look out for?",
   description: "Optional, e.g. the LinkedIn is someone else's, they moved to Acme, look for the CTO.",
-  footer: "A LinkedIn or website shown to be someone else's is removed for good.",
+  footer: "Wrong matches are listed on the profile and stay off it unless you restore them.",
+  submit: "Start search",
 };
 
+const KIND_LABELS: Record<string, string> = { linkedin: "LinkedIn", domain: "website", email: "email" };
+
 export function EntityView({ id }: { id: number }): ReactElement {
-  const entity = useQuery({ queryKey: ["entity", id], queryFn: () => get<EntityDetail>(`/api/entities/${id}`) });
+  const client = useQueryClient();
+  const entity = useQuery({
+    queryKey: ["entity", id],
+    queryFn: () => get<EntityDetail>(`/api/entities/${id}`),
+    // While a search runs elsewhere, the profile picks up its result when it lands.
+    refetchInterval: (query) => (query.state.data?.research_run ? 5000 : false),
+  });
   const [depth, setDepth] = useState("1");
   const graph = useQuery({ queryKey: ["graph", "entity", id, depth], queryFn: () => get<Graph>(`/api/graph?entity_id=${id}&depth=${depth}`) });
   const research = useMutation({
     mutationFn: (note: string | null) => call<Run>("POST", `/api/entities/${id}/research`, { note }),
     onSuccess: (run) => (window.location.hash = href.run(run.id)),
+  });
+  const restore = useMutation({
+    mutationFn: (rejectedId: number) => call("DELETE", `/api/entities/${id}/rejected/${rejectedId}`),
+    onSuccess: () => {
+      for (const queryKey of [["entity", id], ["graph"]]) void client.invalidateQueries({ queryKey });
+    },
   });
   const e = entity.data;
   if (!e) return <ErrorBox error={entity.error} />;
@@ -195,17 +210,24 @@ export function EntityView({ id }: { id: number }): ReactElement {
     ...Object.entries(e.profile).map(([name, field]) => ({ key: name, name, value: <Value field={field} /> })),
     ...e.rejected.map((r) => ({
       key: `rejected-${r.kind}-${r.value}`,
-      name: `not ${r.kind}`,
+      name: `removed ${KIND_LABELS[r.kind] ?? r.kind}`,
       value: (
-        <Text size="sm" c="dimmed">
-          <Text span td="line-through">
-            {r.value}
-          </Text>{" "}
-          "{r.quote}"
-          <Anchor href={r.source_url} target="_blank" rel="noreferrer noopener" size="xs" ml={6}>
-            source
-          </Anchor>
-        </Text>
+        <Group gap="xs" wrap="nowrap" justify="space-between" align="flex-start">
+          <Text size="sm">
+            <Text span td="line-through" c="dimmed">
+              {r.value}
+            </Text>{" "}
+            <Text span fs="italic">
+              "{r.quote}"
+            </Text>{" "}
+            <Anchor href={r.source_url} target="_blank" rel="noreferrer noopener" size="sm">
+              source
+            </Anchor>
+          </Text>
+          <Button size="compact-xs" variant="subtle" loading={restore.isPending && restore.variables === r.id} onClick={() => restore.mutate(r.id)}>
+            Restore
+          </Button>
+        </Group>
       ),
     })),
   ];
@@ -219,9 +241,23 @@ export function EntityView({ id }: { id: number }): ReactElement {
           <Title order={2}>{e.name}</Title>
           <KindBadge kind={e.kind} />
         </Group>
-        <NoteButton label="Search again" text={RESEARCH_NOTE} icon={<IconWorldSearch size={14} />} loading={research.isPending} onStart={(note) => research.mutate(note)} />
+        <Group gap="sm">
+          {e.research_run !== null && (
+            <Anchor href={href.run(e.research_run)} size="sm">
+              Search running, open run {e.research_run}
+            </Anchor>
+          )}
+          <NoteButton
+            label="Search again"
+            text={RESEARCH_NOTE}
+            icon={<IconWorldSearch size={14} />}
+            loading={research.isPending}
+            disabled={e.research_run !== null}
+            onStart={(note) => research.mutateAsync(note)}
+          />
+        </Group>
       </Group>
-      {research.error && <ErrorBox error={research.error} />}
+      <ErrorBox error={research.error ?? restore.error} />
       {profileRows.length > 0 && (
         <Card>
           <Title order={4} mb="sm">

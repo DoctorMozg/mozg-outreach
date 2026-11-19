@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from mozg_outreach.api.routes.runs import run_out
+from mozg_outreach.api.routes.runs import run_out, unfinished_runs
 from mozg_outreach.api.schemas import (
     EntityDetail,
     EntityOut,
@@ -25,6 +25,7 @@ from mozg_outreach.api.schemas import (
 )
 from mozg_outreach.api.services import Services, get_or_404, services
 from mozg_outreach.domain import EntityKind
+from mozg_outreach.registry.registry import EntityRegistry
 from mozg_outreach.registry.suggestions import MergeSuggester
 from mozg_outreach.runs.entities import ENTITY_RESEARCH
 from mozg_outreach.storage.models import (
@@ -36,7 +37,6 @@ from mozg_outreach.storage.models import (
     Project,
     RejectedIdentifier,
     Relation,
-    Run,
     Sighting,
 )
 from mozg_outreach.storage.repositories import InteractionRepository, ItemRepository, ReportFilter
@@ -130,6 +130,7 @@ async def get_entity(entity_id: int, svc: Svc) -> EntityDetail:
                     )
                 ],
                 "relations": _relations(session, entity_id),
+                "research_run": _open_research(session, entity_id),
                 "leads": [
                     LeadOut(
                         item_id=i.id,
@@ -154,16 +155,7 @@ async def research_entity(entity_id: int, svc: Svc, body: ResearchIn | None = No
     with svc.db.session() as session:
         get_or_404(session, Entity, entity_id)
         project_id = _home_project(session, entity_id)
-        open_run = next(
-            (
-                r.id
-                for r in session.scalars(
-                    select(Run).where(Run.pipeline == ENTITY_RESEARCH, Run.finished_at.is_(None))
-                )
-                if r.state.get("entity_id") == entity_id
-            ),
-            None,
-        )
+        open_run = _open_research(session, entity_id)
     if open_run is not None:
         raise HTTPException(409, f"run {open_run} is still searching for this entity")
     note = body.note.strip() if body and body.note else None
@@ -171,6 +163,21 @@ async def research_entity(entity_id: int, svc: Svc, body: ResearchIn | None = No
     if note:
         state["note"] = note
     return run_out(svc, svc.runs.start(project_id, ENTITY_RESEARCH, state))
+
+
+@router.delete("/entities/{entity_id}/rejected/{rejected_id}", status_code=204)
+async def restore_identifier(entity_id: int, rejected_id: int, svc: Svc) -> None:
+    """The user overrules a search: the identifier goes back on the entity."""
+    with svc.db.session() as session:
+        entity = get_or_404(session, Entity, entity_id)
+        try:
+            EntityRegistry(session).unreject(entity, rejected_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+
+def _open_research(session: Session, entity_id: int) -> int | None:
+    return next(iter(unfinished_runs(session, ENTITY_RESEARCH, {"entity_id": entity_id})), None)
 
 
 def _home_project(session: Session, entity_id: int) -> int:

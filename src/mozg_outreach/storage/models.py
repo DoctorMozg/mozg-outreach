@@ -317,6 +317,16 @@ class RejectedIdentifier(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class EntityMerge(Base):
+    """Where a merged entity went, so a run or link holding its old id can follow it."""
+
+    __tablename__ = "entity_merges"
+
+    dropped_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    kept_id: Mapped[int] = mapped_column(ForeignKey("entities.id", ondelete="CASCADE"), index=True)
+    merged_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class Sighting(Base):
     """One place an entity was seen; together they are the profile's source list."""
 
